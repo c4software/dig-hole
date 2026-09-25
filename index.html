@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>A Hole | Browser Game</title>
+<meta name="description" content="Un jeu où l'on creuse un trou. Creuse, vends ce que tu trouves, améliore ta pelle, descends plus loin.">
+<meta name="theme-color" content="#0b0d12">
+<link rel="icon" href="./favicon.svg" type="image/svg+xml">
+<!-- only the few Japanese characters painted on the signs of the Japanese town -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@500;700&amp;display=block&amp;text=%E3%81%B2%E3%81%A0%E3%81%BE%E3%82%8A%E3%83%9E%E3%83%BC%E3%83%8824%E6%99%82%E9%96%93%E5%96%B6%E6%A5%AD%E6%AD%A2%E3%82%8C%E8%B2%B7%E5%8F%96%E4%BA%95%E6%88%B8%E6%A1%9C%E3%83%B6%E4%B8%98%E9%A7%85%E5%89%8D%E3%81%95%E3%81%8F%E3%82%89%E3%81%8C%E3%81%8A%E3%81%8B%E3%81%A4%E3%82%81%E3%81%9F%E3%80%9C%E3%81%84%C2%B7abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01356789%20.%2C%27-%E3%83%86%E3%83%AC%E3%83%9D%E3%81%A3%E3%81%97%E3%82%83%E3%81%9B">
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.js", "three/addons/": "./vendor/addons/" } }
+</script>
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+<div id="app"></div>
+
+<!-- full-screen effect layers -->
+<div id="veil"></div>
+<div id="wash"></div>
+
+<!-- HUD -->
+<div id="hud" class="hidden">
+  <div id="depth"><span id="depth-n">0.0</span><small>m</small></div>
+  <div id="best">record <span id="best-n">0.0</span> m</div>
+  <div id="temp" class="hidden"></div>
+  <div id="coins"><span id="coin-n">0</span></div>
+  <div id="bag"><span class="b-label">sac</span> <span id="bag-n">0</span> / <span id="bag-cap">10</span></div>
+  <div id="fuel" class="hidden"><div id="fuel-fill"></div></div>
+  <div id="bars">
+    <div class="bar-row"><span class="bl">vie</span><div class="bar"><div id="hp-fill"></div></div></div>
+    <div class="bar-row"><span class="bl">batterie</span><div class="bar"><div id="bat-fill"></div></div></div>
+    <div class="bar-row hidden" id="o2-row"><span class="bl">oxygène</span><div class="bar"><div id="o2-fill"></div></div></div>
+  </div>
+  <div id="hotbar"></div>
+  <canvas id="minimap" width="170" height="170"></canvas>
+  <div id="bigmap" class="hidden">
+    <div class="w-title">la carte · <b>m</b> pour fermer</div>
+    <div id="bigmap-row">
+      <div><canvas id="map-top" width="520" height="520"></canvas><div class="map-cap">vue de dessus · le potager teinté par la profondeur</div></div>
+      <div><canvas id="map-cut" width="260" height="520"></canvas><div class="map-cap">coupe du trou, là où tu te tiens</div></div>
+    </div>
+  </div>
+  <div id="clock"><span id="clock-ico"></span><span id="clock-txt"></span></div>
+  <div id="net" class="hidden"></div>
+  <div id="detector" class="hidden"></div>
+  <div id="crosshair"></div>
+  <div id="heat" class="hidden"><div id="heat-fill"></div></div>
+  <div id="prompt"></div>
+  <div id="toast"></div>
+  <div id="mg" class="hidden"></div>
+  <div id="plusone">+0</div>
+  <div id="hint"></div>
+  <div id="layer"></div>
+
+  <div id="shop" class="hidden">
+    <div class="ns-title">la quincaillerie</div>
+    <div id="shop-tabs"></div>
+    <div id="shop-items"></div>
+    <div id="shop-note"></div>
+    <button id="shop-close">retour au trou</button>
+  </div>
+
+  <div id="reader" class="hidden">
+    <div id="reader-card">
+      <div class="w-title" id="reader-title">une lettre</div>
+      <div id="reader-body"></div>
+      <div id="notes" class="hidden">
+        <div id="notes-list"></div>
+        <form id="note-form" autocomplete="off">
+          <textarea id="note-text" maxlength="280" rows="2" placeholder="un mot pour les prochains creuseurs…"></textarea>
+          <button type="submit">laisser un mot</button>
+        </form>
+      </div>
+      <div id="reader-nav"></div>
+      <button id="reader-close">refermer</button>
+    </div>
+  </div>
+</div>
+<div id="hurt"></div>
+<div id="relock" class="hidden">clic pour reprendre la souris · <b>p</b> pause</div>
+
+<!-- attract screen (the menu) -->
+<div id="attract">
+  <div class="title-block">
+    <span class="over">a game about digging a</span>
+    <h1>HOLE</h1>
+  </div>
+  <div id="mode" role="radiogroup" aria-label="mode">
+    <button type="button" class="m-opt" data-mode="solo" aria-checked="true"><span class="m-name">solo</span></button>
+    <button type="button" class="m-opt" data-mode="explore" aria-checked="false"><span class="m-name">exploration</span></button>
+    <button type="button" class="m-opt" data-mode="multi" aria-checked="false"><span class="m-name">à plusieurs</span></button>
+  </div>
+  <form id="multi-form" class="hidden" autocomplete="off">
+    <input id="nick" type="text" maxlength="10" placeholder="ton nom" spellcheck="false" aria-label="ton nom">
+  </form>
+  <div class="begin">cliquer pour creuser</div>
+  <div id="keys">
+    <span><b>zqsd</b> / <b>wasd</b> marcher</span>
+    <span><b>espace</b> sauter</span>
+    <span><b>clic</b> creuser</span>
+    <span><b>e</b> vendre · acheter</span>
+    <span><b>r</b> remonter</span>
+    <span><b>1-6</b> objets · <b>f</b> / <b>clic droit</b> lancer (maintenu : en rafale)</span>
+    <span><b>x</b> pelle / foreuse</span>
+  </div>
+  <button id="reset" type="button" class="hidden">tout recommencer</button>
+  <button type="button" class="q-btn">qualité : auto</button>
+</div>
+
+<!-- the super reset: the password, then a countdown everyone sees -->
+<div id="super-pw" class="hidden">
+  <form id="super-form" autocomplete="off">
+    <div class="sp-t">super reset</div>
+    <div class="sp-s">la maison, le japon, la lune et mars seront détruits puis refaits · pour tous les joueurs</div>
+    <input id="super-in" type="password" placeholder="mot de passe" autocomplete="off" spellcheck="false">
+    <div id="super-err"></div>
+    <div class="sp-row"><button type="submit" class="sp-go">détruire les mondes</button><button type="button" id="super-cancel">annuler</button></div>
+  </form>
+</div>
+<div id="super-count" class="hidden">
+  <div class="sc-warn">⚠ super reset ⚠</div>
+  <div id="super-n">15</div>
+  <div id="super-sub">destruction de tous les mondes</div>
+</div>
+
+<!-- resume (pointer lock lost) -->
+<div id="resume" class="hidden">
+  <div id="settings">
+    <div class="w-title">pause</div>
+    <button id="resume-go" type="button">reprendre</button>
+    <div class="set-row"><label>qualité</label><div class="seg" id="set-quality"></div></div>
+    <div class="set-row"><label>volume</label><input type="range" id="set-volume" min="0" max="1" step=".05"><span id="set-volume-v"></span></div>
+    <div class="set-row"><label>sensibilité</label><input type="range" id="set-sens" min=".3" max="2.5" step=".05"><span id="set-sens-v"></span></div>
+    <div class="set-row"><label>champ de vision</label><input type="range" id="set-fov" min="55" max="100" step="1"><span id="set-fov-v"></span></div>
+    <div class="set-row"><label>minicarte</label><button type="button" class="toggle" id="set-minimap"></button></div>
+    <div class="set-row"><label>souris inversée</label><button type="button" class="toggle" id="set-invert"></button></div>
+    <div class="set-keys"><b>p</b> pause · <b>m</b> carte · <b>x</b> pelle / foreuse · <b>r</b> remonter</div>
+    <button id="set-title" type="button">retour à l'écran titre</button>
+  </div>
+</div>
+
+<!-- travelling through the Earth -->
+<div id="travel" class="hidden">
+  <div class="w-title" id="travel-title">tu traverses la terre</div>
+  <div id="travel-km">0 km</div>
+</div>
+
+<!-- fainted -->
+<div id="faint" class="hidden">
+  <div class="w-title">évanoui</div>
+  <div id="faint-sub">tu te réveilles dans ton lit. le sac, lui, est resté en bas.</div>
+</div>
+
+<!-- the bottom -->
+<div id="win" class="hidden">
+  <div id="win-card">
+    <div class="w-title">tout au fond</div>
+    <div id="win-depth">100 m</div>
+    <div id="win-quip"></div>
+    <div id="win-stats"></div>
+    <div class="win-row">
+      <button id="through">traverser la terre</button>
+      <button id="again">continuer à creuser</button>
+      <button id="restart">tout recommencer</button>
+    </div>
+  </div>
+</div>
+
+<!-- loading -->
+<div id="load">
+  <div class="bar-wrap"><div id="load-bar"></div></div>
+</div>
+
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
