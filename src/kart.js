@@ -1,28 +1,56 @@
-// kart.js, the A Hole Grand Prix: a street circuit through our own village, Monaco style.
-// Down the main street past our garden gate, a cone chicane by the square and its stand,
-// right at the pharmacie, round the back of the square behind the church, a loop in the wheat
-// onto the gravel lane behind the gardens, down between the back houses to the cypress lane,
-// back up, a hairpin behind the mairie, and up the lane along our garden wall into the street
-// again. The town stays as it is: the track is the space between its walls (read from the
-// world's colliders), closed off with race dressing that only shows while racing (barriers,
-// catch fences, tyres, straw, a gantry, banners, stands). Drift for mini-turbos, boost pads,
-// slipstream, item boxes, checkpoints, 3 laps.
+// kart.js, the A Hole Grand Prix: a figure of eight round the back of our village, wide
+// enough to race three abreast. Along the back lane under our garden hedge, left round the
+// church, right behind the bakery, a long sweeper through the grass behind the pharmacie,
+// back past the back houses, across the lane in front of our back gate, round the corner of
+// our garden wall, a hairpin by the mairie's little park, and back across the crossing. The
+// town stays as it is: the track is the grass, the lane and the fields between its walls
+// (read from the world's colliders), laid with track matting and closed off with race
+// dressing that only shows while racing (barriers, catch fences, tyres, straw, a gantry,
+// banners, stands). Drift for mini-turbos, boost pads, slipstream, item boxes, checkpoints, 3 laps.
 // Online: each client drives its own kart, the host drives the bots; ~15 Hz states.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import * as V from './vehicles.js';
 
 export const KART_ORIGIN = new THREE.Vector3(0, 0, 0);
-const N = 1300, CP = 13, SEG = N / CP, LAPS = 3, KR = .78;
+const N = 1300, CP = 13, SEG = N / CP, LAPS = 4, KR = .78;
 const TOP = 27, ACC = 21, GRID = 4, COUNT = 4;
-// the route, from the start line in front of the tabac, eastbound
-const CTRL = [[31, -13.4], [50, -13.4], [70, -13.4], [98, -13.4], [109, -13.3], [115.5, -12.6], [119.6, -10], [121.6, -5.5], [122.4, 1],
-  [121.2, 8], [116.5, 13.4], [108, 15.4], [92, 15.5], [84, 15.7], [79.6, 18.2], [77.9, 23], [77.6, 31], [78.7, 36.8], [82.5, 40.3], [90, 40.9], [104, 40.8],
-  [110, 40.3], [115.4, 40.1], [119.3, 42.1], [120.9, 45.5], [119.4, 49], [115, 51], [109, 50.3], [100, 49.4], [80, 49.4], [60, 49.4], [47, 49.4], [40.5, 50.2], [36.4, 53.6],
-  [34.6, 60], [34.2, 70], [33.6, 77], [31.6, 81.4], [27, 83.8], [20, 84.1], [5, 84.1], [-10, 84.1], [-21, 84], [-27.2, 82.8], [-30.8, 79.6],
-  [-32.2, 73], [-32.4, 62], [-33.4, 55.4], [-36.8, 51], [-43, 49.4], [-56, 49.4], [-70, 49.4], [-80, 49.4], [-86, 49.1], [-89.8, 47.6], [-91.4, 44.4],
-  [-89.8, 41], [-86, 39.5], [-80, 39.3], [-65, 39.5], [-55, 39.5], [-50.4, 38.4], [-47.3, 35.2], [-46.4, 29], [-46.4, 15], [-46.7, 4], [-47.1, -2.5],
-  [-46.3, -7.4], [-43.8, -11.2], [-39, -13.1], [-32, -13.4], [-15, -13.4], [0, -13.4], [15, -13.4]];
+// the route: the corners, each a circle [x, z, radius, +1 left / -1 right], joined by
+// straight lines tangent to them, starting from the line on the back lane, eastbound
+export const TURNS = [
+  [38, 35.3, 18, 1], [63, 62, 18, -1],      // off the hedge line, down past the church
+  [84, 26, 12, 1],          // left behind the house by the bakery
+  [107.4, 12, 11.4, -1],    // the hairpin behind the pharmacie
+  [106.5, 36, 12, -1],      // right, back towards the village
+  [96, 83, 35, 1], [56, 24.6, 35, -1],     // the long bend past the back houses
+  [53.5, 71.1, 11.5, 1], [25, 55.5, 19, -1],   // down between them
+  [14, 52.5, 22, -1], [-26, 76, 22, 1],     // up across the crossing to our hedge
+  [-39.6, 42, 12, -1],      // round the corner of our garden wall
+  [-63, 30, 11.4, 1],       // the hairpin by the mairie's park
+  [-63, 61, 11.4, 1],       // down to the fields
+  [-48, 48.4, 24, 1], [-9, 78, 24, -1],     // back up across the crossing onto the back lane
+];
+const START = [30, 54];
+function route(TURNS) {
+  const n = TURNS.length, tan = [], pts = [], TAU = Math.PI * 2;
+  for (let k = 0; k < n; k++) {
+    const [ax, az, ra, sa] = TURNS[k], [bx, bz, rb, sb] = TURNS[(k + 1) % n];
+    const th = Math.atan2(bz - az, bx - ax) + Math.asin((sb * rb - sa * ra) / Math.hypot(bx - ax, bz - az)), lx = Math.sin(th), lz = -Math.cos(th);
+    tan.push([[ax - sa * ra * lx, az - sa * ra * lz], [bx - sb * rb * lx, bz - sb * rb * lz]]);
+  }
+  const add = (x, z) => { const q = pts[pts.length - 1]; if (!q || Math.hypot(q[0] - x, q[1] - z) > 1) pts.push([x, z]); };
+  for (let k = 0; k < n; k++) {
+    const [cx, cz, r, s] = TURNS[k], p0 = tan[(k + n - 1) % n][1], [p1, q] = tan[k];
+    const a0 = Math.atan2(p0[1] - cz, p0[0] - cx), a1 = Math.atan2(p1[1] - cz, p1[0] - cx);
+    const sw = s > 0 ? -(((a0 - a1) % TAU + TAU) % TAU) : ((a1 - a0) % TAU + TAU) % TAU, m = Math.max(1, Math.ceil(Math.abs(sw) * r / 3));
+    for (let j = 0; j <= m; j++) add(cx + r * Math.cos(a0 + sw * j / m), cz + r * Math.sin(a0 + sw * j / m));
+    const m2 = Math.floor(Math.hypot(q[0] - p1[0], q[1] - p1[1]) / 4);
+    for (let j = 1; j < m2; j++) add(p1[0] + (q[0] - p1[0]) * j / m2, p1[1] + (q[1] - p1[1]) * j / m2);
+  }
+  let s0 = 0; pts.forEach((q, i) => { if (Math.hypot(q[0] - START[0], q[1] - START[1]) < Math.hypot(pts[s0][0] - START[0], pts[s0][1] - START[1])) s0 = i; });
+  return [...pts.slice(s0), ...pts.slice(0, s0)];
+}
+export const CTRL = route(TURNS);
 const BOT_NAMES = ['gaston', 'pépette', 'bernard', 'lulu', 'mireille', 'jojo', 'titi'];
 const BOT_COLORS = [0xb02a24, 0x2a5cc0, 0x33904f, 0x8a3ab8, 0xe0a020, 0x20a0a8, 0xe05a8a, 0x606870];
 const ITEM_NAMES = { champi: 'champignon', triple: 'triple champi', banane: 'banane', verte: 'carapace verte', rouge: 'carapace rouge', faux: 'fausse boîte' };
@@ -31,13 +59,25 @@ const clamp = THREE.MathUtils.clamp, smooth = THREE.MathUtils.smoothstep;
 const wrapA = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 const mulberry = (s) => () => { s = s + 0x6D2B79F5 | 0; let t = Math.imul(s ^ s >>> 15, 1 | s); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
 const r2 = (v) => Math.round(v * 100) / 100;
-// what the ground is where the track runs: the street, the gravel lane, the cypress lane, grass
-const zoneOf = (x, z) => z < -9 && x > -118 && x < 116 ? 0 : Math.abs(z - 49.4) < 3.5 && x < 110 ? 1 : Math.abs(z - 84) < 3.5 ? 2 : 3;
-const CAPS = [2.95, 3.1, 3.2, 3.6];
+// what the dressing is made of: 0 the straight under the garden hedge (concrete and catch
+// fences), 1 by the houses (plastic blocks), 3 out in the fields (straw)
+const zoneOf = (x, z) => z < 58.5 && x > -44 && x < 60 ? 0 : x > -46 && x < 96 && z < 62 ? 1 : 3;
+// the widest the track gets where nothing closes it, each side of the centre line
+export const CAP = 6.6;
+// the corridors of two stretches running side by side stop this far apart
+const GAP = .6;
+// what the world doesn't make solid but we won't drive through: the hedges outside our garden
+// walls and along the fields, our garden gate, and the foot of the hills round the village
+export const EXTRA = [
+  { x0: -41.9, z0: 46.2, x1: 41.9, z1: 47.7 }, { x0: -42.8, z0: -9.9, x1: -40.7, z1: 47.7 }, { x0: 40.7, z0: -9.9, x1: 42.8, z1: 47.7 },
+  { x0: -202, z0: 77.3, x1: -39.2, z1: 78.8 }, { x0: 39.2, z0: 77.3, x1: 202, z1: 78.8 },
+  { x0: -2.6, z0: -11.95, x1: 2.45, z1: -11.35, gate: true },
+  { x0: 122.5, z0: -5, x1: 160, z1: 60, hill: true }, { x0: -160, z0: 36, x1: -104, z1: 70, hill: true },
+];
 
 // ---------- the centre line: control points, a few smoothing passes, resampled evenly ----------
-export function buildTrack() {
-  const c1 = new THREE.CatmullRomCurve3(CTRL.map(([x, z]) => new THREE.Vector3(x, 0, z)), true, 'centripetal');
+export function buildTrack(turns = null) {
+  const c1 = new THREE.CatmullRomCurve3((turns ? route(turns) : CTRL).map(([x, z]) => new THREE.Vector3(x, 0, z)), true, 'centripetal');
   let p = c1.getSpacedPoints(N); p.pop();
   for (let it = 0; it < 10; it++) p = p.map((q, i) => q.clone().multiplyScalar(.5).addScaledVector(p[(i + 1) % N], .25).addScaledVector(p[(i + N - 1) % N], .25));
   const c2 = new THREE.CatmullRomCurve3(p, true, 'centripetal'), P = c2.getSpacedPoints(N); P.pop();
@@ -49,11 +89,84 @@ export function buildTrack() {
   // signed curvature, > 0 turning left (towards L)
   for (let i = 0; i < N; i++) K[i] = wrapA(H[(i + 1) % N] - H[(i + N - 1) % N]) / (2 * ds);
   const Ks = avgRing(K, 4), Kw = avgRing(K, 22);
-  let minR = Infinity; for (let i = 0; i < N; i++) minR = Math.min(minR, 1 / Math.max(1e-6, Math.abs(Ks[i])));
+  let minR = Infinity, minRAt = 0; for (let i = 0; i < N; i++) { const r = 1 / Math.max(1e-6, Math.abs(Ks[i])); if (r < minR) { minR = r; minRAt = i; } }
   const Z = new Uint8Array(N); for (let i = 0; i < N; i++) { Z[i] = zoneOf(P[i].x, P[i].z); P[i].y = Y[i]; }
-  return { P, T, L, H, K: Ks, Kw, Y, G, Z, ds, len, minR };
+  // the crossing: where the line runs over itself. Round it, the two passes share the road
+  // (XZ 1 the first pass, 2 the second), nothing splits them and no barrier stands between
+  const far = Math.round(60 / ds), X = [], XZ = new Uint8Array(N);
+  for (let i = 0; i < N; i++) for (let j = i + far; j < Math.min(N, i + N - far); j++) {
+    if (Math.abs(P[i].x - P[j].x) > 1.5 || Math.abs(P[i].z - P[j].z) > 1.5) continue;
+    const q = { x: (P[i].x + P[j].x) / 2, z: (P[i].z + P[j].z) / 2, i, j };
+    if (!X.some(o => Math.hypot(o.x - q.x, o.z - q.z) < 8)) X.push(q);
+  }
+  for (const x of X) for (let i = 0; i < N; i++) if (Math.hypot(P[i].x - x.x, P[i].z - x.z) < 15) XZ[i] = Math.abs(i - x.i) < Math.abs(i - x.j) ? 1 : 2;
+  const TR = { P, T, L, H, K: Ks, Kw, Y, G, Z, XZ, X, ds, len, minR, minRAt };
+  TR.near = sampleGrid(TR);
+  return TR;
 }
 function avgRing(A, w) { const n = A.length, o = new Float32Array(n); for (let i = 0; i < n; i++) { let s = 0; for (let d = -w; d <= w; d++) s += A[(i + d + n) % n]; o[i] = s / (2 * w + 1); } return o; }
+// the samples in 8 m cells: which of them, far along the track from i, is nearest (x, z)
+function sampleGrid({ P, ds }) {
+  const g = new Map(), key = (x, z) => Math.floor(x / 8) * 4096 + Math.floor(z / 8);
+  P.forEach((p, i) => { const k = key(p.x, p.z); if (!g.has(k)) g.set(k, []); g.get(k).push(i); });
+  const far = Math.round(30 / ds);
+  return (x, z, i) => {
+    let best = -1, bd = Infinity;
+    for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) for (const j of g.get(key(x + a * 8, z + b * 8)) || []) {
+      const di = Math.abs(i - j); if (Math.min(di, N - di) < far) continue;
+      const e = (P[j].x - x) ** 2 + (P[j].z - z) ** 2; if (e < bd) { bd = e; best = j; }
+    }
+    return best < 0 ? null : { j: best, d: Math.sqrt(bd) };
+  };
+}
+// the neighbours' houses have a front garden: a low wall and a hedge 3 m out from the door,
+// drawn, not solid. Found from their colliders: the door (a 1.2 m gap under a 2.2 m lintel),
+// the wall it's in, and the side of it with no house behind
+export function yards(boxes) {
+  const out = [];
+  for (const d of boxes) {
+    if (Math.abs((d.y1 ?? 0) - 2.2) > .02 || (d.y0 ?? 0) > .02) continue;
+    const w = d.x1 - d.x0, h = d.z1 - d.z0, ax = Math.abs(w - 1.2) < .03 && Math.abs(h - .2) < .03, az = Math.abs(h - 1.2) < .03 && Math.abs(w - .2) < .03;
+    if (!ax && !az) continue;
+    const u0 = ax ? 'x0' : 'z0', u1 = ax ? 'x1' : 'z1', v0 = ax ? 'z0' : 'x0', v1 = ax ? 'z1' : 'x1', cu = (d[u0] + d[u1]) / 2, cv = (d[v0] + d[v1]) / 2;
+    const wall = boxes.filter(b => Math.abs(b[v0] - d[v0]) < .03 && Math.abs(b[v1] - d[v1]) < .03 && b[u1] > d[u0] - 8 && b[u0] < d[u1] + 8);
+    const back = (s) => boxes.some(b => !wall.includes(b) && b[u0] < cu && b[u1] > cu && (b[v0] - cv) * s > 0 && Math.abs(b[v0] - cv) < 12);
+    const s = back(1) ? -1 : 1, f = s > 0 ? d[v1] : d[v0];
+    out.push({ [u0]: Math.min(...wall.map(b => b[u0])), [u1]: Math.max(...wall.map(b => b[u1])), [v0]: Math.min(f, f + s * 3.6), [v1]: Math.max(f, f + s * 3.6), yard: true });
+  }
+  return out;
+}
+export function hashBoxes(list) {
+  const g = new Map(), key = (i, j) => i * 4096 + j;
+  for (const b of list) for (let i = Math.floor(b.x0 / 2); i <= Math.floor(b.x1 / 2); i++) for (let j = Math.floor(b.z0 / 2); j <= Math.floor(b.z1 / 2); j++) { const k = key(i, j); if (!g.has(k)) g.set(k, []); g.get(k).push(b); }
+  return { inside(x, z, y = 1) { const c = g.get(key(Math.floor(x / 2), Math.floor(z / 2))); if (c) for (const b of c) if (x > b.x0 && x < b.x1 && z > b.z0 && z < b.z1 && y < (b.y1 ?? 9) && y > (b.y0 ?? -1)) return b; return null; } };
+}
+// how far the edges are on each side of every sample: a wall (k 1), or open ground (k 0)
+// closed at CAP, or halfway to another stretch of the track running alongside
+export function corridor(TR, boxes) {
+  const { P, L, XZ } = TR, g = hashBoxes(boxes), lo = new Float32Array(N), hi = new Float32Array(N), kl = new Uint8Array(N), kh = new Uint8Array(N), ml = new Int32Array(N), mh = new Int32Array(N);
+  for (let i = 0; i < N; i++) for (const s of [1, -1]) {
+    let d = 0, k = 0, m = 0;
+    for (; d <= CAP; d += .08) {
+      const x = P[i].x + L[i].x * s * d, z = P[i].z + L[i].z * s * d;
+      const b = g.inside(x, z); if (b) { k = b.hill ? 0 : 1; break; }
+      if (!XZ[i] && d > 2) { const o = TR.near(x, z, i); if (o && !XZ[o.j] && o.d < d + GAP) { m = o.j + 1; break; } }
+    }
+    d = k ? Math.max(0, d - .04) : Math.min(d, CAP);
+    if (s > 0) { hi[i] = d; kh[i] = k; mh[i] = m; } else { lo[i] = -d; kl[i] = k; ml[i] = m; }
+  }
+  return { lo, hi, kl, kh, ml, mh };
+}
+// the edges pulled in to the narrowest of their neighbours, so they run smooth
+export function erode(c, LO = new Float32Array(N), HI = new Float32Array(N)) {
+  const w = 4;
+  for (let i = 0; i < N; i++) {
+    let a = -Infinity, b = Infinity;
+    for (let d = -w; d <= w; d++) { const j = (i + d + N) % N; a = Math.max(a, c.lo[j]); b = Math.min(b, c.hi[j]); }
+    LO[i] = a; HI[i] = b;
+  }
+  return { LO, HI };
+}
 
 // a kart: a low tub, side pods, a big rear wing with its number, fat rear tyres, a driver
 // in a helmet. `shell` leans (roll into the turns, pitch on the throttle); `anim` drives it.
@@ -166,7 +279,7 @@ export function createKart({ scene, camera, audio, ui }) {
   root.visible = false;
   scene.add(root);
   const TR = buildTrack();
-  const { P, T, L, H, K, Kw, Y, G, Z, ds } = TR;
+  const { P, T, L, H, K, Kw, Y, G, Z, XZ, ds } = TR;
   // the corridor between the walls: LO < 0 < HI laterally (towards L is positive, the left)
   const LO = new Float32Array(N), HI = new Float32Array(N), LINE = new Float32Array(N), VMAX = new Float32Array(N), KL = new Float32Array(N);
   let PADS = [], ROWS = [], stats = {};
@@ -192,11 +305,6 @@ export function createKart({ scene, camera, audio, ui }) {
 
   // ---------- the town: its colliders, and what we add to them ----------
   const town = () => window.__dig?.world || null;
-  function hashBoxes(list) {
-    const g = new Map(), key = (i, j) => i * 4096 + j;
-    for (const b of list) for (let i = Math.floor(b.x0 / 2); i <= Math.floor(b.x1 / 2); i++) for (let j = Math.floor(b.z0 / 2); j <= Math.floor(b.z1 / 2); j++) { const k = key(i, j); if (!g.has(k)) g.set(k, []); g.get(k).push(b); }
-    return { inside(x, z, y = 1) { const c = g.get(key(Math.floor(x / 2), Math.floor(z / 2))); if (c) for (const b of c) if (x > b.x0 && x < b.x1 && z > b.z0 && z < b.z1 && y < (b.y1 ?? 9) && y > (b.y0 ?? -1)) return b; return null; } };
-  }
   function townBoxes() {
     const w = town(), out = [];
     const xs = P.map(p => p.x), zs = P.map(p => p.z), x0 = Math.min(...xs) - 25, x1 = Math.max(...xs) + 25, z0 = Math.min(...zs) - 25, z1 = Math.max(...zs) + 25;
@@ -223,32 +331,9 @@ export function createKart({ scene, camera, audio, ui }) {
     });
     return out;
   }
-  // how far the walls are on each side of every sample: 0 capped (open, we close it), 1 a wall
-  function corridor(boxes) {
-    const g = hashBoxes(boxes), lo = new Float32Array(N), hi = new Float32Array(N), kl = new Uint8Array(N), kh = new Uint8Array(N);
-    for (let i = 0; i < N; i++) for (const s of [1, -1]) {
-      const cap = CAPS[Z[i]];
-      let d = 0, k = 0;
-      for (; d <= cap; d += .08) {
-        const x = P[i].x + L[i].x * s * d, z = P[i].z + L[i].z * s * d;
-        if (g.inside(x, z)) { k = 1; break; }
-      }
-      d = k ? Math.max(0, d - .04) : cap;
-      if (s > 0) { hi[i] = d; kh[i] = k; } else { lo[i] = -d; kl[i] = k; }
-    }
-    return { lo, hi, kl, kh };
-  }
-  function erode(c) {
-    const w = 4;
-    for (let i = 0; i < N; i++) {
-      let a = -Infinity, b = Infinity;
-      for (let d = -w; d <= w; d++) { const j = (i + d + N) % N; a = Math.max(a, c.lo[j]); b = Math.min(b, c.hi[j]); }
-      LO[i] = a; HI[i] = b;
-    }
-  }
   // the racing line: an elastic band pulled tight between the walls
   function racingLine() {
-    const m = 1.05, lo = new Float32Array(N), hi = new Float32Array(N);
+    const m = 1.3, lo = new Float32Array(N), hi = new Float32Array(N);
     for (let i = 0; i < N; i++) { const c = mid(i); lo[i] = Math.min(LO[i] + m, c); hi[i] = Math.max(HI[i] - m, c); LINE[i] = c; }
     for (let it = 0; it < 500; it++) for (let i = 0; i < N; i++) {
       const a = (i + N - 1) % N, b = (i + 1) % N;
@@ -280,48 +365,50 @@ export function createKart({ scene, camera, audio, ui }) {
   function pickSpot(u, test) { for (let d = 0; d < N; d++) { const i = (Math.round(u * N) + d) % N; if (test(i)) return i; } return Math.round(u * N) % N; }
   const straight = (i, w) => { for (let d = -w; d <= w; d++) if (Math.abs(KL[(i + d + N) % N]) > 1 / 45) return false; return true; };
 
+  // is (x, z) on the road, of any stretch of it (the crossing has two)
+  function onRoad(x, z, pad = .4, not = -1) {
+    for (let i = 0; i < N; i++) {
+      if (not >= 0 && Math.min(Math.abs(i - not), N - Math.abs(i - not)) < 40 / ds) continue;
+      const dx = x - P[i].x, dz = z - P[i].z;
+      if (dx * dx + dz * dz > 64 || Math.abs(dx * T[i].x + dz * T[i].z) > ds * .6) continue;
+      const lat = dx * L[i].x + dz * L[i].z;
+      if (lat > LO[i] - pad && lat < HI[i] + pad) return true;
+    }
+    return false;
+  }
   // the whole plan, before any mesh: walls, the dressing that is solid, the corridor again
   let plan = null;
   function layout() {
     const base = townBoxes(), cyp = cypressBoxes();
-    const extra = [
-      // the hedges on the outside of the garden walls, the hedgerows by the cypress lane
-      { x0: -41.9, z0: 46.2, x1: 41.9, z1: 47.7 }, { x0: -42.8, z0: -9.9, x1: -40.7, z1: 47.7 }, { x0: 40.7, z0: -9.9, x1: 42.8, z1: 47.7 },
-      { x0: -202, z0: 77.3, x1: -39.2, z1: 78.8 }, { x0: 39.2, z0: 77.3, x1: 202, z1: 78.8 },
-      // the garden gate, closed off: nobody falls into the hole
-      { x0: -2.6, z0: -11.95, x1: 2.45, z1: -11.35, gate: true },
-      ...cyp,
-    ];
-    const c1 = corridor([...base, ...extra]);
-    // what the dressing adds that you can hit: the gantry's leg, foam round the lamp posts, the chicane
+    const extra = [...EXTRA, ...cyp, ...yards(base)];
+    const c1 = corridor(TR, [...base, ...extra]);
+    // what the dressing adds that you can hit: the gantry's leg, foam round the posts by the track
     const solid = [];
-    const hiRaw0 = c1.hi[0];
-    const gq = at(0, hiRaw0 - .28);
+    const gq = at(0, c1.hi[0] - .28);
     solid.push({ x0: gq.x - .3, z0: gq.z - .3, x1: gq.x + .3, z1: gq.z + .3, kind: 'gantry' });
-    const lamps = base.filter(b => b.post).map(b => ({ x: (b.x0 + b.x1) / 2, z: (b.z0 + b.z1) / 2, r: Math.max(.32, (b.x1 - b.x0) / 2 + .08) })).filter(l => { const i = nearest(l.x, l.z, 0), q = P[i]; return Math.hypot(l.x - q.x, l.z - q.z) < CAPS[Z[i]] + l.r; });
+    const lamps = base.filter(b => b.post).map(b => ({ x: (b.x0 + b.x1) / 2, z: (b.z0 + b.z1) / 2, r: Math.max(.32, (b.x1 - b.x0) / 2 + .08) })).filter(l => { const i = nearest(l.x, l.z, 0), q = P[i]; return Math.hypot(l.x - q.x, l.z - q.z) < CAP + l.r; });
     for (const l of lamps) solid.push({ x0: l.x - l.r, z0: l.z - l.r, x1: l.x + l.r, z1: l.z + l.r, kind: 'foam', x: l.x, z: l.z });
-    const chic = [];
-    for (const [xa, xb, s] of [[38.5, 43, 1], [51, 55.5, -1]]) {
-      const i = nearest((xa + xb) / 2, -13.4, 0), a = s * .45, b = s * 3.1, za = P[i].z + L[i].z * a, zb = P[i].z + L[i].z * b;
-      const box = { x0: xa, x1: xb, z0: Math.min(za, zb), z1: Math.max(za, zb), kind: 'cones' };
-      solid.push(box); chic.push(box);
-    }
-    const c2 = corridor([...base, ...extra, ...solid]);
-    erode(c2);
+    const c2 = corridor(TR, [...base, ...extra, ...solid]);
+    erode(c2, LO, HI);
     racingLine();
     grid = hashBoxes(base.filter(b => b.y1 > 1.5));
-    // boost pads on the straights of the fields, item boxes where it's wide
+    // boost pads on the straights, item boxes across the road where it's wide; not at the crossing
+    const clear = (j, w) => { for (let d = -w; d <= w; d++) if (XZ[(j + d + N) % N]) return false; return true; };
     PADS = [];
-    for (const u of [.12, .38, .62, .84]) { const i = pickSpot(u, j => Z[j] >= 1 && width(j) > 5.2 && straight(j, 14) && PADS.every(p => Math.abs(p.i - j) > 120)); if (PADS.every(p => p.i !== i)) PADS.push({ i, c: clamp(LINE[(i + 4) % N], LO[i] + 1.7, HI[i] - 1.7) }); }
-    ROWS = [.24, .56, .77].map(u => pickSpot(u, j => Z[j] >= 1 && width(j) > 5.4 && straight(j, 12)));
+    const padOk = (j) => j < N - 100 && width(j) > 8 && straight(j, 14) && clear(j, 30) && PADS.every(p => Math.abs(p.i - j) > 120);
+    for (const u of [.24, .32, .73]) { const i = pickSpot(u, padOk); if (padOk(i)) PADS.push({ i, c: clamp(LINE[(i + 4) % N], LO[i] + 1.7, HI[i] - 1.7) }); }
+    ROWS = [];
+    for (const u of [.13, .4, .8]) ROWS.push(pickSpot(u, j => j < N - 60 && width(j) > 8 && Math.abs(K[j]) < 1 / 30 && clear(j, 12) && PADS.every(p => Math.abs(p.i - j) > 40) && ROWS.every(r => Math.abs(r - j) > 150)));
     let minW = Infinity, minAt = 0; for (let i = 0; i < N; i++) if (width(i) < minW) { minW = width(i); minAt = i; }
-    stats = { minW: r2(minW), minAt, minX: r2(P[minAt].x), minZ: r2(P[minAt].z), minR: r2(TR.minR), len: Math.round(TR.len), cyp: cyp.length, lamps: lamps.length, town: base.length };
+    stats = { minW: r2(minW), minAt, minX: r2(P[minAt].x), minZ: r2(P[minAt].z), minR: r2(TR.minR), minRAt: TR.minRAt, len: Math.round(TR.len), cyp: cyp.length, lamps: lamps.length, town: base.length };
+    // the promise to the players: wide, and no hairpin tighter than 11 m
+    if (minW < 9 || TR.minR < 11) console.warn('[kart] track too tight', stats);
     const all = hashBoxes([...base, ...extra]);
-    plan = { c1, c2, base, extra, solid, lamps, chic, cyp, wallAt: (x, z) => all.inside(x, z) };
+    plan = { c1, c2, base, extra, solid, lamps, cyp, wallAt: (x, z) => all.inside(x, z) };
   }
   function gridSlot(s) {
     const i = (N - 8 - Math.floor(s / 2) * 10 - (s % 2) * 5) % N;
-    return { i, lat: clamp(s % 2 ? -1.1 : 1.1, LO[i] + .9, HI[i] - .9) };
+    return { i, lat: clamp(mid(i) + (s % 2 ? -2.4 : 2.4), LO[i] + 1.2, HI[i] - 1.2) };
   }
 
   // ---------- the dressing: built once, the same for everyone ----------
@@ -330,7 +417,7 @@ export function createKart({ scene, camera, audio, ui }) {
     const pos = [], uv = [], idx = [], cols = [];
     for (let j = i0; j <= i1; j++) {
       const k = ((j % N) + N) % N, p = P[k], l = L[k], A = fv(a, k), B = fv(b, k);
-      pos.push(p.x + l.x * A, p.y + ya, p.z + l.z * A, p.x + l.x * B, p.y + yb, p.z + l.z * B);
+      pos.push(p.x + l.x * A, p.y + fv(ya, k), p.z + l.z * A, p.x + l.x * B, p.y + fv(yb, k), p.z + l.z * B);
       const v = j * ds / vS; uv.push(0, v, uS, v);
       if (col) { const [c1, c2] = col(k); cols.push(c1.r, c1.g, c1.b, c2.r, c2.g, c2.b); }
       if (j < i1) { const q = (j - i0) * 2; idx.push(q, q + 2, q + 1, q + 1, q + 2, q + 3); }
@@ -413,25 +500,32 @@ export function createKart({ scene, camera, audio, ui }) {
       white: V.mat(0xf2eee4, { roughness: .6 }), grey: V.mat(0x9a9ca4, { roughness: .8 }), dark: V.TRIM(), steel: V.mat(0x6a7480, { metalness: .6, roughness: .4 }),
       red: V.mat(0xd8322a, { roughness: .45 }), wood: V.mat(0x9a7048, { roughness: .9 }), orange: V.mat(0xff7a1a, { roughness: .6 }), gold: V.mat(0xffb020, { metalness: .3, roughness: .45 }),
     };
-    const { c2, lamps, chic } = plan;
+    const { c2, lamps } = plan;
     const behind = (s, i) => { const q = at(i, (s > 0 ? c2.hi[i] : c2.lo[i]) + s * .9); return !!plan.wallAt(q.x, q.z); };
-    const kind = (s, i) => (s > 0 ? c2.kh[i] : c2.kl[i]) || (behind(s, i) ? 1 : 0);
     const raw = (s, i) => s > 0 ? c2.hi[i] : c2.lo[i];
-    const country = (i) => P[i].z > 30;
+    const edge = (s, i) => s > 0 ? HI[i] : LO[i];
+    // at the crossing an edge can run over the other road: no line, no barrier there
+    const over = [new Uint8Array(N), new Uint8Array(N)];
+    for (let i = 0; i < N; i++) if (XZ[i]) for (const s of [1, -1]) { const q = at(i, edge(s, i)); over[s > 0 ? 1 : 0][i] = onRoad(q.x, q.z, .3, i) ? 1 : 0; }
+    const isOver = (s, i) => over[s > 0 ? 1 : 0][i] === 1;
+    // where two stretches run side by side they share one wall, put up from the first of them
+    const med = (s, i) => s > 0 ? c2.mh[i] : c2.ml[i];
+    const kind = (s, i) => isOver(s, i) ? 2 : med(s, i) ? 3 : (s > 0 ? c2.kh[i] : c2.kl[i]) || (behind(s, i) ? 1 : 0);
+    const country = (i) => Z[i] === 3;
+    // the second pass over the crossing is laid a little higher, so the mats don't fight
+    const lift = (i) => XZ[i] === 2 ? .012 : 0;
 
     // ---------- on the ground: track mats over the grass, painted lines, kerbs, the grid ----------
     const mats = [];
-    for (const [i0, i1] of runs(i => Z[i] === 3, 2)) mats.push(strip(i0, i1, (k) => LO[k] - .25, (k) => HI[k] + .25, .035, .035, { uS: 3, vS: 3 }));
+    for (const up of [0, 1]) for (const [i0, i1] of runs(i => (XZ[i] === 2) === !!up, 2)) mats.push(strip(i0, i1, (k) => LO[k] - .25, (k) => HI[k] + .25, .035 + up * .012, .035 + up * .012, { uS: 3, vS: 3 }));
     addMerged(mats, M.mat);
     const lines = [];
-    for (const s of [1, -1]) for (const [i0, i1] of runs(i => Z[i] !== 0, 2)) lines.push(strip(i0, i1, (k) => (s > 0 ? HI[k] : LO[k]) - s * .12, (k) => (s > 0 ? HI[k] : LO[k]) - s * .26, .045, .045));
-    // the street gets a dashed white line at its edges, painted over the kerbstones' shadow
-    for (const s of [1, -1]) for (const [i0, i1] of runs(i => Z[i] === 0 && kind(s, i) === 0, 6)) for (let j = i0; j < i1 - 3; j += 6) lines.push(strip(j, j + 3, raw(s, j % N) - s * .1, raw(s, j % N) - s * .25, .06, .06));
+    for (const s of [1, -1]) for (const up of [0, 1]) for (const [i0, i1] of runs(i => !isOver(s, i) && (XZ[i] === 2) === !!up, 2)) lines.push(strip(i0, i1, (k) => edge(s, k) - s * .12, (k) => edge(s, k) - s * .3, .045 + up * .012, .045 + up * .012));
     addMerged(lines, M.paint);
     const kerbs = [];
-    for (const s of [1, -1]) for (const [i0, i1] of runs(i => Math.sign(K[i]) === s && Math.abs(K[i]) > 1 / 26, 3)) {
+    for (const s of [1, -1]) for (const [i0, i1] of runs(i => Math.sign(K[i]) === s && Math.abs(K[i]) > 1 / 28 && !XZ[i], 3)) {
       const a = Math.max(0, i0 - 6), b = i1 + 6;
-      kerbs.push(strip(a, b, (k) => (s > 0 ? HI[k] : LO[k]) - s * 1.0, (k) => s > 0 ? HI[k] : LO[k], .05, .05, { vS: 2 }));
+      kerbs.push(strip(a, b, (k) => edge(s, k) - s * 1.2, (k) => edge(s, k), (k) => .05 + lift(k), (k) => .05 + lift(k), { vS: 2 }));
     }
     addMerged(kerbs, M.kerb);
     addMerged([strip(0, 3, LO[0], HI[0], .055, .055, { uS: 1, vS: 1.22 })], new THREE.MeshBasicMaterial({ map: checker, ...decal }));
@@ -440,8 +534,8 @@ export function createKart({ scene, camera, audio, ui }) {
     addMerged(slots, M.paint);
     {
       const t = V.paintTex(512, 128, (g, w, h) => { g.clearRect(0, 0, w, h); g.font = `96px ${DISPLAY}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = 'rgba(255,255,255,.8)'; g.fillText('a hole', w / 2, h / 2 + 6); });
-      const m = new THREE.Mesh(strip(14, 22, -2, 2, .055, .055), new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false, ...decal }));
-      const uv = m.geometry.attributes.uv; for (let n = 0; n < uv.count; n++) { const j = Math.floor(n / 2); uv.setXY(n, n % 2 ? 0 : 1, j / 8); }
+      const m = new THREE.Mesh(strip(12, 26, -3.5, 3.5, .055, .055), new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false, ...decal }));
+      const uv = m.geometry.attributes.uv; for (let n = 0; n < uv.count; n++) { const j = Math.floor(n / 2); uv.setXY(n, n % 2 ? 0 : 1, j / 14); }
       root.add(m);
     }
     {
@@ -451,16 +545,28 @@ export function createKart({ scene, camera, audio, ui }) {
       addMerged(PADS.map(p => strip(p.i, p.i + 8, p.c - 1.4, p.c + 1.4, .06, .06, { vS: 2.5 })), mat, { recv: false });
     }
 
-    // ---------- barriers where the town leaves it open: concrete and catch fences in the
-    // street, plastic blocks over the grass, straw in the country, tyres on the outside of
+    // ---------- barriers where the town leaves it open: concrete and catch fences along the
+    // straight, plastic blocks by the houses, straw in the fields, tyres on the outside of
     // the corners ----------
     const walls = [], caps = [], fences = [], posts = [], blocks = [], blockCols = [], bales = [], tyres = [], tyreCols = [], crowd = [], crowdCols = [];
-    // spectators sat on straw by the cypress lane and on the grass by the lane down to it
-    for (const [x0, x1, z] of [[-6, 6, 89.4], [-5, 5, 90.2]]) for (let x = x0; x < x1; x += .66) { bales.push({ x, y: .26, z, ry: Math.PI / 2 }); if (R() < .8) { crowd.push({ x, y: .95, z, s: .9 + R() * .2 }); crowdCols.push(new THREE.Color().setHSL(R(), .5 + R() * .3, .45 + R() * .2)); } }
+    const free = (x, z) => !inWall(x, z) && !plan.wallAt(x, z) && !onRoad(x, z, .5);
+    // spectators sat on straw on the grass, by the corners and the crossing
+    for (const [u, s0] of [[.075, 0], [.33, 0], [.47, 0], [.62, 0], [.8, 0], [.97, 0]]) {
+      const i = pickSpot(u, j => !XZ[j] && Z[j] !== 0);
+      const s = s0 || (Math.sign(Kw[i]) === 1 ? -1 : 1);
+      for (let k = -9; k <= 9; k++) {
+        const j = (i + Math.round(k * .66 / ds) + N) % N;
+        if (kind(s, j) !== 0) continue;
+        const p = at(j, raw(s, j) + s * 2.6), p2 = at(j, raw(s, j) + s * 3.3);
+        if (!free(p.x, p.z) || !free(p2.x, p2.z)) continue;
+        bales.push({ x: p.x, y: .26, z: p.z, ry: H[j] });
+        if (R() < .85) { crowd.push({ x: p.x, y: .95, z: p.z, s: .9 + R() * .2 }); crowdCols.push(new THREE.Color().setHSL(R(), .5 + R() * .3, .45 + R() * .2)); }
+      }
+    }
     const tyreAt = (x, y, z, n, row, h = 3) => { for (let k = 0; k < h; k++) { tyres.push({ x, y: y + .16 + k * .32, z }); tyreCols.push(C(row ? 0x222226 : (n & 1 ? 0xf2f0ea : 0xd8322a))); } };
     for (const s of [1, -1]) {
       const open = (i) => kind(s, i) === 0;
-      const corner = (i) => Math.abs(Kw[i]) > 1 / 34 && Math.sign(Kw[i]) === -s;
+      const corner = (i) => Math.abs(Kw[i]) > 1 / 40 && Math.sign(Kw[i]) === -s;
       for (const [i0, i1] of runs(i => open(i) && Z[i] === 0, 4)) {
         walls.push(strip(i0, i1, (k) => raw(s, k), (k) => raw(s, k), 0, .95, { vS: 4 }));
         caps.push(strip(i0, i1, (k) => raw(s, k), (k) => raw(s, k) + s * .4, .95, .95));
@@ -468,16 +574,27 @@ export function createKart({ scene, camera, audio, ui }) {
         fences.push(strip(i0, i1, (k) => raw(s, k) + s * .3, (k) => raw(s, k) + s * .3, .95, 3.6, { uS: 2.65 / 1.5, vS: 1.5 }));
         for (let j = i0; j <= i1; j += 7) { const p = at(j, raw(s, j % N) + s * .3); posts.push({ x: p.x, y: 1.8, z: p.z, sy: 3.7 }); }
       }
+      for (const [i0, i1] of runs(i => kind(s, i) === 3 && med(s, i) - 1 > i, 2)) {
+        const a = (k) => raw(s, k) + s * (GAP / 2 - .2), b = (k) => raw(s, k) + s * (GAP / 2 + .2);
+        walls.push(strip(i0, i1, a, a, 0, .95, { vS: 4 }), strip(i0, i1, b, b, 0, .95, { vS: 4 }));
+        caps.push(strip(i0, i1, a, b, .95, .95));
+      }
       let n = 0;
       for (const [i0, i1] of runs(i => open(i) && Z[i] !== 0, 3)) {
         for (let j = i0; j < i1; j += 1.3 / ds) {
           const k = Math.floor(j) % N, lat = raw(s, k), h = H[k];
-          if (corner(k)) { for (const [row, d] of [[0, .45], [1, 1.3]]) { const p = at(k, lat + s * d); if (!inWall(p.x, p.z)) tyreAt(p.x, 0, p.z, n, row); } }
+          if (corner(k)) { for (const [row, d] of [[0, .45], [1, 1.3]]) { const p = at(k, lat + s * d); if (!inWall(p.x, p.z) && !onRoad(p.x, p.z, .2, k)) tyreAt(p.x, 0, p.z, n, row); } }
           else if (country(k)) { const p = at(k, lat + s * .3); if (!inWall(p.x, p.z)) bales.push({ x: p.x, y: .26, z: p.z, ry: h }); }
           else { const p = at(k, lat + s * .28); if (!inWall(p.x, p.z)) { blocks.push({ x: p.x, y: .42, z: p.z, ry: h }); blockCols.push(C(n & 1 ? 0xf2f0ea : 0xd8322a)); } }
           n++;
         }
       }
+    }
+    // tyre walls at the noses of the islands either side of the crossing, facing the traffic
+    for (let i = 0; i < N; i++) for (const s of [1, -1]) {
+      if (!XZ[i] || isOver(s, i) || !isOver(s, (i + 1) % N) && !isOver(s, (i + N - 1) % N)) continue;
+      const q = at(i, edge(s, i) + s * .5);
+      if (!onRoad(q.x, q.z, 0, i)) for (let k = 0; k < 3; k++) { const p = at(i, edge(s, i) + s * (.5 + k * .85)); if (!onRoad(p.x, p.z, 0, i) && !inWall(p.x, p.z)) tyreAt(p.x, 0, p.z, k, 0, 3); }
     }
     addMerged(walls, M.concrete, { cast: true });
     addMerged(caps, M.cap);
@@ -485,21 +602,10 @@ export function createKart({ scene, camera, audio, ui }) {
     inst(new THREE.BoxGeometry(.1, 1, .1), M.steel, posts, { cast: false });
     inst(V.roundBox(.5, .84, 1.24, .08), M.plastic, blocks, { colors: blockCols });
     inst(new THREE.BoxGeometry(.5, .52, 1.25), M.straw, bales);
-    // the gate: plastic blocks and a sign
+    // our garden gate stays shut: plastic blocks across it
     { const g = plan.extra.find(b => b.gate); let n = 0; for (let x = g.x0 + .65; x < g.x1; x += 1.28) put(V.roundBox(1.24, .84, .5, .08), n++ & 1 ? M.white : M.red, x, .42, (g.z0 + g.z1) / 2); }
-    // foam round the lamp posts, tyre stacks round the posts at the ends of the street
+    // foam round the posts by the track
     for (const l of lamps) { put(new THREE.CylinderGeometry(l.r, l.r, 2.2, 12), M.concrete, l.x, 1.1, l.z); }
-    // the chicane: two islands of cones
-    const cones = [];
-    for (const b of chic) { for (let x = b.x0; x <= b.x1 + .01; x += .7) for (const z of [b.z0, b.z1]) cones.push({ x, y: 0, z }); for (let z = b.z0 + .7; z < b.z1; z += .7) for (const x of [b.x0, b.x1]) cones.push({ x, y: 0, z }); }
-    {
-      const cg = new THREE.ConeGeometry(.22, .62, 12); cg.translate(0, .31, 0);
-      const band = new THREE.CylinderGeometry(.13, .16, .12, 12); band.translate(0, .34, 0);
-      const base = new THREE.BoxGeometry(.44, .04, .44); base.translate(0, .02, 0);
-      inst(cg, M.orange, cones); inst(band, M.white, cones, { cast: false }); inst(base, M.dark, cones, { cast: false });
-    }
-    // tyre stacks at the ends of the chicane islands, facing the traffic
-    for (const b of chic) { const x = b.x0 - .5; for (let z = b.z0 + .45; z < b.z1; z += .9) tyreAt(x, 0, z, Math.round(z * 2), 0, 2); }
     inst(new THREE.CylinderGeometry(.42, .42, .3, 12), M.tyre, tyres, { colors: tyreCols });
     const tyreN = tyres.length;
 
@@ -524,15 +630,18 @@ export function createKart({ scene, camera, audio, ui }) {
       root.add(g);
       deco.gantry = g;
     }
-    // ---------- banners strung across the street, sponsors, a flag at each end ----------
+    // ---------- banners strung across the track, sponsors ----------
     const sponsors = ['a hole', 'pelles martin', 'taupe-cola', 'dynamite & fils', 'radio taupe', 'creusez plus'].map((t, n) => sign(t, { bg: ['#1a130d', '#2f6bff', '#d8322a', '#ffb020', '#33904f', '#f4efe6'][n], fg: ['#ffb020', '#fff', '#fff', '#1a130d', '#fff', '#2f6bff'][n] }));
     const ropes = [];
-    [-30, 12, 84, 104].forEach((bx, n) => {
-      const i = nearest(bx, -13.4, 0), a = at(i, plan.c1.hi[i] - .1), b = at(i, plan.c1.lo[i] + .1), w = Math.hypot(a.x - b.x, a.z - b.z);
-      const ban = new THREE.Mesh(new THREE.PlaneGeometry(Math.min(w - .6, 4.6), 1), new THREE.MeshBasicMaterial({ map: sponsors[n % sponsors.length], side: THREE.DoubleSide }));
+    const banned = [];
+    [.02, .2, .45, .7, .93].forEach((u, n) => {
+      const i = pickSpot(u, j => straight(j, 10) && !XZ[j] && banned.every(k => Math.abs(k - j) > 60) && [HI[j] + .35, LO[j] - .35].every(l => { const q = at(j, l); return !onRoad(q.x, q.z, .1, j); }));
+      banned.push(i);
+      const a = at(i, HI[i] + .35), b = at(i, LO[i] - .35), w = Math.hypot(a.x - b.x, a.z - b.z);
+      const ban = new THREE.Mesh(new THREE.PlaneGeometry(Math.min(w - .6, 7), 1.3), new THREE.MeshBasicMaterial({ map: sponsors[(n + 1) % sponsors.length], side: THREE.DoubleSide }));
       ban.position.set((a.x + b.x) / 2, 5.6, (a.z + b.z) / 2); ban.rotation.y = H[i] + Math.PI; root.add(ban);
-      for (const q of [a, b]) put(new THREE.CylinderGeometry(.05, .05, 6.6, 6), M.steel, q.x, 3.3, q.z);
-      for (const y of [6.15, 5.05]) ropes.push(new THREE.Vector3(a.x, y + .1, a.z), new THREE.Vector3((a.x + b.x) / 2, y, (a.z + b.z) / 2), new THREE.Vector3((a.x + b.x) / 2, y, (a.z + b.z) / 2), new THREE.Vector3(b.x, y + .1, b.z));
+      for (const q of [a, b]) put(new THREE.CylinderGeometry(.06, .06, 6.6, 6), M.steel, q.x, 3.3, q.z);
+      for (const y of [6.3, 4.9]) ropes.push(new THREE.Vector3(a.x, y + .1, a.z), new THREE.Vector3((a.x + b.x) / 2, y, (a.z + b.z) / 2), new THREE.Vector3((a.x + b.x) / 2, y, (a.z + b.z) / 2), new THREE.Vector3(b.x, y + .1, b.z));
     });
     root.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(ropes), new THREE.LineBasicMaterial({ color: 0x2a2e34 })));
     // ---------- grandstands: scaffolding, planks, a crowd, a sponsor board ----------
@@ -559,8 +668,11 @@ export function createKart({ scene, camera, audio, ui }) {
       const fr = new THREE.Mesh(new THREE.PlaneGeometry(wx - .2, .7), new THREE.MeshBasicMaterial({ map: sponsors[(ad + 2) % 6], side: THREE.DoubleSide }));
       fr.position.set((x0 + x1) / 2, .55, zf - sgn * .02); root.add(fr);
     }
-    stand(67.5, -9.9, 74.1, -3.4, 'n', 6, 1);
-    stand(62, 53.4, 84, 59.4, 'n', 6, 3);
+    // between our garden and the church, inside the turn by the bakery, and two by the back houses
+    stand(47, 34.5, 55, 37.5, 's', 3, 0);
+    stand(69, 28, 77, 31, 's', 3, 5);
+    stand(88, 58.5, 100, 62, 'n', 3, 1);
+    stand(62, 68, 74, 71.5, 'n', 3, 3);
     inst(new THREE.CapsuleGeometry(.2, .36, 2, 6), new THREE.MeshStandardMaterial({ roughness: .8 }), crowd, { cast: false, colors: crowdCols });
     // ---------- marshal posts: a little hut, a marshal in orange, a yellow flag ----------
     {
@@ -568,9 +680,9 @@ export function createKart({ scene, camera, audio, ui }) {
       for (const u of [.08, .18, .3, .42, .52, .62, .78, .9]) {
         const i = Math.round(u * N) % N;
         for (const s of [-1, 1]) {
-          if (kind(s, i) !== 0) continue;
+          if (kind(s, i) !== 0 || XZ[i]) continue;
           const q = at(i, raw(s, i) + s * 1.7);
-          if (inWall(q.x, q.z) || inWall(q.x + 1, q.z + 1) || inWall(q.x - 1, q.z - 1)) continue;
+          if ([1.2, 1.7, 2.6, 3.3].some(d => { const p = at(i, raw(s, i) + s * d); return !free(p.x, p.z) || inWall(p.x + .8, p.z + .8) || inWall(p.x - .8, p.z - .8); })) continue;
           const ry = Math.atan2(-L[i].x * s, -L[i].z * s);
           put(V.roundBox(1.2, 2.1, 1.2, .06), M.white, q.x + L[i].x * s * .9, 1.05, q.z + L[i].z * s * .9, ry);
           put(V.roundBox(1.5, .12, 1.5, .04), M.orange, q.x + L[i].x * s * .9, 2.16, q.z + L[i].z * s * .9, ry);
@@ -633,7 +745,7 @@ export function createKart({ scene, camera, audio, ui }) {
       deco.smoke = V.createPuffs(root, 48, 0xe8e4dc);
       deco.dust = V.createPuffs(root, 32, 0x9b7b52);
     }
-    stats.ms = [Math.round(t1 - t0), Math.round(performance.now() - t1)]; stats.tyres = tyreN; stats.cones = cones.length; stats.bales = bales.length; stats.blocks = blocks.length;
+    stats.ms = [Math.round(t1 - t0), Math.round(performance.now() - t1)]; stats.tyres = tyreN; stats.bales = bales.length; stats.blocks = blocks.length;
   }
 
   // ---------- the town while we race: the passers-by and the delivery van step aside ----------
@@ -739,9 +851,11 @@ export function createKart({ scene, camera, audio, ui }) {
     karts = list.map((o, n) => makeKart(n, o));
     karts.forEach((k, n) => {
       place(k, n);
-      k.skill = .93 + R() * .06; k.lane = (R() - .5) * 1.2;
+      k.skill = .93 + R() * .06; k.lane = (R() - .5) * 3;
       k.local = k.me || (k.bot && botOwner === meId);
       k.heard = !k.human || k.me;
+      // on the grid already, for whoever looks before the first frame (the game menu's preview)
+      k.g.position.set(k.x, k.y, k.z); k.g.rotation.set(0, k.yaw, 0); k.g.visible = true;
     });
     me = karts.find(k => k.me);
     camYaw = me.yaw; baseFov = fovSet = fov = camera.fov;
@@ -911,7 +1025,8 @@ export function createKart({ scene, camera, audio, ui }) {
   }
   function stepHazards(dt) {
     for (let n = hazards.length - 1; n >= 0; n--) {
-      const h = hazards[n];
+      // a shell can take another hazard with it: the list may have got shorter
+      const h = hazards[n]; if (!h) continue;
       h.age += dt;
       if (h.ty === 'verte' || h.ty === 'rouge') {
         if (h.ty === 'rouge') {
