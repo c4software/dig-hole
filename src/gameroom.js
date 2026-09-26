@@ -300,13 +300,47 @@ const MINI = {
     add(hg, Cy(.003, .003, .1, 4), N(0xffd75e, 1.4), 0, -.04, 0);
     anim((dt, t) => { const c = t % 12; hg.rotation.z = c < 11 ? 0 : (c - 11) * Math.PI; hg.rotation.y = t * .3; });
   },
+  // a mole in a red helmet, bazooka on the shoulder, on a crumbly island in a puddle; a grenade at its feet
+  worms(g, anim) {
+    add(g, Cy(.24, .24, .012, 28), M(0x2a8ad8, .1, .15, 0x0a2a4a), 0, .006, 0);
+    const soil = L(0x7a4a28), dark = L(0x5a3418), grass = L(0x4fb030);
+    const isl = add(g, Cy(.17, .1, .1, 9), soil, 0, .06, 0); isl.rotation.y = .3;
+    add(g, Cy(.172, .17, .022, 9), grass, 0, .115, 0, 0, .3);
+    for (const [x, y, z, s] of [[.13, .05, .07, .045], [-.14, .04, -.05, .05], [.05, .03, -.14, .04], [-.09, .07, .12, .035]]) add(g, new THREE.DodecahedronGeometry(s, 0), dark, x, y, z, x * 9, z * 7, 0);
+    for (const [x, y, z, s] of [[.2, .14, .02, .016], [.22, .09, -.04, .012]]) add(g, B(s, s, s), soil, x, y, z, .5, .3, .7);   // crumbs flying off the edge
+    const mole = new THREE.Group(); mole.position.set(-.02, .126, .01); mole.rotation.y = .7; mole.userData.keep = true; g.add(mole);
+    const fur = L(0x5e4d5c), pink = L(0xf2a0b4), red = M(0xff3d5e, .3, .35), olive = L(0x6f8a3a);
+    const body = add(mole, Sp(.062, 18, 14), fur, 0, .07, 0); body.scale.set(1, 1.15, .95);
+    add(mole, Sp(.04, 12, 10), L(0x8a7584), 0, .055, .03).scale.set(1, 1.1, .6);
+    add(mole, Sp(.026, 12, 10), L(0xc9a3b4), 0, .08, .058).scale.set(1, .8, 1.1);
+    add(mole, Sp(.012, 10, 8), N(0xff7fa4, 1), 0, .082, .086);
+    for (const s of [-1, 1]) {
+      add(mole, Sp(.007, 8, 6), L(0x111111), s * .022, .1, .052);
+      add(mole, Sp(.018, 10, 8), pink, s * .03, .006, .02).scale.set(1, .5, 1.4);
+    }
+    add(mole, new THREE.SphereGeometry(.058, 18, 8, 0, Math.PI * 2, 0, Math.PI / 2), red, 0, .11, -.004);
+    add(mole, Cy(.068, .068, .01, 20), M(0xa8182f, .3, .4), 0, .112, -.004);
+    add(mole, Sp(.008, 8, 6), L(0xffffff), 0, .168, .01);
+    // the bazooka over the right shoulder, aiming up
+    const baz = new THREE.Group(); baz.position.set(.05, .1, 0); baz.rotation.set(0, -.5, .45); mole.add(baz);
+    add(baz, Cy(.018, .018, .19, 12), olive, 0, 0, 0, 0, 0, Math.PI / 2);
+    add(baz, Cy(.022, .022, .03, 12), L(0x4c6326), .1, 0, 0, 0, 0, Math.PI / 2);
+    add(baz, Cy(.019, .019, .02, 12), L(0xffb020), -.02, 0, 0, 0, 0, Math.PI / 2);
+    add(baz, Sp(.016, 8, 6), pink, -.03, -.022, .012);
+    add(mole, Sp(.016, 8, 6), pink, .045, .05, .045);
+    // the grenade
+    add(g, Sp(.022, 12, 10), L(0x4f8a3a), -.1, .148, .07).scale.set(1, 1.2, 1);
+    add(g, B(.014, .012, .014), L(0xb8b8b8), -.1, .178, .07);
+    add(g, To(.008, .002, 4, 10), L(0xb8b8b8), -.088, .186, .07);
+    anim((dt, t) => { const c = t % 5; mole.rotation.y = .7 + Math.sin(t * .6) * .35; baz.position.x = .05 - (c < .15 ? (.15 - c) * .12 : 0); mole.position.y = .126 + Math.abs(Math.sin(t * 2.2)) * .006; });
+  },
 };
 
 // which game sits where: the front wall, the right wall, the back
 const PLACES = [
   ['nes', 0xff3d5e], ['rc', 0xff7a1a], ['kart', 0x39c8ff], ['encre', 0x39e05a], ['peinture', 0xffd21f], ['laser', 0x4a9aff], ['taupe', 0xc07aff], ['tresor', 0xffc629],
   ['course', 0x39e0c8], ['plongeon', 0xff9a3a], ['chrono', 0xffe08a],
-  ['anneaux', 0xffc629], ['pile', 0xff4ad8], ['ruee', 0xffd21f],
+  ['anneaux', 0xffc629], ['pile', 0xff4ad8], ['ruee', 0xffd21f], ['worms', 0x8ae04a],
 ];
 
 // where the 2D games are shown: filled by buildGameRoom, in world space
@@ -534,6 +568,29 @@ export function buildGameRoom({ g, addBox, interactables, F, HH, HH2, HW, T, zf,
   add(chair, B(.12, .5, .105), L(0x1a1a22), 0, .92, -.22);
   addBox(MX - .75, F, PZ1, MX + .75, F + .77, PZ1 + .62);
 
+  // ---------- an old beige pc on a desk in the back nook, for « taupes de guerre » (4:3) ----------
+  const PX = 2.3, PZ = ZB + .41, beige = L(0xd8cfb4), beige2 = L(0xc4b998);
+  add(room, B(1.3, .05, .76), M(0x6a4a30, .1, .6), PX, F + .74, PZ);
+  for (const x of [-.6, .6]) add(room, B(.05, .72, .66), L(0x4a3222), PX + x, F + .36, PZ);
+  add(room, B(1.3, .02, .012), N(0x8ae04a, 2), PX, F + .71, PZ + .38);
+  add(room, B(.7, .14, .46), beige, PX, F + .835, ZB + .28);
+  add(room, B(.2, .022, .004), L(0x2a2a2a), PX - .16, F + .85, ZB + .512);
+  add(room, B(.022, .022, .004), N(0x39e05a, 2.4), PX + .27, F + .81, ZB + .512);
+  plane(room, .24, .05, glowMat(canvasTex(256, 52, (x) => { x.fillStyle = '#d8cfb4'; x.fillRect(0, 0, 256, 52); x.fillStyle = '#5a4a3a'; x.font = `30px ${DISPLAY}`; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('taupe 486', 128, 28); }), 1), PX + .1, F + .815, ZB + .512);
+  add(room, B(.8, .64, .4), beige, PX, F + 1.225, ZB + .3);
+  add(room, B(.56, .46, .08), beige2, PX, F + 1.225, ZB + .07);
+  add(room, B(.68, .52, .012), L(0x151515), PX, F + 1.235, ZB + .502);
+  const wormsScreen = plane(room, .62, .465, glassMat(), PX, F + 1.235, ZB + .51);
+  wormsScreen.name = 'screen-worms'; wormsScreen.userData.keep = true;
+  add(room, Cy(.014, .014, .01, 10), N(0xffb020, 2.2), PX + .33, F + .95, ZB + .502, Math.PI / 2);
+  // keyboard, mouse, a floppy, a mug
+  add(room, B(.5, .025, .16), beige, PX - .06, F + .778, ZB + .62, .08);
+  for (let r = 0; r < 4; r++) add(room, B(.44, .008, .025), beige2, PX - .06, F + .795 - r * .003, ZB + .565 + r * .035);
+  add(room, B(.06, .02, .09), beige, PX + .33, F + .775, ZB + .63);
+  add(room, B(.09, .004, .09), L(0x2f6bff), PX - .48, F + .767, ZB + .6, 0, .3);
+  add(room, Cy(.035, .03, .08, 14), L(0xff3d5e), PX + .5, F + .805, ZB + .45);
+  addBox(PX - .65, F, ZB, PX + .65, F + .77, ZB + .8);
+
   // ---------- the pedestals: one homage per mini-game ----------
   const plateTex = (name, color) => canvasTex(512, 128, (x) => {
     x.fillStyle = '#0b0816'; x.fillRect(0, 0, 512, 128);
@@ -541,9 +598,9 @@ export function buildGameRoom({ g, addBox, interactables, F, HH, HH2, HW, T, zf,
     neon(x, name, 256, 66, 58, hex(color), DISPLAY, 460);
   });
   const spots = [];
-  for (let n = 0; n < 8; n++) spots.push([-4.55 + n * 1.3, ZF - .55, Math.PI]);
-  for (const z of [-17.1, -18.4, -19.7]) spots.push([X1 - .5, z, -Math.PI / 2]);
-  for (const x of [1.0, 2.25, 3.5]) spots.push([x, ZB + .55, 0]);
+  for (let n = 0; n < 9; n++) spots.push([-4.6 + n * 1.15, ZF - .55, Math.PI]);
+  for (const z of [-16.75, -17.8, -18.85, -19.9]) spots.push([X1 - .5, z, -Math.PI / 2]);
+  for (const x of [.9, 3.75]) spots.push([x, ZB + .55, 0]);   // either side of the old pc
   PLACES.forEach(([id, color], n) => {
     const [x, z, ry] = spots[n];
     const p = new THREE.Group(); p.position.set(x, F, z); p.rotation.y = ry; room.add(p);
@@ -619,6 +676,7 @@ export function buildGameRoom({ g, addBox, interactables, F, HH, HH2, HW, T, zf,
   };
   screens.nes = anchor(nesScreen, .68, .51);
   screens.encre = anchor(encreScreen, 1.22, .7625);
+  screens.worms = anchor(wormsScreen, .62, .465);
   // the page fonts arrive after the house is built: paint the signs again then
   document.fonts?.load?.(`40px ${DISPLAY}`).then(() => document.fonts.load(`20px ${TEXT}`)).then(() => repaint.forEach(p => p())).catch(() => {});
 
