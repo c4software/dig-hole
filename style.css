@@ -96,6 +96,11 @@ svg { display: block; overflow: visible; }
   translate: 0 -.08em; vertical-align: middle; text-shadow: none; -webkit-text-stroke: 0;
 }
 b.wide { padding: 0 .75em; }
+/* controller buttons: round face buttons in their colours, pills for triggers and menus */
+b.pad { border-radius: 999px; color: #fff; text-shadow: 0 1px 0 rgba(0, 0, 0, .35); }
+b.pad-a { background: linear-gradient(#5fd35f, #2f9e3a); } b.pad-b { background: linear-gradient(#ff6a6a, #d3313a); }
+b.pad-x { background: linear-gradient(#5aa8ff, #2a6fd6); } b.pad-y { background: linear-gradient(#ffd84a, #e0a800); color: var(--k); text-shadow: none; }
+b.pad-sh, b.pad-dp { background: linear-gradient(#4a4450, #2a2530); padding: 0 .6em; font-size: .72em; letter-spacing: .04em; }
 b.mouse { border-radius: .9em; padding: 0 .7em; background: linear-gradient(#fff, #f1e6cf); }
 
 /* ------------------------------------------------------------------ focus ring (springs between items, see menufx.js) */

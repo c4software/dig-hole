@@ -29,6 +29,7 @@ import { createRC } from './rcrace.js';
 import { createNes } from './nes.js';
 import { createEncre } from './encre.js';
 import { initMenus } from './menufx.js';
+import { createGamepad } from './gamepad.js';
 import { createKeyQuest } from './gameroom.js';
 import { createReveal } from './vrreveal.js';
 
@@ -2362,6 +2363,7 @@ function loop(ts) {
   const dt = Math.min(clock.getDelta(), 0.05);
   t += dt;
   updateClock(dt);
+  pad.update(dt);
   updateLobby(dt);
   animals[here].update(dt, player);
 
@@ -2569,7 +2571,7 @@ function loop(ts) {
   world.grassTime.value = t;
   world.follow(camera.position);
   world.updateFall(dt, camera.position);
-  relockEl.classList.toggle('hidden', !((state === 'play' || state === 'drive' || (state === 'kart' && !race?.screen)) && !document.pointerLockElement && !window.__dig.test));
+  relockEl.classList.toggle('hidden', !((state === 'play' || state === 'drive' || (state === 'kart' && !race?.screen)) && !document.pointerLockElement && !window.__dig.test && !pad.active));
   const showMini = settings.minimap && (state === 'play' || state === 'drive') && !onPlanet();
   document.getElementById('o2-row').classList.toggle('hidden', !onPlanet());
   if (onPlanet()) { const f = eco.s.oxygen / eco.cur('o2').o2; document.getElementById('o2-fill').style.width = (f * 100) + '%'; document.getElementById('o2-row').classList.toggle('low', f < .25); }
@@ -2613,6 +2615,45 @@ renderer.setAnimationLoop(loop);
 }
 initMenus({ hover: () => audio.hover(), press: () => { audio.init(); audio.pop(); } });
 
+// ---------- a controller: the same game, with sticks, triggers and a buzz ----------
+const pad = createGamepad({
+  context() {
+    if (state === 'reveal') return 'reveal';
+    if (['attract', 'paused', 'panel', 'read', 'win'].includes(state)) return 'menu';
+    if (state === 'kart') return race?.screen ? 'screen' : 'race';
+    if (state === 'drive') return 'drive';
+    if (state === 'play') return bigMap ? 'menu' : 'play';
+    return 'none';
+  },
+  actions: {
+    look(dx, dy) { if (onPlanet()) moonP.look(dx, dy, settings.sens); else player.look(dx, dy); },
+    dig(on) { if (state === 'play') digging = on; },
+    throw(on) { if (state !== 'play') return; throwing = on; if (on) { throwT = THROW_EVERY; useItem(); } },
+    slot(d) {
+      const slots = hotSlots();
+      if (!slots.length) return;
+      const i = Math.max(0, slots.indexOf(eco.s.slot));
+      eco.s.slot = slots[(i + d + slots.length) % slots.length]; audio.tick();
+    },
+    pause() { openPause(); },
+    back() {
+      if (bigMap) toggleMap();
+      else if (!superPw.classList.contains('hidden')) document.getElementById('super-cancel').click();
+      else if (state === 'panel' || state === 'read') closePanel();
+      else if (state === 'paused') document.getElementById('resume-go').click();
+    },
+    connected() { audio.init(); ui.toast('manette connectée', false, 1800); if (state === 'play') ui.hint('stick gauche marcher · stick droit regarder · RT creuser · A sauter · X interagir · start pause', 5000); },
+    disconnected() { ui.toast('manette débranchée', true, 1800); },
+  },
+});
+// felt as well as seen
+{
+  const hurt = ui.hurt, boom = audio.boom, bonk = audio.bonk;
+  ui.hurt = (...a) => { pad.rumble(.55, 170); return hurt(...a); };
+  audio.boom = (big = 1, ...a) => { pad.rumble(Math.min(1, .5 + big * .3), 320); return boom(big, ...a); };
+  audio.bonk = (...a) => { pad.rumble(.35, 110); return bonk(...a); };
+}
+
 if (params.has('go')) {
   params.delete('go');
   history.replaceState(null, '', location.pathname + (params.toString() ? '?' + params : ''));
@@ -2632,7 +2673,7 @@ window.__dig = {
   test: false,
   skipSwoop() { swoop = 1; this.test = true; },
   start, toSurface, travel, win, save, useItem, applyUpgrades, openPanel, closePanel, enterVan, exitVan, useLift, explode,
-  quest, takeKey, reveal, startReveal, gameroom: house.room, updateAim, screenView: (dt) => race?.screen && screenView(dt),
+  quest, takeKey, reveal, startReveal, gameroom: house.room, updateAim, get pad() { return pad; }, get down() { return down; }, screenView: (dt) => race?.screen && screenView(dt),
   interact: (id) => interact(id === 'van' ? VAN : id === 'lift' ? LIFT : world.interactables.find(i => i.id === id)),
   swing: doDig,
 };

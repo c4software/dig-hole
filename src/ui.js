@@ -1,5 +1,6 @@
 // ui.js, the HUD and the panels.
 import { ITEMS, SLOTS } from './economy.js';
+import { padGlyphs } from './gamepad.js';
 
 const $ = (id) => document.getElementById(id);
 const restart = (el, cls) => { el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); };
@@ -78,7 +79,7 @@ export function createUI() {
     },
     hit() { restart(el.cross, 'hit'); },
     prompt(html) {
-      if (html) el.prompt.innerHTML = html;
+      if (html) el.prompt.innerHTML = document.body.classList.contains('pad') ? padGlyphs(html) : html;
       el.prompt.classList.toggle('show', !!html);
     },
     toast(text, warn = false, ms = 1600) {
