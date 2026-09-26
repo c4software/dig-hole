@@ -1,8 +1,10 @@
 // house.js, the house you bought: a real door, and inside a bed, a charger for the
 // shovel's battery, a computer for online orders, the exploits board, a trophy shelf,
-// the previous owner's letter and a globe that knows the way to China.
+// the previous owner's letter and a globe that knows the way to China. Upstairs, behind a
+// locked door, the game room (gameroom.js); a staircase along the back wall leads there.
 import * as THREE from 'three';
 import { roofColliders } from './street.js';
+import { buildGameRoom } from './gameroom.js';
 
 const std = (color, extra) => new THREE.MeshLambertMaterial({ color, ...extra });
 
@@ -21,6 +23,7 @@ export function createHouse({ scene, colliders, interactables, label }) {
   const g = new THREE.Group();
   scene.add(g);
   const HW = 11, HD = 7, HH = 3.4, T = 0.2;
+  const F = HH + .15, H2 = 3, HH2 = HH + H2;             // upstairs: floor top, roof line
   const hz = -18.5, zf = hz + HD / 2, zb = hz - HD / 2;   // front -15, back -22
   const addBox = (x0, y0, z0, x1, y1, z1) => { const c = { min: new THREE.Vector3(x0, y0, z0), max: new THREE.Vector3(x1, y1, z1) }; colliders.push(c); return c; };
   const box = (w, h, d, mat, x, y, z, parent = g) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(x, y, z); parent.add(m); return m; };
@@ -35,11 +38,20 @@ export function createHouse({ scene, colliders, interactables, label }) {
   box(segW, HH, T, wallMat, -HW / 2 + segW / 2, HH / 2, zf - T / 2);
   box(segW, HH, T, wallMat, HW / 2 - segW / 2, HH / 2, zf - T / 2);
   box(DOOR_W, HH - DOOR_H, T, wallMat, 0, DOOR_H + (HH - DOOR_H) / 2, zf - T / 2);
-  addBox(-HW / 2, 0, zb, HW / 2, HH, zb + T);
-  addBox(-HW / 2, 0, zb, -HW / 2 + T, HH, zf);
-  addBox(HW / 2 - T, 0, zb, HW / 2, HH, zf);
+  addBox(-HW / 2, 0, zb, HW / 2, HH2, zb + T);
+  addBox(-HW / 2, 0, zb, -HW / 2 + T, HH2, zf);
+  addBox(HW / 2 - T, 0, zb, HW / 2, HH2, zf);
   addBox(-HW / 2, 0, zf - T, -DOOR_W / 2, HH, zf);
   addBox(DOOR_W / 2, 0, zf - T, HW / 2, HH, zf);
+  addBox(-HW / 2, HH, zf - T, HW / 2, HH2, zf);
+  // the upper storey, and a wooden band between the two
+  box(HW, H2, T, wallMat, 0, HH + H2 / 2, zb + T / 2);
+  box(T, H2, HD, wallMat, -HW / 2 + T / 2, HH + H2 / 2, hz);
+  box(T, H2, HD, wallMat, HW / 2 - T / 2, HH + H2 / 2, hz);
+  box(HW, H2, T, wallMat, 0, HH + H2 / 2, zf - T / 2);
+  const band = std(0x8a5a3a);
+  box(HW + .08, .22, .06, band, 0, HH + .05, zf + .02); box(HW + .08, .22, .06, band, 0, HH + .05, zb - .02);
+  box(.06, .22, HD + .08, band, -HW / 2 - .02, HH + .05, hz); box(.06, .22, HD + .08, band, HW / 2 + .02, HH + .05, hz);
   // skirting inside, a darker band so the walls read as walls
   const skirt = std(0x8a6a4a);
   box(HW - 2 * T, .14, .03, skirt, 0, .07, zb + T + .015);
@@ -59,9 +71,31 @@ export function createHouse({ scene, colliders, interactables, label }) {
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(HW - 2 * T, HD - 2 * T), new THREE.MeshLambertMaterial({ map: ft }));
   floor.rotation.x = -Math.PI / 2; floor.position.set(0, .012, hz);
   g.add(floor);
-  const ceil = new THREE.Mesh(new THREE.PlaneGeometry(HW, HD), innerMat);
-  ceil.rotation.x = Math.PI / 2; ceil.position.set(0, HH - .01, hz);
-  g.add(ceil);
+  // the ceiling is the upstairs floor, with a hole for the stairs (x SX0..SX1 along the back wall)
+  const SX0 = -3.22, SX1 = .2, SZ = -20.2, RISE = F / 10, RUN = .38;
+  for (const [x0, x1, z0, z1] of [[-HW / 2 + T, HW / 2 - T, SZ, zf - T], [-HW / 2 + T, SX0, zb + T, SZ], [SX1, HW / 2 - T, zb + T, SZ]]) {
+    box(x1 - x0, F - HH + .05, z1 - z0, innerMat, (x0 + x1) / 2, (HH - .05 + F) / 2, (z0 + z1) / 2);
+    addBox(x0, HH - .05, z0, x1, F, z1);
+  }
+  // ---------- the staircase: nine steps up the back wall, then the landing ----------
+  const stepMat = std(0x7a5634), treadMat = std(0x9a7248), nose = new THREE.MeshBasicMaterial({ color: new THREE.Color(0x39d8ff).multiplyScalar(1.8), toneMapped: false });
+  for (let n = 1; n <= 9; n++) {
+    const x1 = SX1 - (n - 1) * RUN, x0 = x1 - RUN, top = n * RISE, z1 = SZ;
+    box(x1 - x0, top, z1 - zb - T, stepMat, (x0 + x1) / 2, top / 2, (zb + T + z1) / 2);
+    box(x1 - x0 + .02, .04, z1 - zb - T + .02, treadMat, (x0 + x1) / 2, top - .02, (zb + T + z1) / 2);
+    box(.02, .02, z1 - zb - T - .1, nose, x1 - .01, top + .005, (zb + T + z1) / 2);
+    addBox(x0, 0, zb + T, x1, top, z1);
+  }
+  // a half step at the foot, the way in (from the room or along the wall)
+  box(.4, RISE / 2, .65, stepMat, SX1 + .2, RISE / 4, SZ - .325);
+  box(.02, .02, .55, nose, SX1 + .39, RISE / 2 + .005, SZ - .325);
+  addBox(SX1, 0, SZ - .65, SX1 + .4, RISE / 2, SZ);
+  // a banister on the open side: posts, a sloped rail, and a barrier so nobody bumps their head
+  const railMat = std(0x5a3a22);
+  for (let n = 4; n <= 9; n++) box(.05, .9, .05, railMat, SX1 - (n - .5) * RUN, n * RISE + .45, SZ + .03);
+  const rail = box(Math.hypot(5 * RUN, 5 * RISE) + .2, .06, .07, railMat, SX1 - 6 * RUN, 6.5 * RISE + .9, SZ + .03);
+  rail.rotation.z = -Math.atan2(RISE, RUN);
+  addBox(SX0, 0, SZ, SX1 - 3 * RUN, F + 1, SZ + .07);
   // a rug
   const rug = new THREE.Mesh(new THREE.CircleGeometry(1.3, 32), std(0x7a2a24));
   rug.rotation.x = -Math.PI / 2; rug.position.set(-1.6, .02, -18.2); rug.scale.set(1.3, 1, 1);
@@ -76,12 +110,12 @@ export function createHouse({ scene, colliders, interactables, label }) {
   roofGeo.rotateY(Math.PI / 2);
   roofGeo.translate(-(HW + 0.8) / 2, 0, 0);
   const roof = new THREE.Mesh(roofGeo, std(0xb8573a));
-  roof.position.set(0, HH, hz);
+  roof.position.set(0, HH2, hz);
   g.add(roof);
-  box(.7, 1.8, .7, std(0x8a4a38), 3, HH + 1.8, hz - 1);
+  box(.7, 1.8, .7, std(0x8a4a38), 3, HH2 + 1.8, hz - 1);
   // the ceiling stops a jetpack; the roof above can be stood on
-  addBox(-HW / 2, HH - .05, zb, HW / 2, HH + .15, zf);
-  roofColliders(addBox, { x0: -HW / 2 - .4, x1: HW / 2 + .4, z0: hz - HD / 2 - .6, z1: hz + HD / 2 + .6, y: HH, h: 2.4, kind: 'x' });
+  addBox(-HW / 2, HH2 - .05, zb, HW / 2, HH2 + .15, zf);
+  roofColliders(addBox, { x0: -HW / 2 - .4, x1: HW / 2 + .4, z0: hz - HD / 2 - .6, z1: hz + HD / 2 + .6, y: HH2, h: 2.4, kind: 'x' });
 
   // ---------- windows (through the wall, so they read from both sides) ----------
   const winMat = new THREE.MeshLambertMaterial({ color: 0x9cc0ee, emissive: 0x3a5a7a, transparent: true, opacity: .55 });
@@ -130,10 +164,12 @@ export function createHouse({ scene, colliders, interactables, label }) {
 
   // ---------- the bed (back left) ----------
   const bed = new THREE.Group();
-  box(1.2, .35, 2.1, std(0x6b4a2e), 0, .25, 0, bed);
-  box(1.1, .2, 2.0, std(0xf0e8d6), 0, .52, 0, bed);
-  box(1.12, .1, 1.3, std(0x3b4a6b), 0, .64, .35, bed);
-  box(.8, .14, .4, std(0xffffff), 0, .68, -.72, bed);
+  box(1.2, .2, 2.1, std(0x6b4a2e), 0, .34, 0, bed);
+  for (const [x, z] of [[-.54, -.98], [.54, -.98], [-.54, .98], [.54, .98]]) box(.08, .26, .08, std(0x5a3a22), x, .13, z, bed);
+  box(1.1, .2, 2.0, std(0xf0e8d6), 0, .54, 0, bed);
+  box(1.12, .1, 1.3, std(0x3b4a6b), 0, .66, .35, bed);
+  box(1.16, .2, .02, std(0x3b4a6b), .0, .52, 1.0, bed);   // the cover hangs over the foot
+  box(.8, .14, .4, std(0xffffff), 0, .7, -.72, bed);
   box(1.2, .9, .08, std(0x6b4a2e), 0, .55, -1.06, bed);
   bed.position.set(-4.4, 0, -20.6);
   g.add(bed);
@@ -175,10 +211,10 @@ export function createHouse({ scene, colliders, interactables, label }) {
   // a chair
   box(.5, .06, .5, std(0x6b4a2e), 0, .48, .75, desk);
   box(.5, .6, .06, std(0x6b4a2e), 0, .8, 1.0, desk);
-  desk.position.set(1.2, 0, -21.3);
+  desk.position.set(1.55, 0, -21.3);
   g.add(desk);
-  addBox(.3, 0, -21.75, 2.1, .85, -20.9);
-  interactables.push({ id: 'computer', pos: new THREE.Vector3(1.2, 1.1, -21.1) });
+  addBox(.65, 0, -21.75, 2.45, .85, -20.9);
+  interactables.push({ id: 'computer', pos: new THREE.Vector3(1.55, 1.1, -21.1) });
 
   // ---------- the exploits board (left wall) ----------
   const boardCanvas = document.createElement('canvas'); boardCanvas.width = 768; boardCanvas.height = 512;
@@ -318,37 +354,22 @@ export function createHouse({ scene, colliders, interactables, label }) {
   g.add(sb);
   interactables.push({ id: 'superreset', pos: new THREE.Vector3(-3.4, 1.35, zf - T - .1), reach: 2.2 });
 
-  // ---------- the arcade cabinet: the mini-games (back wall, left of the desk) ----------
-  const cab = new THREE.Group();
-  const cabMat = new THREE.MeshStandardMaterial({ color: 0x2c2a58, roughness: .5 });
-  box(.8, 1.9, .7, cabMat, 0, .95, 0, cab);
-  box(.82, .1, .72, std(0xd9a125), 0, 1.92, 0, cab);
-  const cabScreen = new THREE.Mesh(new THREE.PlaneGeometry(.6, .45), new THREE.MeshBasicMaterial({ map: label('mini-jeux', { w: 400, h: 300, size: 70, color: '#ffd75e', bg: '#0b0d12' }) }));
-  cabScreen.position.set(0, 1.4, .36);
-  const panel = new THREE.Mesh(new THREE.BoxGeometry(.78, .08, .35), new THREE.MeshStandardMaterial({ color: 0x1a1a2e }));
-  panel.position.set(0, 1.05, .45); panel.rotation.x = .3;
-  const stick = new THREE.Mesh(new THREE.SphereGeometry(.05), std(0xd42a2a)); stick.position.set(-.18, 1.14, .47);
-  const btnA = new THREE.Mesh(new THREE.CylinderGeometry(.04, .04, .03, 12), std(0xffd75e)); btnA.position.set(.12, 1.12, .47);
-  const btnB = btnA.clone(); btnB.position.x = .24; btnB.material = std(0x39c07a);
-  cab.add(cabScreen, panel, stick, btnA, btnB);
-  cab.position.set(-1.2, 0, -21.4);
-  g.add(cab);
-  addBox(-1.6, 0, -21.8, -.8, 1.9, -21);
-  interactables.push({ id: 'arcade', pos: new THREE.Vector3(-1.2, 1.2, -20.9) });
-
   // a plant and a picture, for company
   const pot = new THREE.Mesh(new THREE.CylinderGeometry(.18, .14, .35, 10), std(0xa4452c));
-  pot.position.set(-2.9, .18, -21.5);
+  pot.position.set(-4.85, .18, -15.65);
   g.add(pot);
   for (let n = 0; n < 5; n++) {
     const leaf = new THREE.Mesh(new THREE.IcosahedronGeometry(.18, 0), std(0x4f7d2c));
-    leaf.position.set(-2.9 + Math.sin(n * 1.3) * .12, .5 + n * .1, -21.5 + Math.cos(n * 1.3) * .12);
+    leaf.position.set(-4.85 + Math.sin(n * 1.3) * .12, .5 + n * .1, -15.65 + Math.cos(n * 1.3) * .12);
     g.add(leaf);
   }
   const pic = new THREE.Mesh(new THREE.PlaneGeometry(.9, .6), new THREE.MeshBasicMaterial({ map: label('le trou', { w: 256, h: 170, size: 42, color: '#f0e8d6', bg: '#2a3a28' }) }));
-  pic.position.set(-2.4, 1.9, zb + T + .02);
+  pic.position.set(-HW / 2 + T + .02, 1.9, -18.75); pic.rotation.y = Math.PI / 2;
   g.add(pic);
-  box(1.0, .7, .02, std(0xd9a125), -2.4, 1.9, zb + T + .005);
+  box(.02, .7, 1.0, std(0xd9a125), -HW / 2 + T + .005, 1.9, -18.75);
+
+  // ---------- upstairs ----------
+  const room = buildGameRoom({ g, addBox, interactables, label, F, HH, HH2, HW, T, zf, zb, hz, wallMat });
 
   let t = 0;
   return {
@@ -356,19 +377,21 @@ export function createHouse({ scene, colliders, interactables, label }) {
     get doorOpen() { return doorOpen; },
     toggleDoor() { doorOpen = !doorOpen; doorBox.off = doorOpen; return doorOpen; },
     // is a point inside the four walls?
-    inside: (p) => p.x > -HW / 2 && p.x < HW / 2 && p.z > zb && p.z < zf && p.y > -0.5 && p.y < HH,
+    inside: (p) => p.x > -HW / 2 && p.x < HW / 2 && p.z > zb && p.z < zf && p.y > -0.5 && p.y < HH2,
+    room,
     drawBoard,
     showTrophy(key) { if (trophies[key]) trophies[key].visible = true; },
     // lit windows at night, seen from the garden
     pressReset() { cap.position.z = .05; setTimeout(() => { cap.position.z = .08; }, 250); },
     pressSuper() { scap.position.z = .06; setTimeout(() => { scap.position.z = .1; }, 300); },
-    setNight(n) { winMat.emissive.copy(winDay).lerp(winNight, n); winMat.opacity = .55 + n * .35; },
+    setNight(n) { winMat.emissive.copy(winDay).lerp(winNight, n); winMat.opacity = .55 + n * .35; room.setNight(n); },
     setCharge(f) { cells.forEach((c, n) => c.material.color.setHex(f > n / 6 + .01 ? 0xffd75e : 0x3a3020)); },
     update(dt) {
       t += dt;
       doorAng += ((doorOpen ? 1.6 : 0) - doorAng) * Math.min(1, dt * 6);
       hinge.rotation.y = doorAng;
       sphere.rotation.y += dt * .3;
+      room.update(dt);
     },
   };
 }
