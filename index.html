@@ -14,6 +14,8 @@
 <script type="importmap">
 { "imports": { "three": "./vendor/three.module.js", "three/addons/": "./vendor/addons/" } }
 </script>
+<link rel="preload" href="./assets/fonts/TitanOne-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="./assets/fonts/Rubik-latin.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="./style.css">
 </head>
 <body>
@@ -62,7 +64,7 @@
     <div id="shop-tabs"></div>
     <div id="shop-items"></div>
     <div id="shop-note"></div>
-    <button id="shop-close">retour au trou</button>
+    <button id="shop-close" class="btn btn--small btn--ghost">retour au trou</button>
   </div>
 
   <div id="reader" class="hidden">
@@ -82,44 +84,106 @@
   </div>
 </div>
 <div id="hurt"></div>
-<div id="relock" class="hidden">clic pour reprendre la souris · <b>p</b> pause</div>
+
+<!-- a game offered to everyone: ready up, 10 s countdown from two ready players -->
+<div id="lobby" class="panel hidden" aria-live="polite">
+  <div class="seclabel"><i><svg viewBox="0 0 32 32"><path d="M16 3l3.6 8.2 8.9.8-6.7 5.9 2 8.7L16 22.1l-7.8 4.5 2-8.7-6.7-5.9 8.9-.8z" fill="currentColor"/></svg></i><span id="lobby-kicker">partie proposée</span></div>
+  <div class="lobby-head"><div id="lobby-game" class="display">mini-jeu</div><div id="lobby-count" class="display hidden">10</div></div>
+  <div id="lobby-sub"></div>
+  <div id="lobby-list"></div>
+  <div class="lobby-row">
+    <button type="button" id="lobby-ready" class="btn btn--primary btn--modal"><span class="btn__label">prêt !</span></button>
+    <button type="button" id="lobby-alt" class="btn btn--ghost btn--modal"><span class="btn__label">lancer</span></button>
+  </div>
+  <div class="lobby-keys"><span><b>o</b> prêt</span><span id="lobby-where"></span></div>
+</div>
+<!-- the first thing to do: find the key to upstairs, with a hot/cold reading -->
+<div id="quest" class="panel hidden" aria-live="polite">
+  <div class="seclabel"><i><svg viewBox="0 0 32 32"><circle cx="9" cy="16" r="6" fill="none" stroke="currentColor" stroke-width="3.4"/><path d="M15 14.3h14v3.4h-3v4h-3.4v-4H20v3h-3.4v-3H15z" fill="currentColor"/></svg></i><span>à faire en premier</span></div>
+  <div id="quest-title" class="display">trouve la clef de l'étage</div>
+  <div id="quest-sub">elle est enterrée dans le potager · l'étage cache les mini-jeux</div>
+  <div class="quest-meter">
+    <div id="quest-arrow"><svg viewBox="0 0 32 32"><path d="M16 3l10 14h-6v12h-8V17H6z" fill="currentColor"/></svg></div>
+    <div class="quest-read"><div id="quest-word" class="display">glacial</div><div id="quest-gauge"><i id="quest-fill"></i></div></div>
+  </div>
+  <div id="quest-depth"></div>
+</div>
+<div id="relock" class="hidden"><b class="mouse">clic</b> reprendre la souris · <b class="wide">échap</b> pause</div>
 
 <!-- attract screen (the menu) -->
-<div id="attract">
-  <div class="title-block">
-    <span class="over">a game about digging a</span>
-    <h1>HOLE</h1>
+<div id="attract" class="screen">
+  <div class="scrim-left"></div>
+  <div class="logo in in--logo" id="logo" aria-label="a game about digging a hole">
+    <span class="logo__splat" data-splat="11" data-arms="9" data-drops="5"></span>
+    <span class="logo__sub"><span>a game about digging a</span></span>
+    <h1 class="logo__word"><span class="logo__l" style="--i:0">H</span><span class="logo__l" style="--i:1">O</span><span class="logo__l" style="--i:2">L</span><span class="logo__l" style="--i:3">E</span></h1>
   </div>
-  <div id="mode" role="radiogroup" aria-label="mode">
-    <button type="button" class="m-opt" data-mode="solo" aria-checked="true"><span class="m-name">solo</span></button>
-    <button type="button" class="m-opt" data-mode="explore" aria-checked="false"><span class="m-name">exploration</span></button>
-    <button type="button" class="m-opt" data-mode="multi" aria-checked="false"><span class="m-name">à plusieurs</span></button>
+
+  <div class="main-menu">
+    <button type="button" id="play" class="btn btn--xl btn--primary in" style="--i:2" data-desc="descendre dans le trou · entrée">
+      <span class="btn__icon"><svg viewBox="0 0 32 32"><path d="M9 4h14l-3 5h-8z" fill="currentColor"/><rect x="14.5" y="8" width="3" height="11" rx="1.2" fill="currentColor"/><path d="M8 18h16l-2 7c-.6 2.2-3 3.5-6 3.5S10.6 27.2 10 25z" fill="currentColor"/></svg></span>
+      <span class="btn__text"><span class="btn__label">creuser</span><span class="btn__sub" id="play-sub">solo</span></span>
+    </button>
+    <div id="mode" role="radiogroup" aria-label="mode">
+      <button type="button" class="btn btn--menu m-opt in" style="--i:3;--tilt:-.6deg" data-mode="solo" aria-checked="true" data-desc="ton jardin, ta sauvegarde, ton trou">
+        <span class="btn__icon"><svg viewBox="0 0 32 32"><circle cx="16" cy="11" r="6" fill="currentColor"/><path d="M5 28c1-6 5.5-9 11-9s10 3 11 9z" fill="currentColor"/></svg></span>
+        <span class="btn__text"><span class="btn__label">solo</span></span><span class="m-check"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      </button>
+      <button type="button" class="btn btn--menu m-opt in" style="--i:4;--tilt:.5deg" data-mode="explore" aria-checked="false" data-desc="tout est illimité · jetpack, bombes, pelle en jade…">
+        <span class="btn__icon"><svg viewBox="0 0 32 32"><circle cx="16" cy="16" r="12" fill="none" stroke="currentColor" stroke-width="3.4"/><path d="M21.5 10.5l-3.4 7.6-7.6 3.4 3.4-7.6z" fill="currentColor"/></svg></span>
+        <span class="btn__text"><span class="btn__label">exploration</span></span><span class="m-check"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      </button>
+      <button type="button" class="btn btn--menu m-opt in" style="--i:5;--tilt:-.4deg" data-mode="multi" aria-checked="false" data-desc="un seul jardin commun, pour tout le monde">
+        <span class="btn__icon"><svg viewBox="0 0 32 32"><circle cx="11" cy="11" r="5" fill="currentColor"/><circle cx="22" cy="12.5" r="4.2" fill="currentColor" opacity=".7"/><path d="M1.5 27c.8-5 4.2-8 9.5-8s8.7 3 9.5 8z" fill="currentColor"/><path d="M19 19.4c.9-.3 1.9-.4 3-.4 4.6 0 7.6 2.6 8.3 7h-8.1c-.5-2.6-1.6-4.9-3.2-6.6z" fill="currentColor" opacity=".7"/></svg></span>
+        <span class="btn__text"><span class="btn__label">à plusieurs</span></span><span class="m-check"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      </button>
+    </div>
+    <form id="multi-form" class="hidden" autocomplete="off">
+      <label for="nick">ton nom</label>
+      <input id="nick" type="text" maxlength="10" placeholder="creuseur" spellcheck="false">
+    </form>
+    <div class="main-desc"><i class="main-desc__dot"></i><span id="main-desc-text">descendre dans le trou · entrée</span></div>
   </div>
-  <form id="multi-form" class="hidden" autocomplete="off">
-    <input id="nick" type="text" maxlength="10" placeholder="ton nom" spellcheck="false" aria-label="ton nom">
-  </form>
-  <div class="begin">cliquer pour creuser</div>
-  <div id="keys">
-    <span><b>zqsd</b> / <b>wasd</b> marcher</span>
-    <span><b>espace</b> sauter</span>
-    <span><b>clic</b> creuser</span>
-    <span><b>e</b> vendre · acheter</span>
-    <span><b>r</b> remonter</span>
-    <span><b>1-6</b> objets · <b>f</b> / <b>clic droit</b> lancer (maintenu : en rafale)</span>
-    <span><b>x</b> pelle / foreuse</span>
-  </div>
-  <button id="reset" type="button" class="hidden">tout recommencer</button>
-  <button type="button" class="q-btn">qualité : auto</button>
+
+  <aside class="main-side">
+    <div class="panel profile in in--right" style="--i:3">
+      <div class="profile__avatar"><span class="profile__blob" data-splat="17" data-arms="8" data-drops="0"></span>
+        <svg class="profile__ico" viewBox="0 0 32 32"><path d="M9 4h14l-3 5h-8z" fill="currentColor"/><rect x="14.5" y="8" width="3" height="11" rx="1.2" fill="currentColor"/><path d="M8 18h16l-2 7c-.6 2.2-3 3.5-6 3.5S10.6 27.2 10 25z" fill="currentColor"/></svg></div>
+      <div class="profile__info"><div class="profile__name" id="pf-name">creuseur</div><div class="profile__rank" id="pf-rank">jardinier</div></div>
+      <div class="profile__stats">
+        <div><b id="pf-best">0.0</b><span>m record</span></div>
+        <div><b id="pf-money">0</b><span>pièces</span></div>
+      </div>
+    </div>
+    <div class="panel keys-card in in--right" style="--i:5">
+      <div class="seclabel"><i><svg viewBox="0 0 32 32"><rect x="3" y="8" width="26" height="17" rx="4" fill="none" stroke="currentColor" stroke-width="3"/><path d="M8 13h2M13 13h2M18 13h2M23 13h1M10 19h12" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg></i>commandes</div>
+      <div id="keys">
+        <div class="krow"><span class="kk"><b>z</b><b>q</b><b>s</b><b>d</b></span><span>marcher</span></div>
+        <div class="krow"><span class="kk"><b class="wide">espace</b></span><span>sauter</span></div>
+        <div class="krow"><span class="kk"><b class="mouse">clic</b></span><span>creuser</span></div>
+        <div class="krow"><span class="kk"><b>e</b></span><span>vendre · acheter</span></div>
+        <div class="krow"><span class="kk"><b>r</b></span><span>remonter</span></div>
+        <div class="krow"><span class="kk"><b>1</b>–<b>6</b></span><span>objets</span></div>
+        <div class="krow"><span class="kk"><b>f</b><b class="mouse">clic d.</b></span><span>lancer · maintenu : en rafale</span></div>
+        <div class="krow"><span class="kk"><b>x</b></span><span>pelle / foreuse</span></div>
+      </div>
+    </div>
+  </aside>
+
+  <div class="corner corner--bl"><button type="button" class="chipbtn q-btn">qualité : auto</button></div>
+  <div class="corner corner--br"><button id="reset" type="button" class="chipbtn chipbtn--danger hidden">tout recommencer</button></div>
+  <div class="prompts"><span><b>↑</b><b>↓</b> choisir</span><span><b class="wide">entrée</b> creuser</span></div>
 </div>
 
 <!-- the super reset: the password, then a countdown everyone sees -->
 <div id="super-pw" class="hidden">
   <form id="super-form" autocomplete="off">
+    <span class="modal-splat" data-splat="23" data-arms="10" data-drops="4" data-cls="danger"></span>
     <div class="sp-t">super reset</div>
     <div class="sp-s">la maison, le japon, la lune et mars seront détruits puis refaits · pour tous les joueurs</div>
     <input id="super-in" type="password" placeholder="mot de passe" autocomplete="off" spellcheck="false">
     <div id="super-err"></div>
-    <div class="sp-row"><button type="submit" class="sp-go">détruire les mondes</button><button type="button" id="super-cancel">annuler</button></div>
+    <div class="sp-row"><button type="submit" class="btn btn--danger btn--modal sp-go">détruire les mondes</button><button type="button" id="super-cancel" class="btn btn--ghost btn--modal">annuler</button></div>
   </form>
 </div>
 <div id="super-count" class="hidden">
@@ -129,18 +193,34 @@
 </div>
 
 <!-- resume (pointer lock lost) -->
-<div id="resume" class="hidden">
-  <div id="settings">
-    <div class="w-title">pause</div>
-    <button id="resume-go" type="button">reprendre</button>
-    <div class="set-row"><label>qualité</label><div class="seg" id="set-quality"></div></div>
-    <div class="set-row"><label>volume</label><input type="range" id="set-volume" min="0" max="1" step=".05"><span id="set-volume-v"></span></div>
-    <div class="set-row"><label>sensibilité</label><input type="range" id="set-sens" min=".3" max="2.5" step=".05"><span id="set-sens-v"></span></div>
-    <div class="set-row"><label>champ de vision</label><input type="range" id="set-fov" min="55" max="100" step="1"><span id="set-fov-v"></span></div>
-    <div class="set-row"><label>minicarte</label><button type="button" class="toggle" id="set-minimap"></button></div>
-    <div class="set-row"><label>souris inversée</label><button type="button" class="toggle" id="set-invert"></button></div>
-    <div class="set-keys"><b>p</b> pause · <b>m</b> carte · <b>x</b> pelle / foreuse · <b>r</b> remonter</div>
-    <button id="set-title" type="button">retour à l'écran titre</button>
+<div id="resume" class="screen hidden">
+  <div class="pause-dim"></div>
+  <div class="pause-col">
+    <div class="pause-title in in--down"><span class="pause-blob" data-splat="3" data-arms="8" data-drops="4"></span><span class="display">pause</span></div>
+    <div class="pause-menu">
+      <button id="resume-go" type="button" class="btn btn--menu btn--primary in" style="--i:1">
+        <span class="btn__icon"><svg viewBox="0 0 32 32"><path d="M10 6.5v19c0 1.2 1.3 1.9 2.3 1.3l15-9.5c1-.6 1-2 0-2.6l-15-9.5c-1-.6-2.3.1-2.3 1.3z" fill="currentColor"/></svg></span>
+        <span class="btn__text"><span class="btn__label">reprendre</span></span>
+      </button>
+      <button id="set-quit" type="button" class="btn btn--menu in hidden" style="--i:2">
+        <span class="btn__icon"><svg viewBox="0 0 32 32"><path d="M7 4v25" stroke="currentColor" stroke-width="3.4" stroke-linecap="round"/><path d="M8.5 5h17l-4 5.5 4 5.5h-17z" fill="currentColor"/></svg></span>
+        <span class="btn__text"><span class="btn__label">abandonner le jeu</span></span>
+      </button>
+      <button id="set-title" type="button" class="btn btn--menu btn--danger in" style="--i:3">
+        <span class="btn__icon"><svg viewBox="0 0 32 32"><path d="M4 15.5L16 5l12 10.5" fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 14v12.5h6v-7h4v7h6V14" fill="currentColor"/></svg></span>
+        <span class="btn__text"><span class="btn__label">écran titre</span></span>
+      </button>
+    </div>
+    <div class="set-keys in" style="--i:3"><span><b class="wide">échap</b> pause</span><span><b>m</b> carte</span><span><b>x</b> pelle / foreuse</span><span><b>r</b> remonter</span></div>
+  </div>
+  <div id="settings" class="panel in in--right" style="--i:1">
+    <div class="seclabel"><i><svg viewBox="0 0 32 32"><path d="M16 3l2.6 3.3 4.2-.8.8 4.2L27 12.3l-1.6 3.7L27 19.7l-3.4 2.6-.8 4.2-4.2-.8L16 29l-2.6-3.3-4.2.8-.8-4.2L5 19.7 6.6 16 5 12.3l3.4-2.6.8-4.2 4.2.8z" fill="currentColor"/><circle cx="16" cy="16" r="4.5" fill="var(--k)"/></svg></i>réglages</div>
+    <div class="set-row rowin" style="--i:0"><label>qualité</label><div class="seg" id="set-quality"></div></div>
+    <div class="set-row rowin" style="--i:1"><label>volume</label><input type="range" id="set-volume" min="0" max="1" step=".05"><span id="set-volume-v"></span></div>
+    <div class="set-row rowin" style="--i:2"><label>sensibilité</label><input type="range" id="set-sens" min=".3" max="2.5" step=".05"><span id="set-sens-v"></span></div>
+    <div class="set-row rowin" style="--i:3"><label>champ de vision</label><input type="range" id="set-fov" min="55" max="100" step="1"><span id="set-fov-v"></span></div>
+    <div class="set-row rowin" style="--i:4"><label>minicarte</label><button type="button" class="toggle" id="set-minimap"></button></div>
+    <div class="set-row rowin" style="--i:5"><label>souris inversée</label><button type="button" class="toggle" id="set-invert"></button></div>
   </div>
 </div>
 
@@ -159,21 +239,27 @@
 <!-- the bottom -->
 <div id="win" class="hidden">
   <div id="win-card">
+    <span class="modal-splat" data-splat="5" data-arms="10" data-drops="4"></span>
     <div class="w-title">tout au fond</div>
     <div id="win-depth">100 m</div>
     <div id="win-quip"></div>
     <div id="win-stats"></div>
     <div class="win-row">
-      <button id="through">traverser la terre</button>
-      <button id="again">continuer à creuser</button>
-      <button id="restart">tout recommencer</button>
+      <button id="through" class="btn btn--primary btn--modal">traverser la terre</button>
+      <button id="again" class="btn btn--modal">continuer à creuser</button>
+      <button id="restart" class="btn btn--danger btn--modal">tout recommencer</button>
     </div>
   </div>
 </div>
 
 <!-- loading -->
 <div id="load">
-  <div class="bar-wrap"><div id="load-bar"></div></div>
+  <i class="bgblob bgblob--0"></i><i class="bgblob bgblob--1"></i><i class="bgblob bgblob--2"></i><i class="bgblob bgblob--3"></i>
+  <div class="load-center">
+    <div class="load-logo display">HOLE</div>
+    <div class="bar-wrap"><div id="load-bar"></div><i class="bar-stripes"></i></div>
+    <div class="load-label">on creuse…</div>
+  </div>
 </div>
 
 <script type="module" src="./src/main.js"></script>

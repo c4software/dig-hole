@@ -104,6 +104,8 @@ export function createAudio() {
     squeak() { tone(1700 + Math.random() * 300, 0.12, 0.08, 'sine', 0, 1.5); tone(2300, 0.08, 0.05, 'sine', 0.1, 1.3); },
     bonk() { tone(260, 0.12, 0.25, 'triangle', 0, 0.6); noise(700, 0.08, 0.2); },
     tick() { tone(1400, 0.05, 0.08, 'square'); },
+    hover() { tone(880, 0.05, 0.025, 'sine', 0, 1.25); },
+    pop() { tone(420, 0.1, 0.07, 'triangle', 0, 1.9); noise(2400, 0.04, 0.04); },
     horn() { tone(392, 0.35, 0.12, 'sawtooth'); tone(494, 0.35, 0.1, 'sawtooth'); },
     charge() { tone(220, 1.1, 0.06, 'sawtooth', 0, 3); },
     // an air-raid siren: two slow wails

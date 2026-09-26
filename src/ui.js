@@ -1,4 +1,4 @@
-// ui.js, the HUD and the panels: small, gold, out of the way.
+// ui.js, the HUD and the panels.
 import { ITEMS, SLOTS } from './economy.js';
 
 const $ = (id) => document.getElementById(id);
@@ -19,7 +19,7 @@ export function createUI() {
     veil: $('veil'), wash: $('wash'), hurt: $('hurt'), travel: $('travel'), travelTitle: $('travel-title'), travelKm: $('travel-km'),
     faint: $('faint'),
   };
-  let toastT = 0, hintT = 0, lastDepthTxt = '', lastCoins = -1, lastBag = '', lastHot = '';
+  let toastT = 0, hintT = 0, lastDepthTxt = '', lastCoins = -1, lastBag = '', lastHot = '', lastPanel = '';
 
   return {
     el, fmt,
@@ -104,15 +104,19 @@ export function createUI() {
 
     // one panel for every counter: rows are {id, kind, name, lvl, sub, price, owned, poor, lock, done, static}
     panel({ title, quip, tabs, tab, rows, note, close = 'fermer' }) {
+      // the rows slide in when the counter opens or the tab changes, not after each purchase
+      const key = title + '|' + tab;
+      el.shop.classList.toggle('fresh', el.shop.classList.contains('hidden') || key !== lastPanel);
+      lastPanel = key;
       el.shopTitle.textContent = quip || title;
       el.shopTitle.classList.toggle('quip', !!quip);
       if (quip) restart(el.shopTitle, 'quip');
       el.shopTabs.innerHTML = (tabs || []).map(t => `<button data-tab="${t.id}" class="${t.id === tab ? 'on' : ''}">${esc(t.name)}<small>${esc(t.sub || '')}</small></button>`).join('');
-      el.shopItems.innerHTML = rows.map(r => {
+      el.shopItems.innerHTML = rows.map((r, i) => {
         const cls = ['ns-item', r.owned && 'owned', r.poor && 'poor', r.lock && 'locked', r.done && 'done', r.static && 'static'].filter(Boolean).join(' ');
         const right = r.lock ? `<span class="s-lock">${esc(r.lock)}</span>`
           : r.price != null ? `<span class="s-price">${fmt(r.price)}</span>` : '';
-        return `<button class="${cls}" data-id="${r.id}">` +
+        return `<button class="${cls}" data-id="${r.id}" style="--i:${i}">` +
           (r.kind ? `<span class="s-kind">${esc(r.kind)}</span>` : '') +
           `<span class="s-mid"><span><span class="s-name">${esc(r.name)}</span> ${r.lvl ? `<span class="s-lvl">${esc(r.lvl)}</span>` : ''}</span>` +
           (r.sub ? `<span class="s-sub">${esc(r.sub)}</span>` : '') + `</span>` +
