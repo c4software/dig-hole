@@ -5,6 +5,7 @@
 // houses you can walk into are in neighbours.js.
 import * as THREE from 'three';
 import { createBlossoms, createCars, createContact, createLamps, createWalkers, puffGeometry, roofColliders, seeded } from './street.js';
+import * as V from './vehicles.js';
 
 const ROAD_Z = -13.1;
 const NORTH_FRONT = -16.2;          // house fronts on our side of the street
@@ -368,7 +369,7 @@ export function createEurope({ scene, addBox }) {
   const terMat = new THREE.MeshLambertMaterial({ map: terTex, emissive: 0xffe0a0, emissiveMap: terTex, emissiveIntensity: 0 });
   const TC = 22;
   for (let k = 0; k < 2; k++) {
-    const body = new THREE.Mesh(new THREE.BoxGeometry(TC, 3.4, 3), [mat(0xf4f4f2), mat(0xf4f4f2), mat(0xc8ccd2), mat(0x3a3e46), terMat, terMat]);
+    const body = new THREE.Mesh(V.roundBox(TC, 3.4, 3, .35, 2), [mat(0xf4f4f2), mat(0xf4f4f2), mat(0xc8ccd2), mat(0x3a3e46), terMat, terMat]);
     body.position.set(k * (TC + .5), VH + 2.6, VZ); train.add(body);
     box(TC - 3, .6, 2.6, mat(0x3a3e46), k * (TC + .5), VH + .75, VZ, train);
   }

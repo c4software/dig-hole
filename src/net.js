@@ -66,7 +66,7 @@ export function createNet({ scene, onOp, onJoin, onLeave, onWelcome, onStatus, o
       } else if (m.t === 'join') { addPeer(m); onJoin?.(m.name); }
       else if (m.t === 'leave') {
         const p = peers.get(m.id);
-        if (p) { scene.remove(p.avatar.g); peers.delete(m.id); onLeave?.(p.name); }
+        if (p) { scene.remove(p.avatar.g); peers.delete(m.id); onLeave?.(p.name, m.id); }
       } else if (m.t === 'state') {
         const p = peers.get(m.id);
         if (!p) return;

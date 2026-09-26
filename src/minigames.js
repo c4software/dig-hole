@@ -17,11 +17,17 @@ export const GAMES = {
   ruee:    { name: 'ruée vers l\'or',     sub: '90 secondes pour remplir ton sac du plus de valeur possible', unit: 'coins' },
   taupe:   { name: 'tape-taupe',         sub: '30 secondes, un maximum de taupes', unit: 'score' },
   tresor:  { name: 'chasse au trésor',   sub: 'un coffre enfoui, un thermomètre, 3 minutes', unit: 'time', lower: true },
-  kart:    { name: 'a hole grand prix',  sub: 'karting, 3 tours, 3 adversaires, des objets', unit: 'time', lower: true },
+  kart:    { name: 'a hole grand prix',  sub: 'karting, 3 tours, des adversaires, des objets · à plusieurs', unit: 'time', lower: true },
+  rc:      { name: 'mini bolides',       sub: 'voitures télécommandées dans les rues de la ville · turbo, feux d\'artifice, bombes…', unit: 'time', lower: true },
+  nes:     { name: 'super creuseur',     sub: 'plateforme rétro en 2D, façon 8 bits · à plusieurs · le premier au drapeau', unit: 'time', lower: true },
+  encre:   { name: 'encre 2D',           sub: 'plateforme 2D en équipes : peins le niveau, nage dans ton encre', unit: 'pct' },
   peinture: { name: 'peinture',           sub: '90 secondes pour couvrir le trou de ta couleur, contre les drones-peintres · clic pour tirer', unit: 'pct' },
   laser:   { name: 'laser game',         sub: '2 minutes de laser dans le jardin · touché = retour à la maison', unit: 'frags' },
 };
 const ARENA = new Set(['peinture', 'laser']);
+// played together: the first to finish wins (race), or everyone stops at once and the best wins (score)
+const RACE = new Set(['course', 'plongeon', 'anneaux', 'tresor']);
+const SCORE = new Set(['chrono', 'ruee', 'taupe', 'pile']);
 
 const fmt = (s) => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, '0')}`;
 export function fmtRecord(unit, v) {
@@ -35,7 +41,10 @@ export function fmtRecord(unit, v) {
   return `${v}`;
 }
 const MOUNDS = Array.from({ length: 9 }, (_, n) => new THREE.Vector3(-14.5 + (n % 3) * 1.8, 0, -1.8 + Math.floor(n / 3) * 1.8));
-const rand = (a, b) => a + Math.random() * (b - a);
+// every game draws its targets from a seed: a game started online is the same for everyone
+let R = Math.random;
+const rand = (a, b) => a + R() * (b - a);
+const seeded = (seed) => () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
 
 function moleHead() {
   const g = new THREE.Group();
@@ -102,7 +111,19 @@ export function createMiniGames({ scene, terrain, player, audio, ui, sackValue, 
   goal.rotation.x = -Math.PI / 2; goal.renderOrder = 997; goal.visible = false;
   scene.add(goal);
 
-  function setHud(html) { hud.classList.toggle('hidden', !html); if (html) hud.innerHTML = html; }
+  let setHud = function (html) { hud.classList.toggle('hidden', !html); if (html) hud.innerHTML = html; };
+  // each game's live value, for the board and the others
+  function live(g, depth) {
+    if (g.id === 'course') return [depth, depth.toFixed(1) + ' m'];
+    if (g.id === 'plongeon') return [g.phase === 'down' ? depth : 2 * g.target - depth, g.phase === 'down' ? '↓ ' + depth.toFixed(1) + ' m' : '↑ ' + depth.toFixed(1) + ' m'];
+    if (g.id === 'chrono') return [g.best, g.best.toFixed(1) + ' m'];
+    if (g.id === 'anneaux') return [g.next, `anneau ${g.next + 1}`];
+    if (g.id === 'ruee') return [Math.max(0, sackValue() - g.start), Math.round(Math.max(0, sackValue() - g.start)) + ' ●'];
+    if (g.id === 'taupe') return [g.score, g.score + ''];
+    if (g.id === 'pile') return [0, 'en cours'];
+    if (g.id === 'tresor') return [0, 'cherche…'];
+    return null;
+  }
 
   // a column nobody has dug yet, away from the fence; the player is put on top of it
   function freshSpot() {
@@ -119,8 +140,14 @@ export function createMiniGames({ scene, terrain, player, audio, ui, sackValue, 
     return new THREE.Vector3(x, 0, z);
   }
 
-  function start(id) {
+  // the others in this game: id → { name, color, v (live value), txt, end (final value) , at (finish order) }
+  let rivals = new Map(), sendFx = () => {}, sendT = 0, finished = 0;
+  function start(id, { seed, humans, players, send } = {}) {
     stop(false);
+    R = seeded((seed ?? Math.floor(Math.random() * 1e9)) % 2147483646 + 1);
+    const others = humans != null ? humans - 1 : playing(id).length;
+    rivals = new Map((players || []).filter(p => !p.me).map(p => [p.id, { name: p.name, color: p.color, v: 0, txt: '', end: null, at: 0 }]));
+    sendFx = send || (() => {}); sendT = 0; finished = 0;
     const g = { id, t: 0, count: 3, best: 0 };
     if (['course', 'plongeon', 'chrono', 'anneaux', 'pile', 'ruee'].includes(id)) g.spot = freshSpot();
     if (id === 'course') { g.target = Math.round(rand(8, 25)); ui.toast(`creuse jusqu'à ${g.target} m !`, false, 2600); }
@@ -130,13 +157,13 @@ export function createMiniGames({ scene, terrain, player, audio, ui, sackValue, 
     else if (id === 'ruee') { g.start = sackValue(); ui.toast('90 secondes : remplis ton sac !', false, 2600); }
     else if (id === 'peinture') {
       player.pos.set(0, .05, -10.2); player.vel.set(0, 0, 0); player.yaw = Math.PI; player.pitch = -.35; player.unstick();
-      paint.start({ myColor: myColor(), bots: Math.max(0, 2 - playing(id).length) });
+      paint.start({ myColor: myColor(), bots: Math.max(0, 2 - others) });
       blaster.setColor(myColor());
       ui.toast('peins le trou de ta couleur ! (tirer sur un drone l\'assomme)', false, 3000);
     } else if (id === 'laser') {
       if (!house.doorOpen) house.toggleDoor();
       player.pos.set(0, .05, -18.5); player.vel.set(0, 0, 0); player.yaw = Math.PI; player.pitch = 0; player.unstick();
-      laser.start({ bots: Math.max(0, 3 - playing(id).length), color: myColor() });
+      laser.start({ bots: Math.max(0, 3 - others), color: myColor() });
       blaster.setColor(myColor());
       ui.toast('sors de la maison et touche les autres · la maison est une zone sûre', false, 3200);
     }
@@ -155,7 +182,7 @@ export function createMiniGames({ scene, terrain, player, audio, ui, sackValue, 
       ui.toast('frappe les taupes !', false, 2600);
     } else if (id === 'tresor') {
       const S = terrain.S, n = terrain.NX;
-      const i = 5 + Math.floor(Math.random() * (n - 10)), k = 5 + Math.floor(Math.random() * (n - 10));
+      const i = 5 + Math.floor(R() * (n - 10)), k = 5 + Math.floor(R() * (n - 10));
       chest.position.set(terrain.X0 + (i + .5) * S, -rand(2, 12), terrain.Z0 + (k + .5) * S);
       chest.visible = true;
       g.count = 0; g.beep = 0;
@@ -181,8 +208,56 @@ export function createMiniGames({ scene, terrain, player, audio, ui, sackValue, 
   }
   function end(result) {
     const id = game.id;
+    if (rivals.size && !ARENA.has(id)) {
+      sendFx({ t: 'end', v: result.lost ? null : result.value });
+      if (RACE.has(id) && !result.lost) {
+        // the first across the line: those who finished before me are ahead
+        const place = 1 + [...rivals.values()].filter(r => r.end != null).length;
+        return finish(id, placed(result, place));
+      }
+      if (SCORE.has(id) && !result.lost) {
+        // wait (a little) for the others' scores before ranking
+        game.waiting = { result, t: 0 };
+        game.mine = result.value;
+        return;
+      }
+    }
+    finish(id, result);
+  }
+  function finish(id, result) {
     game = null; clear();
     onEnd(id, result);
+  }
+  const PLACE = (n) => n === 1 ? '1er' : n + 'e';
+  function placed(result, place) {
+    const of = rivals.size + 1;
+    return { ...result, place, of, first: place === 1, reward: Math.round(result.reward * (place === 1 ? 1.5 : 1)), text: `${PLACE(place)} sur ${of} · ${result.text}${place === 1 ? ' · +50 % pour la victoire' : ''}` };
+  }
+  function rankScore() {
+    const g = game, lower = GAMES[g.id].lower, mine = g.mine;
+    const better = [...rivals.values()].filter(r => r.end != null && (lower ? r.end < mine : r.end > mine)).length;
+    finish(g.id, placed(g.waiting.result, 1 + better));
+  }
+  // what the others send about this game: their progress, their result, a mole or a chest taken
+  function onRival(id, fx) {
+    const r = rivals.get(id);
+    if (!game || !r) return;
+    if (fx.t === 'p') { r.v = fx.v; r.txt = fx.txt; }
+    else if (fx.t === 'end') {
+      r.end = fx.v ?? (GAMES[game.id].lower ? Infinity : -Infinity); r.at = ++finished;
+      if (game.id === 'tresor' && fx.v != null && !game.waiting) { finish('tresor', { lost: true, text: `${r.name} a trouvé le trésor en premier` }); return; }
+      if (RACE.has(game.id) && !game.waiting && game.count <= 0) ui.toast(`${r.name} a fini !`, false, 1500);
+    } else if (fx.t === 'mole' && game.id === 'taupe') { const m = mounds[fx.m]; if (m) { m.up = 0; m.life = 0; } }
+  }
+  function rivalLeft(id) { rivals.delete(id); }
+  // the live board under the HUD: me and the others, best first
+  function board(mine, txt) {
+    if (!rivals.size) return '';
+    const lower = GAMES[game.id].lower;
+    const rows = [{ name: 'toi', v: mine, txt, me: true }, ...[...rivals.values()].map(r => ({ ...r, v: r.end ?? r.v }))];
+    rows.sort((a, b) => lower ? a.v - b.v : b.v - a.v);
+    const hex = (c) => '#' + (c ?? 0xffffff).toString(16).padStart(6, '0');
+    return `<div class="board">${rows.slice(0, 5).map((r, n) => `<span style="color:${r.me ? '#fff' : hex(r.color)}">${n + 1}. ${r.me ? '<em>toi</em>' : r.name}${r.txt ? ' · ' + r.txt : ''}${r.end != null && !r.me ? ' ✓' : ''}</span>`).join('')}</div>`;
   }
 
   const bar = (f) => `<div class="therm"><i style="width:${Math.max(0, Math.min(1, f)) * 100}%"></i></div>`;
@@ -190,6 +265,13 @@ export function createMiniGames({ scene, terrain, player, audio, ui, sackValue, 
   function update(dt, depth) {
     if (!game) return;
     const g = game;
+    if (g.waiting) {
+      g.waiting.t += dt;
+      const all = [...rivals.values()].every(r => r.end != null);
+      setHud(`<b>${GAMES[g.id].name}</b><span class="big">${all ? '…' : Math.ceil(Math.max(0, 8 - g.waiting.t))}</span><span>en attente des autres</span>${board(g.mine, '')}`);
+      if (all || g.waiting.t > 8) rankScore();
+      return;
+    }
     fireCd -= dt;
     if (g.id === 'peinture') paint.update(dt, g.count <= 0);
     if (g.id === 'laser') laser.update(dt, g.count <= 0, player);
@@ -197,6 +279,18 @@ export function createMiniGames({ scene, terrain, player, audio, ui, sackValue, 
     g.t += dt;
     g.best = Math.max(g.best, depth);
     const title = `<b>${GAMES[g.id].name}</b>`;
+    const lv = rivals.size ? live(g, depth) : null;
+    if (lv) {
+      sendT -= dt;
+      if (sendT <= 0) { sendT = .25; sendFx({ t: 'p', v: +lv[0].toFixed(2), txt: lv[1] }); }
+      const inner = setHud;
+      setHud = (html) => inner(html + board(lv[0], lv[1]));
+      try { tick(g, dt, depth, title); } finally { setHud = inner; }
+      return;
+    }
+    tick(g, dt, depth, title);
+  }
+  function tick(g, dt, depth, title) {
     if (g.id === 'course') {
       setHud(`${title}<span class="big">${fmt(g.t)}</span><span>${depth.toFixed(1)} / ${g.target} m</span>${bar(depth / g.target)}`);
       if (depth >= g.target) {
@@ -237,9 +331,9 @@ export function createMiniGames({ scene, terrain, player, audio, ui, sackValue, 
       const left = 30 - g.t;
       g.next -= dt;
       if (g.next <= 0 && left > .5) {
-        g.next = Math.max(.3, (.9 - g.t * .018) * (.6 + Math.random() * .6));
+        g.next = Math.max(.3, (.9 - g.t * .018) * (.6 + R() * .6));
         const free = mounds.filter(m => m.up <= 0);
-        if (free.length) { const m = free[Math.floor(Math.random() * free.length)]; m.up = 1; m.life = Math.max(.55, 1.3 - g.t * .025); audio.squeak(); }
+        if (free.length) { const m = free[Math.floor(R() * free.length)]; m.up = 1; m.life = Math.max(.55, 1.3 - g.t * .025); audio.squeak(); }
       }
       for (const m of mounds) {
         if (m.up > 0) { m.life -= dt; if (m.life <= 0) m.up = 0; }
@@ -289,7 +383,7 @@ export function createMiniGames({ scene, terrain, player, audio, ui, sackValue, 
     for (const m of mounds) {
       if (m.up <= 0 || m.head.position.y < -.2) continue;
       const c = m.head.position.clone().setY(m.head.position.y + .25);
-      if (ray.distanceSqToPoint(c) < .4 * .4 && c.distanceTo(eye) < 4) { m.up = 0; m.life = 0; game.score++; audio.bonk(); ui.hit(); return true; }
+      if (ray.distanceSqToPoint(c) < .4 * .4 && c.distanceTo(eye) < 4) { m.up = 0; m.life = 0; game.score++; audio.bonk(); ui.hit(); sendFx({ t: 'mole', m: mounds.indexOf(m) }); return true; }
     }
     return false;
   }
@@ -333,7 +427,7 @@ export function createMiniGames({ scene, terrain, player, audio, ui, sackValue, 
   }
 
   return {
-    start, stop, update, onSwing, onDig, validate, fire, onFx, updateBlaster, paint, laser,
+    start, stop, update, onSwing, onDig, validate, fire, onFx, onRival, rivalLeft, updateBlaster, paint, laser,
     get armed() { return !!game && ARENA.has(game.id); },
     get active() { return game ? game.id : null; },
     set onEnd(f) { onEnd = f; },

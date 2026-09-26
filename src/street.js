@@ -3,6 +3,7 @@
 // old European street lamps. Everything is built in a parent group's own frame.
 import * as THREE from 'three';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
+import * as V from './vehicles.js';
 
 // blossom colours per season: spring pinks, summer greens, autumn reds, winter snow
 export const CANOPY = [
@@ -281,30 +282,40 @@ export function createLamps({ parent, addBox, points }) {
 }
 
 // ---------- parked cars: a boxy kei car, a small saloon, a European hatchback ----------
+// a rounded body, a glasshouse of dark glass under a painted roof, real wheels in dark arches
 export function createCars({ parent, addBox }) {
   const mats = new Map();
   const mat = (c, extra) => { const k = c + JSON.stringify(extra || {}); if (!mats.has(k)) mats.set(k, new THREE.MeshLambertMaterial({ color: c, ...extra })); return mats.get(k); };
-  const tyre = mat(0x1c1c1e), hub = mat(0xc8ccd2), dark = mat(0x2a3440), lampM = mat(0xfff6e0, { emissive: 0xfff0c8, emissiveIntensity: .2 }), tail = mat(0xd83030);
-  const box = (w, h, d, m, x, y, z, p) => { const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); b.position.set(x, y, z); p.add(b); return b; };
+  const trim = mat(0x2a2c34), lampM = mat(0xfff6e0, { emissive: 0xfff0c8, emissiveIntensity: .2 }), tail = mat(0xd83030, { emissive: 0x801010, emissiveIntensity: .3 }), amber = mat(0xffa030, { emissive: 0x804010, emissiveIntensity: .3 });
+  const glassM = V.glass(false), plateM = new THREE.MeshBasicMaterial({ map: V.plate('A-H0LE') });
+  const put = (geo, m, x, y, z, p) => { const b = new THREE.Mesh(geo, m); b.position.set(x, y, z); p.add(b); return b; };
   return function car(x, z, rot, color, kind = 'saloon') {
     const c = new THREE.Group(); c.position.set(x, 0, z); c.rotation.y = rot; parent.add(c);
     const kei = kind === 'kei', hatch = kind === 'hatch';
     const L = kei ? 3.4 : hatch ? 3.9 : 4.3, Wd = hatch ? 1.65 : 1.5, paint = mat(color);
-    box(L, .7, Wd, paint, 0, .62, 0, c);
+    put(V.roundBox(L, .64, Wd, .18, 2), paint, 0, .64, 0, c);
     const cabL = kei ? 2.5 : hatch ? 2.3 : 2.2, cabH = kei ? .95 : hatch ? .72 : .7, cabX = kei ? -.35 : hatch ? -.5 : -.2;
-    // the cabin in the body colour; a band of side windows, a windscreen, a rear window
-    box(cabL, cabH, Wd - .08, paint, cabX, .97 + cabH / 2, 0, c);
-    box(cabL - .5, cabH * .62, Wd - .04, dark, cabX, .97 + cabH * .55, 0, c);
-    box(.05, cabH * .7, Wd - .3, dark, cabX + cabL / 2 + .005, .97 + cabH * .5, 0, c);
-    box(.05, cabH * .55, Wd - .35, dark, cabX - cabL / 2 - .005, .97 + cabH * .55, 0, c);
-    box(cabL * .7, .03, Wd - .5, mat(0x9aa0a8), cabX, .97 + cabH + .01, 0, c);
-    box(L - .2, .06, Wd + .02, mat(0x3a3e46), 0, .32, 0, c);
-    for (const [wx, wz] of [[L * .32, Wd / 2], [-L * .32, Wd / 2], [L * .32, -Wd / 2], [-L * .32, -Wd / 2]]) {
-      const w = new THREE.Mesh(new THREE.CylinderGeometry(.3, .3, .2, 14), tyre); w.rotation.x = Math.PI / 2; w.position.set(wx, .3, wz); c.add(w);
-      const hb = new THREE.Mesh(new THREE.CylinderGeometry(.16, .16, .21, 10), hub); hb.rotation.x = Math.PI / 2; hb.position.set(wx, .3, wz); c.add(hb);
+    // the glasshouse: a side outline with a raked windscreen, extruded in dark glass
+    const fr = cabH * (kei ? .25 : .75), rr = cabH * (kei ? .1 : hatch ? .2 : .6), b = .05, y0 = .9, x0 = cabX - cabL / 2 + b, x1 = cabX + cabL / 2 - b, yt = y0 + cabH - b;
+    put(V.profile([[x0, y0], [x1, y0], [x1 - fr, yt], [x0 + rr, yt]], Wd - .12, b, kind), glassM, 0, 0, 0, c);
+    put(V.roundBox(cabL - fr - rr + .1, .08, Wd - .06, .04), paint, cabX + (rr - fr) / 2, y0 + cabH + .02, 0, c);
+    for (const px of [cabX + (rr - fr) / 2]) put(V.roundBox(.1, cabH, Wd - .08, .03), paint, px, y0 + cabH / 2, 0, c);
+    // bumpers, lamps, grille, plate, mirrors
+    put(V.roundBox(.18, .18, Wd + .04, .07), trim, L / 2 - .02, .4, 0, c);
+    put(V.roundBox(.18, .18, Wd + .04, .07), trim, -L / 2 + .02, .4, 0, c);
+    put(V.roundBox(.04, .1, Wd * .45, .02), trim, L / 2 + .01, .66, 0, c);
+    put(new THREE.PlaneGeometry(.4, .1), plateM, L / 2 + .11, .42, 0, c).rotation.y = Math.PI / 2;
+    for (const sz of [-1, 1]) {
+      put(V.roundBox(.06, .15, .3, .05), lampM, L / 2 - .01, .78, sz * (Wd / 2 - .25), c);
+      put(V.roundBox(.06, .08, .1, .03), amber, L / 2 - .01, .78, sz * (Wd / 2 - .06), c);
+      put(V.roundBox(.06, .17, .26, .05), tail, -L / 2 + .01, .8, sz * (Wd / 2 - .22), c);
+      put(V.roundBox(.12, .12, .1, .04), paint, cabX + cabL / 2 - fr * .3, y0 + .12, sz * (Wd / 2 + .06), c);
+      put(V.roundBox(.5, .03, .03, .01), trim, cabX - .1, .88, sz * (Wd / 2 + .005), c);
     }
-    for (const sz of [-.5, .5]) { box(.04, .16, .3, lampM, L / 2 + .01, .78, sz, c); box(.04, .16, .22, tail, -L / 2 - .01, .8, sz, c); }
-    box(.04, .12, .45, mat(0xf4f0e0), L / 2 + .02, .45, 0, c);
+    for (const [wx, wz] of [[L * .32, Wd / 2 - .08], [-L * .32, Wd / 2 - .08], [L * .32, -Wd / 2 + .08], [-L * .32, -Wd / 2 + .08]]) {
+      const w = V.wheel({ r: .3, w: .2, rim: mat(0xc8ccd2), tyre: mat(0x1c1c1e), spokes: 0 }); w.position.set(wx, .3, wz); c.add(w);
+      const a = put(new THREE.RingGeometry(.32, .4, 14, 1, 0, Math.PI), trim, wx, .3, Math.sign(wz) * (Wd / 2 + .005), c); if (wz < 0) a.rotation.y = Math.PI;
+    }
     c.updateMatrix();
     const bb = new THREE.Box3(new THREE.Vector3(-L / 2, 0, -Wd / 2), new THREE.Vector3(L / 2, 1.9, Wd / 2)).applyMatrix4(c.matrix);
     addBox?.(bb.min.x, 0, bb.min.z, bb.max.x, 1.9, bb.max.z);
