@@ -3,7 +3,8 @@
 // Standard mapping (Xbox / PlayStation layout): what each button does depends on where you are.
 const A = 0, B = 1, X = 2, Y = 3, LB = 4, RB = 5, LT = 6, RT = 7, BACK = 8, START = 9, LS = 10, RS = 11, UP = 12, DOWN = 13, LEFT = 14, RIGHT = 15;
 
-export function createGamepad({ context, actions }) {
+// `virtual`: another source shaped like a Gamepad (the touch controls), read when no real one is there
+export function createGamepad({ context, actions, virtual = () => null }) {
   const held = new Set();          // virtual keys held down right now
   const navT = {};                 // menu auto-repeat timers
   let prev = [], active = false, gpIndex = null, lastCtx = '';
@@ -29,12 +30,12 @@ export function createGamepad({ context, actions }) {
   addEventListener('gamepadconnected', (e) => { gpIndex = e.gamepad.index; actions.connected?.(e.gamepad.id); });
   addEventListener('gamepaddisconnected', (e) => { if (e.gamepad.index === gpIndex) { gpIndex = null; sync(new Set()); setActive(false); actions.disconnected?.(); } });
   // back to the keyboard and mouse: the prompts show keys again
-  addEventListener('mousemove', (e) => { if (active && (Math.abs(e.movementX) + Math.abs(e.movementY) > 6)) setActive(false); });
+  addEventListener('mousemove', (e) => { if (active && !document.body.classList.contains('touch') && (Math.abs(e.movementX) + Math.abs(e.movementY) > 6)) setActive(false); });
   addEventListener('keydown', (e) => { if (active && e.isTrusted) setActive(false); });
 
   function update(dt) {
     const pads = navigator.getGamepads ? navigator.getGamepads() : [];
-    const gp = (gpIndex != null && pads[gpIndex]) || [...pads].find(p => p && p.connected);
+    const gp = (gpIndex != null && pads[gpIndex]) || [...pads].find(p => p && p.connected) || virtual();
     if (!gp) { if (held.size) sync(new Set()); return; }
     const btn = (i) => !!gp.buttons[i] && (gp.buttons[i].pressed || gp.buttons[i].value > .45);
     const hit = (i) => btn(i) && !prev[i];

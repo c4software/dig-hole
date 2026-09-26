@@ -31,6 +31,7 @@ import { createEncre } from './encre.js';
 import { createWorms } from './worms.js';
 import { initMenus } from './menufx.js';
 import { createGamepad } from './gamepad.js';
+import { createTouch } from './touch.js';
 import { createKeyQuest } from './gameroom.js';
 import { createReveal } from './vrreveal.js';
 
@@ -2546,6 +2547,7 @@ function loop(ts) {
   t += dt;
   updateClock(dt);
   pad.update(dt);
+  touch.render(state === 'kart' ? (race?.screen ? 'screen' : 'race') : state === 'drive' ? 'drive' : state === 'play' && !bigMap ? 'play' : '', { lobby: !!lobby && !gm });
   updateLobby(dt);
   animals[here].update(dt, player);
 
@@ -2754,7 +2756,7 @@ function loop(ts) {
   world.grassTime.value = t;
   world.follow(camera.position);
   world.updateFall(dt, camera.position);
-  relockEl.classList.toggle('hidden', !((state === 'play' || state === 'drive' || (state === 'kart' && !race?.screen)) && !document.pointerLockElement && !window.__dig.test && !pad.active));
+  relockEl.classList.toggle('hidden', !((state === 'play' || state === 'drive' || (state === 'kart' && !race?.screen)) && !document.pointerLockElement && !window.__dig.test && !pad.active && !touch.active));
   const showMini = settings.minimap && (state === 'play' || state === 'drive') && !onPlanet();
   document.getElementById('o2-row').classList.toggle('hidden', !onPlanet());
   if (onPlanet()) { const f = eco.s.oxygen / eco.cur('o2').o2; document.getElementById('o2-fill').style.width = (f * 100) + '%'; document.getElementById('o2-row').classList.toggle('low', f < .25); }
@@ -2799,7 +2801,10 @@ renderer.setAnimationLoop(loop);
 initMenus({ hover: () => audio.hover(), press: () => { audio.init(); audio.pop(); } });
 
 // ---------- a controller: the same game, with sticks, triggers and a buzz ----------
+// a phone: the same controller, drawn on the screen; a drag looks around
+const touch = createTouch({ look: (dx, dy) => { if (state === 'play') { if (onPlanet()) moonP.look(dx, dy, settings.sens); else player.look(dx, dy); } } });
 const pad = createGamepad({
+  virtual: () => touch.active ? touch.pad : null,
   context() {
     if (state === 'reveal') return 'reveal';
     if (['attract', 'paused', 'panel', 'read', 'win', 'gamemenu'].includes(state)) return 'menu';
@@ -2830,6 +2835,13 @@ const pad = createGamepad({
     disconnected() { ui.toast('manette débranchée', true, 1800); },
   },
 });
+// the hotbar, tapped on a phone
+ui.el.hotbar.addEventListener('click', (e) => {
+  const s = e.target.closest('.slot');
+  if (!s || state !== 'play') return;
+  const slots = hotSlots(), n = [...ui.el.hotbar.children].indexOf(s);
+  if (n >= 0 && n < slots.length) { eco.s.slot = slots[n]; audio.tick(); }
+});
 // felt as well as seen
 {
   const hurt = ui.hurt, boom = audio.boom, bonk = audio.bonk;
@@ -2857,7 +2869,7 @@ window.__dig = {
   test: false,
   skipSwoop() { swoop = 1; this.test = true; },
   start, toSurface, travel, win, save, useItem, applyUpgrades, openPanel, closePanel, enterVan, exitVan, useLift, explode,
-  quest, takeKey, reveal, startReveal, gameroom: house.room, updateAim, get pad() { return pad; }, get down() { return down; }, screenView: (dt) => race?.screen && screenView(dt),
+  quest, takeKey, reveal, startReveal, gameroom: house.room, updateAim, get pad() { return pad; }, get touch() { return touch; }, get down() { return down; }, screenView: (dt) => race?.screen && screenView(dt),
   interact: (id) => interact(id === 'van' ? VAN : id === 'lift' ? LIFT : world.interactables.find(i => i.id === id)),
   swing: doDig,
 };
