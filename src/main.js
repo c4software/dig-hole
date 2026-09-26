@@ -25,6 +25,12 @@ import { createMoonPlayer } from './moonplayer.js';
 import { createRocket, PARTS } from './rocket.js';
 import { createMiniGames, GAMES, fmtRecord } from './minigames.js';
 import { createKart } from './kart.js';
+import { createRC } from './rcrace.js';
+import { createNes } from './nes.js';
+import { createEncre } from './encre.js';
+import { initMenus } from './menufx.js';
+import { createKeyQuest } from './gameroom.js';
+import { createReveal } from './vrreveal.js';
 
 const REACH = 3.2;
 const params = new URLSearchParams(location.search);
@@ -113,6 +119,19 @@ const homeRoot = world.homeDecor;
 const heart = createHeart(homeRoot, terrains.home.heartPos);
 const audio = createAudio();
 const house = world.house;
+house.room.noShadows();
+// the key to upstairs: buried in the garden, where the map's seed says; exploration starts with it
+const quest = createKeyQuest({ parent: house.group, terrain: terrains.home, camera });
+if (EXPLORE) eco.s.upKey = true;
+quest.place(eco.s.mapSeed ?? 1337);
+quest.setDone(!!eco.s.upKey);
+house.room.setUnlocked(!!eco.s.upKey);
+// a VR headset under the bed, for the curious (vrreveal.js runs the show)
+const reveal = createReveal({ scene, camera, renderer, world, audio });
+const headset = reveal.headset();
+headset.position.set(-3.98, 0, -20.95); headset.rotation.y = Math.PI / 2 - .35;
+house.group.add(headset);
+world.interactables.push({ id: 'vr', pos: new THREE.Vector3(-3.95, .1, -20.95), reach: 1.7, aim: .9 });
 const delivery = createDelivery({ scene: homeRoot, label: world.label, interactables: world.interactables, getTerrain: () => terrains.home });
 delivery.load(eco.s.delivery);
 world.shadows(delivery.van);
@@ -318,12 +337,13 @@ function setMode(m) {
   wantMode = m;
   modeBtns.forEach(b => b.setAttribute('aria-checked', String(b.dataset.mode === m)));
   multiForm.classList.toggle('hidden', m !== 'multi');
+  document.getElementById('play-sub').textContent = { solo: 'solo · ta sauvegarde', explore: 'exploration · tout illimité', multi: 'à plusieurs · le jardin commun' }[m];
 }
 try { nickIn.value = params.get('name') || localStorage.getItem('a-hole-nick') || ''; } catch {}
 setMode(MODE);
 modeBtns.forEach(b => b.addEventListener('click', (e) => { e.stopPropagation(); setMode(b.dataset.mode); }));
 multiForm.addEventListener('click', (e) => e.stopPropagation());
-multiForm.addEventListener('submit', (e) => { e.preventDefault(); ui.el.attract.click(); });
+multiForm.addEventListener('submit', (e) => { e.preventDefault(); start(); });
 
 function start() {
   // switching mode reloads into the other world
@@ -347,9 +367,10 @@ function start() {
   lockPointer();
   if (EXPLORE) setTimeout(() => ui.hint('exploration : tout est illimité · jetpack, bombes, pelle en jade… amuse-toi', 7000), 1500);
   else if (giftText) setTimeout(() => { ui.hint(giftText, 7000); giftText = null; }, 1500);
+  else if (!eco.s.upKey) setTimeout(() => hintOnce('key', 'une clef est enterrée dans le potager : suis le thermomètre en bas à droite · clic gauche pour creuser', 7000), 1400);
   else if (eco.s.best < 0.5) setTimeout(() => hintOnce('dig', 'clic gauche pour creuser · e pour interagir · la maison est ouverte', 6000), 1400);
 }
-ui.el.attract.addEventListener('click', start);
+document.getElementById('play').addEventListener('click', start);
 resetBtn.addEventListener('click', (e) => {
   e.stopPropagation();
   if (resetBtn.dataset.armed) { eco.wipe(); location.reload(); return; }
@@ -358,16 +379,19 @@ resetBtn.addEventListener('click', (e) => {
   setTimeout(() => { delete resetBtn.dataset.armed; resetBtn.textContent = 'tout recommencer'; }, 3000);
 });
 ui.el.resume.addEventListener('click', (e) => {
-  if (e.target.closest('#settings') && !e.target.closest('#resume-go')) return;
+  if (e.target.closest('#settings, #set-title, #set-quit, .set-keys')) return;
   ui.el.resume.classList.add('hidden'); state = pausedFrom; pausedFrom = 'play';
   if (state === 'play') player.enable();
-  lockPointer();
+  if (!race?.screen) lockPointer();
 });
 
+// the mouse let go while playing (Escape, alt-tab): straight to the pause menu.
+// Every other way out of the lock (a panel, the bottom, a trip…) changes the state first.
 document.addEventListener('pointerlockchange', () => {
   if (document.pointerLockElement) return;
   digging = false; throwing = false;
-  if (state === 'play' || state === 'drive') save();
+  if ((state === 'play' || state === 'drive' || (state === 'kart' && !race?.screen)) && !window.__dig?.test) openPause();
+  else if (state === 'play' || state === 'drive') save();
 });
 
 addEventListener('contextmenu', (e) => { if (state !== 'attract') e.preventDefault(); });
@@ -375,7 +399,7 @@ addEventListener('mousedown', (e) => {
   // a game started on its own (after a change of mode) gets its sound at the first click
   if (state !== 'attract') audio.init();
   // a click on the game while the mouse is free just takes it back
-  if ((state === 'play' || state === 'drive' || state === 'kart') && !document.pointerLockElement && e.target === renderer.domElement) { lockPointer(); return; }
+  if ((state === 'play' || state === 'drive' || (state === 'kart' && !race?.screen)) && !document.pointerLockElement && e.target === renderer.domElement) { lockPointer(); return; }
   if (state !== 'play') return;
   if (e.button === 0) digging = true;
   if (e.button === 2) { throwing = true; throwT = THROW_EVERY; useItem(); }
@@ -400,9 +424,9 @@ addEventListener('keydown', (e) => {
   }
   if (e.code === 'Escape' && (state === 'panel' || state === 'read')) closePanel();
   else if (e.code === 'Escape' && bigMap) toggleMap();
-  else if (e.code === 'Escape' && (state === 'play' || state === 'drive') && !document.pointerLockElement) openPause();
+  else if (e.code === 'Escape' && (state === 'play' || state === 'drive' || (state === 'kart' && race?.screen)) && !document.pointerLockElement) openPause();
   if (e.code === 'KeyP' && (state === 'play' || state === 'drive' || state === 'kart')) openPause();
-  if (e.code === 'KeyR' && state === 'kart') { quitKart(); return; }
+  if (e.code === 'KeyR' && state === 'kart') { race?.mod.respawn(); return; }
   if (e.code === 'KeyM' && (state === 'play' || bigMap)) { if (onPlanet() && !bigMap) ui.toast('pas de carte ici… pour l\'instant'); else toggleMap(); }
   if (state !== 'play') return;
   if (e.code === 'KeyR') toSurface();
@@ -484,9 +508,11 @@ function findNear() {
     if (it.off || it.column) continue;
     const reach = it.reach || 2.6;
     const d = Math.hypot(player.pos.x - it.pos.x, player.pos.z - it.pos.z);
-    if (d > reach || d > bd + 0.3 || player.pos.y < -1 || Math.abs(player.pos.y + 1 - it.pos.y) > 2) continue;
+    if (d > reach || (d > bd + 0.3 && !it.aim) || player.pos.y < -1 || Math.abs(player.pos.y + 1 - it.pos.y) > 2) continue;
     const to = it.pos.clone().sub(camera.position).normalize();
-    if (to.dot(dir) < 0.5) continue;
+    if (to.dot(dir) < (it.aim || 0.5)) continue;
+    // something small you have to look right at (the headset) wins over what's around it
+    if (it.aim) return it;
     best = it; bd = d;
   }
   return best;
@@ -524,6 +550,10 @@ function updateAim() {
     else if (near.id === 'loot') p = near.spot.looted ? `${near.spot.name} · déjà vidé` : `<b>e</b> fouiller ${near.spot.name}`;
     else if (near.id === 'rocket') { const n = PARTS.filter(q => eco.s.parts[q.id]).length; p = n === 5 ? '<b>e</b> décoller pour la lune' : `la fusée · ${n}/5 pièces · il manque : ${PARTS.filter(q => !eco.s.parts[q.id]).map(q => q.name).join(', ')}`; }
     else if (near.id === 'globe') p = `<b>e</b> ${hologram.on ? 'éteindre' : 'voir'} le trou en transparence` + (eco.s.china ? ' · <b>t</b> voyager au japon' : '');
+    else if (near.id === 'updoor') p = house.room.locked ? 'la porte de l\'étage · fermée à clef' : house.room.doorOpen ? '<b>e</b> fermer la porte' : '<b>e</b> ouvrir la porte';
+    else if (near.id === 'vr') p = '<b>e</b> mettre le casque… ?';
+    else if (near.id === 'egg') p = '<b>e</b> l\'œuf d\'or';
+    else if (near.game) p = `<b>e</b> jouer · ${GAMES[near.game].name}`;
     else if (near.id === 'lift') p = elevator.holds(player.pos) ? (elevator.y > -1 ? `<b>e</b> descendre à ${liftBottomDepth().toFixed(0)} m` : '<b>e</b> remonter') : '<b>e</b> appeler l\'ascenseur';
     ui.prompt(p);
     return;
@@ -687,6 +717,7 @@ function doDig() {
   const r = tool.r * (eco.s.perks.sharp ? 1.15 : 1) * (eco.s.perks.titan && tool.kind === 'shovel' ? 1.2 : 1);
   const out = applyOp({ k: 'carve', w: here, c: center.toArray().map(v => +v.toFixed(3)), r, tier: tool.tier, space: eco.space, destroy: false });
   if (here === 'home') mg.onDig(center);
+  if (here === 'home' && quest.hits(center, r)) takeKey();
   terrain.flush();
   unlock('first');
   if (tool.kind === 'shovel') audio.dig(h); else if (Math.random() < .3) audio.dig(h);
@@ -1254,6 +1285,7 @@ function reward(v, text) {
   ui.hint(text + ` · +${ui.fmt(v)} ●`, 5000);
 }
 mg.onEnd = (id, r) => {
+  syncPauseQuit();
   if (r.lost) { audio.full(); ui.hint(r.text, 4000); return; }
   audio.win();
   const best = record(id, r.value, GAMES[id].lower);
@@ -1261,40 +1293,253 @@ mg.onEnd = (id, r) => {
   save();
 };
 
-// ---------- the kart race: far south of the garden ----------
-const kart = createKart({ scene, camera, audio, ui });
-const kartReturn = { pos: new THREE.Vector3(), yaw: 0 };
-function startKart() {
-  kartReturn.pos.copy(player.pos); kartReturn.yaw = player.yaw;
+// ---------- the races, kart and rc: one frame for both ----------
+// A race module: start({ seed, humans, hostId, meId, send }), update(dt, keys), stop(), respawn(),
+// onFx(peerId, fx), peerLeft(id), hud(), onEnd({ place, time, of }). The host runs the bots.
+const RACES = {
+  kart: { mod: createKart({ scene, camera, audio, ui }), help: '3 tours · zqsd pour piloter · shift pour déraper · espace pour l\'objet · r pour revenir sur la piste', prizes: [1500, 800, 400, 100] },
+  rc: { mod: createRC({ scene, camera, audio, ui, world, terrain: terrains.home }), help: 'petites voitures dans la ville · zqsd · espace pour l\'objet · r pour revenir sur la piste', prizes: [2000, 1100, 600, 300, 150, 80] },
+  // the 2D games draw on their own canvas over the world: no mouse to hold
+  nes: { mod: createNes({ audio, ui }), screen: true, help: 'flèches / zqsd · espace pour sauter · shift pour courir', prizes: [1800, 900, 450, 200] },
+  encre: { mod: createEncre({ audio, ui }), screen: true, help: 'zqsd · espace pour sauter · clic ou j pour tirer · shift pour nager', prizes: [1600, 600], value: (r) => r.pct },
+};
+let race = null;
+const raceReturn = { pos: new THREE.Vector3(), yaw: 0 };
+const myId = () => net?.id ?? 'me';
+// who races: me, and everyone else in the garden (they all join), sorted so every client agrees
+const myName = () => MULTI ? (params.get('name') || 'creuseur') : 'toi';
+function raceHumans(roster = null) {
+  const hs = [{ id: myId(), name: myName(), color: net?.color ?? 0xc8581a, me: true }];
+  if (net) for (const [id, p] of net.peers) if (roster ? roster.includes(id) : p.w === 'home') hs.push({ id, name: p.name, color: p.color, me: false });
+  return hs.sort((a, b) => String(a.id).localeCompare(String(b.id)));
+}
+function startRace(id, { seed = Math.floor(Math.random() * 1e9), hostId = myId(), roster = null, opts = null } = {}) {
+  if (race) quitRace(null, true);
+  else { raceReturn.pos.copy(player.pos); raceReturn.yaw = player.yaw; }
   mg.stop(false);
   state = 'kart'; digging = false;
   player.disable();
   document.body.classList.add('in-kart');
-  kart.start();
-  ui.layer('a hole grand prix', '3 tours · zqsd pour piloter · espace pour l\'objet · r pour abandonner');
+  race = { id, ...RACES[id], opts };
+  race.mod.start({ seed, opts: opts || {}, humans: raceHumans(roster), hostId, meId: myId(), send: (fx) => net?.sendFx({ k: 'race', race: id, ...fx }) });
+  if (race.screen) {
+    const scr = here === 'home' && house.room?.screens?.[id];
+    race.onScreen = scr || null; race.screenT = 0;
+    race.mod.setRect?.(null);
+    if (scr) { document.body.classList.add('on-screen'); screenView(0); }
+    if (document.pointerLockElement) document.exitPointerLock();
+  }
+  else {
+    const mode = opts?.mode && race.mod.modes?.find(m => m.id === opts.mode);
+    ui.layer(GAMES[id].name + (mode ? ' · ' + mode.name : ''), mode?.help || race.help);
+  }
+  syncPauseQuit();
 }
-function quitKart(result) {
-  kart.stop();
-  document.body.classList.remove('in-kart');
+function quitRace(result, silent = false) {
+  if (!race) return;
+  const r = race;
+  race = null;
+  r.mod.stop();
+  document.body.classList.remove('in-kart', 'on-screen');
+  document.getElementById('mg').classList.add('hidden');
+  syncPauseQuit();
+  if (silent) return;
+  if (state === 'paused') { ui.el.resume.classList.add('hidden'); pausedFrom = 'play'; }
   state = 'play';
-  player.pos.copy(kartReturn.pos); player.yaw = kartReturn.yaw; player.vel.set(0, 0, 0);
+  player.pos.copy(raceReturn.pos); player.yaw = raceReturn.yaw; player.vel.set(0, 0, 0);
   player.enable();
   camera.up.set(0, 1, 0);
-  document.getElementById('mg').classList.add('hidden');
-  if (!result) { ui.toast('course abandonnée'); return; }
-  const prizes = [1500, 800, 400, 100];
-  const best = result.place === 1 && record('kart', result.time, GAMES.kart.lower);
-  reward(prizes[result.place - 1], `${result.place === 1 ? '1re' : result.place + 'e'} place en ${mg.fmt(result.time)}${best ? ' · nouveau record !' : ''}`);
-  if (result.place === 1) unlock('kart');
+  if (!result) { ui.toast(r.screen ? 'partie abandonnée' : 'course abandonnée'); return; }
+  const mode = r.opts?.mode && r.mod.modes?.find(m => m.id === r.opts.mode);
+  const first = !mode || mode.id === r.mod.modes[0].id;
+  const value = result.value ?? (r.value ? r.value(result) : result.time);
+  const lower = mode && 'lower' in mode ? mode.lower : GAMES[r.id].lower;
+  const best = result.place === 1 && value != null && record(first ? r.id : r.id + ':' + mode.id, value, lower);
+  const text = result.text ?? `${result.place === 1 ? '1re' : result.place + 'e'} place sur ${result.of} en ${mg.fmt(result.time)}`;
+  reward(r.prizes[Math.min(result.place, r.prizes.length) - 1], text + (best ? ' · nouveau record !' : ''));
+  if (result.place === 1 && r.id === 'kart') unlock('kart');
   save();
 }
-kart.onEnd = (r) => quitKart(r);
-function kartHud() {
-  const h = kart.hud(), el = document.getElementById('mg');
-  el.classList.remove('hidden');
-  if (h.count != null) { el.innerHTML = `<b>a hole grand prix</b><span class="big">${h.count > 0 ? h.count : 'partez !'}</span>`; return; }
-  el.innerHTML = `<b>tour ${h.lap} / ${h.laps}</b><span class="big">${h.place}${h.place === 1 ? 're' : 'e'} / ${h.of}</span><span>${mg.fmt(h.time)}${h.item ? ' · <em>' + h.item + '</em> (espace)' : ''}</span>`;
+for (const r of Object.values(RACES)) r.mod.onEnd = (res) => quitRace(res);
+// the 2D games are played on a screen of the game room upstairs: the camera walks up to it,
+// and the game's canvas is laid exactly over the glass (away from home: the whole page)
+const _sv = { a: new THREE.Vector3(), b: new THREE.Vector3(), side: new THREE.Vector3(), c: new THREE.Vector3() };
+function screenView(dt) {
+  const scr = race.onScreen;
+  if (!scr) return;
+  race.screenT = Math.min(1, (race.screenT || 0) + dt / 1.1);
+  const k = 1 - Math.pow(1 - race.screenT, 3);
+  // far enough for the glass to fill ~70 % of the height (and of the width), a little closer as it settles
+  const vf = Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2);
+  const fit = Math.max(scr.h / 2 / vf / .7, scr.w / 2 / (vf * camera.aspect) / .8);
+  const d = fit * (1.9 - .9 * k);
+  camera.position.copy(scr.center).addScaledVector(scr.normal, d);
+  camera.up.copy(scr.up);
+  camera.lookAt(scr.center);
+  camera.updateMatrixWorld();
+  // the four corners on the page
+  _sv.side.crossVectors(scr.up, scr.normal).normalize();
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+    _sv.c.copy(scr.center).addScaledVector(_sv.side, sx * scr.w / 2).addScaledVector(scr.up, sy * scr.h / 2).project(camera);
+    const px = (_sv.c.x + 1) / 2 * innerWidth, py = (1 - _sv.c.y) / 2 * innerHeight;
+    x0 = Math.min(x0, px); x1 = Math.max(x1, px); y0 = Math.min(y0, py); y1 = Math.max(y1, py);
+  }
+  race.mod.setRect?.({ x: Math.round(x0), y: Math.round(y0), w: Math.round(x1 - x0), h: Math.round(y1 - y0) });
 }
+
+// kept for the tests and the curious
+const kart = RACES.kart.mod;
+const startKart = () => startRace('kart'), quitKart = (res) => quitRace(res);
+function raceHud() {
+  const h = race.mod.hud(), el = document.getElementById('mg');
+  el.classList.toggle('hidden', !!h.hidden);
+  if (h.hidden) return;
+  const title = GAMES[race.id].name;
+  if (h.count != null) { el.innerHTML = `<b>${title}</b><span class="big">${h.count > 0 ? h.count : 'partez !'}</span>`; return; }
+  const hex = (c) => '#' + (c ?? 0xffffff).toString(16).padStart(6, '0');
+  const board = h.board ? `<div class="board">${h.board.map((b, n) => `<span style="color:${hex(b.color)}">${n + 1}. ${b.me ? '<em>toi</em>' : b.name}</span>`).join('')}</div>` : '';
+  el.innerHTML = `<b>tour ${h.lap} / ${h.laps}</b><span class="big">${h.place}${h.place === 1 ? 're' : 'e'} / ${h.of}</span><span>${mg.fmt(h.time)}${h.item ? ' · <em>' + h.item + '</em> (espace)' : ''}${h.wrong ? ' · <em>mauvais sens !</em>' : ''}</span>${board}`;
+}
+
+// ---------- a game offered online: the lobby ----------
+// Picking a game at the arcade offers it to everyone, wherever they are. Players press « prêt »;
+// from two ready, a 10 s countdown (time to take the teleporter home); at zero the host sends the
+// list of the ready ones and they all start together, on the same seed.
+const SCREEN_GAMES = new Set(['nes', 'encre']);   // played on a screen: from anywhere
+function launchGame(g, seed = Math.floor(Math.random() * 1e9), hostId = null, roster = null, opts = null) {
+  const players = raceHumans(roster);
+  if (RACES[g]) startRace(g, { seed, hostId: hostId ?? myId(), roster, opts });
+  else mg.start(g, { seed, humans: players.length, players, send: (fx) => net?.sendFx({ k: 'mgp', g, ...fx }) });
+  syncPauseQuit();
+}
+const lobbyEl = document.getElementById('lobby');
+const $l = (id) => document.getElementById(id);
+let lobby = null;   // { g, seed, host, ready: Map(id → name), count, left, forced, waitGo }
+let modesFor = null;
+function offerGame(g, opts = null) {
+  // several modes: a menu first, for the one who starts it
+  if (!opts && RACES[g]?.mod.modes?.length) { modesFor = g; openPanel('modes'); return; }
+  if (!net?.online || !net.peers.size) { launchGame(g, undefined, null, null, opts); return; }
+  if (lobby && lobby.host === myId()) net.sendFx({ k: 'lobby', t: 'cancel', seed: lobby.seed });
+  lobby = { g, opts, seed: Math.floor(Math.random() * 1e9), host: myId(), ready: new Map([[myId(), myName()]]), count: null };
+  net.sendFx({ k: 'lobby', t: 'open', g, opts, seed: lobby.seed });
+  showLobby();
+  ui.toast('partie proposée à tout le monde', false, 1800);
+}
+function showLobby() {
+  lobbyEl.classList.remove('hidden', 'out');
+  lobbyEl.style.animation = 'none'; void lobbyEl.offsetWidth; lobbyEl.style.animation = '';
+  renderLobby();
+}
+function closeLobby() {
+  lobby = null;
+  if (lobbyEl.classList.contains('hidden')) return;
+  lobbyEl.classList.add('out');
+  setTimeout(() => { if (!lobby) lobbyEl.classList.add('hidden'); }, 300);
+}
+const hexc = (c) => '#' + (c ?? 0xffffff).toString(16).padStart(6, '0');
+function renderLobby() {
+  if (!lobby) return;
+  const me = myId(), host = lobby.host === me, ready = lobby.ready.has(me);
+  const mode = lobby.opts?.mode && RACES[lobby.g]?.mod.modes?.find(m => m.id === lobby.opts.mode);
+  $l('lobby-game').textContent = GAMES[lobby.g].name + (mode ? ' · ' + mode.name : '');
+  $l('lobby-kicker').textContent = host ? 'ta partie' : `${net.peers.get(lobby.host)?.name ?? '?'} propose`;
+  const n = lobby.ready.size;
+  $l('lobby-sub').textContent = lobby.count != null ? (lobby.left > 0 ? `départ dans ${Math.ceil(lobby.left)} s · il est encore temps` : 'c\'est parti…')
+    : n < 2 ? 'il faut deux joueurs prêts pour lancer le décompte' : '';
+  const everyone = [{ id: me, name: myName(), color: net.color }, ...[...net.peers].map(([id, p]) => ({ id, name: p.name, color: p.color }))];
+  $l('lobby-list').innerHTML = everyone.map(p => `<span class="lb-p${lobby.ready.has(p.id) ? ' on' : ''}"><i style="background:${hexc(p.color)}"></i>${p.id === me ? 'toi' : p.name.replace(/[<>&]/g, '')}</span>`).join('');
+  lobbyEl.classList.toggle('is-ready', ready);
+  $l('lobby-ready').querySelector('.btn__label').textContent = ready ? (host ? 'annuler' : 'plus prêt') : 'prêt !';
+  // the host can start alone (or with whoever is ready) without waiting for a second player
+  $l('lobby-alt').classList.toggle('hidden', !(host && lobby.count == null && n < 2));
+  const away = !SCREEN_GAMES.has(lobby.g) && here !== 'home';
+  const w = $l('lobby-where');
+  w.textContent = away ? 'reviens au jardin (téléporteur)' : SCREEN_GAMES.has(lobby.g) ? 'se joue d\'où tu veux' : 'dans le jardin';
+  w.classList.toggle('warn', away);
+  const c = $l('lobby-count');
+  c.classList.toggle('hidden', lobby.count == null);
+  c.classList.toggle('hot', lobby.count != null && lobby.left <= 3);
+}
+function setReady(on) {
+  if (!lobby) return;
+  const me = myId();
+  if (lobby.host === me && !on) { net.sendFx({ k: 'lobby', t: 'cancel', seed: lobby.seed }); closeLobby(); ui.toast('partie annulée'); return; }
+  if (on) lobby.ready.set(me, myName()); else lobby.ready.delete(me);
+  net.sendFx({ k: 'lobby', t: 'ready', seed: lobby.seed, on });
+  audio.tick();
+  hostCheck(); renderLobby();
+}
+// the host decides when the countdown starts, stops, and when everyone goes
+function hostCheck() {
+  if (!lobby || lobby.host !== myId()) return;
+  const n = lobby.ready.size;
+  if (lobby.count == null && (n >= 2 || lobby.forced)) { lobby.count = 10; lobby.left = 10; net.sendFx({ k: 'lobby', t: 'count', seed: lobby.seed }); audio.buy(); }
+  else if (lobby.count != null && n < 2 && !lobby.forced) { lobby.count = null; net.sendFx({ k: 'lobby', t: 'uncount', seed: lobby.seed }); }
+}
+function onLobby(id, peer, fx) {
+  // someone on the list who could not come (away from the garden): out of the game
+  if (fx.t === 'out') { race?.mod.peerLeft(id); mg.rivalLeft(id); return; }
+  if (fx.t === 'open') {
+    lobby = { g: fx.g, opts: fx.opts || null, seed: fx.seed, host: id, ready: new Map([[id, peer.name]]), count: null };
+    if (state !== 'attract') { showLobby(); audio.pickup(1); }
+    return;
+  }
+  if (!lobby || fx.seed !== lobby.seed) return;
+  if (fx.t === 'ready') { if (fx.on) lobby.ready.set(id, peer.name); else lobby.ready.delete(id); hostCheck(); }
+  else if (fx.t === 'count') { lobby.count = 10; lobby.left = 10; audio.buy(); }
+  else if (fx.t === 'uncount') lobby.count = null;
+  else if (fx.t === 'cancel') { closeLobby(); ui.toast(`${peer.name} a annulé la partie`); return; }
+  else if (fx.t === 'go') { go(fx.roster, id); return; }
+  renderLobby();
+}
+function go(roster, hostId) {
+  const l = lobby;
+  closeLobby();
+  if (!l || !roster.includes(myId())) return;
+  if (!SCREEN_GAMES.has(l.g) && here !== 'home') { ui.toast('tu n\'étais pas dans le jardin · partie ratée', true, 3000); net?.sendFx({ k: 'lobby', t: 'out', seed: l.seed }); return; }
+  if (['travel', 'launch', 'faint', 'win', 'attract'].includes(state)) { net?.sendFx({ k: 'lobby', t: 'out', seed: l.seed }); return; }
+  if (state === 'paused') { ui.el.resume.classList.add('hidden'); state = pausedFrom; pausedFrom = 'play'; if (state === 'play') player.enable(); }
+  if (state === 'panel' || state === 'read') closePanel();
+  if (state === 'drive') exitVan();
+  launchGame(l.g, l.seed, hostId, roster.filter(id => id !== myId()), l.opts);
+  ui.hint(`« ${GAMES[l.g].name} » · ${roster.length} joueur${roster.length > 1 ? 's' : ''}`, 3000);
+}
+let lobbyT = 0;
+function updateLobby(dt) {
+  if (!lobby) return;
+  lobbyEl.classList.toggle('hidden', state === 'attract');
+  if ((lobbyT -= dt) <= 0) { lobbyT = .5; renderLobby(); }
+  if (lobby.count == null) return;
+  const before = Math.ceil(lobby.left);
+  lobby.left -= dt;
+  if (Math.ceil(lobby.left) !== before && lobby.left > 0) {
+    const c = $l('lobby-count');
+    c.textContent = Math.ceil(lobby.left); c.classList.remove('tick'); void c.offsetWidth; c.classList.add('tick');
+    if (lobby.left <= 3) audio.tick();
+    renderLobby();
+  }
+  if (lobby.left <= 0 && lobby.host === myId() && !lobby.waitGo) {
+    lobby.waitGo = true;
+    const roster = [...lobby.ready.keys()];
+    net.sendFx({ k: 'lobby', t: 'go', seed: lobby.seed, roster });
+    go(roster, myId());
+  } else if (lobby.left < -4) { closeLobby(); ui.toast('la partie n\'a pas démarré', true); }
+}
+$l('lobby-ready').addEventListener('click', (e) => { e.stopPropagation(); if (lobby) setReady(!lobby.ready.has(myId())); });
+$l('lobby-alt').addEventListener('click', (e) => { e.stopPropagation(); if (lobby && lobby.host === myId()) { lobby.forced = true; hostCheck(); renderLobby(); } });
+addEventListener('keydown', (e) => { if (e.code === 'KeyO' && !e.repeat && lobby && !e.target.closest?.('input, textarea')) setReady(!lobby.ready.has(myId())); });
+
+// the pause menu offers a way out of the game in progress
+const pauseQuit = document.getElementById('set-quit');
+function syncPauseQuit() { pauseQuit.classList.toggle('hidden', !race && !mg.active); }
+pauseQuit.addEventListener('click', () => {
+  if (race) quitRace(null); else { mg.stop(); syncPauseQuit(); }
+  ui.el.resume.classList.add('hidden');
+  if (state === 'paused') { state = 'play'; pausedFrom = 'play'; player.enable(); }
+  lockPointer();
+});
 
 // ---------- the bomber: a random raid over the garden ----------
 let planeHits = 0, raidHp = 100;
@@ -1473,6 +1718,30 @@ delivery.onArrive = (cargo) => {
   else if (player.pos.y > -2) ui.toast('la camionnette de livraison s\'arrête devant chez toi…', false, 2600);
 };
 
+// ---------- the key to upstairs ----------
+function takeKey() {
+  if (eco.s.upKey) return;
+  eco.s.upKey = true;
+  quest.take();
+  house.room.setUnlocked(true, true);
+  audio.win(); ui.wash(); shakeT = Math.max(shakeT, .15);
+  debris.burst(quest.pos.clone(), new THREE.Vector3(0, 1, 0), 0xffc629, 18, 1.2);
+  ui.layer('la clef de l\'étage', 'la porte du haut est ouverte · les mini-jeux t\'attendent');
+  save();
+}
+
+// ---------- the headset under the bed: someone else's show, we just hand over ----------
+async function startReveal() {
+  if (state !== 'play' || reveal.playing) return;
+  state = 'reveal'; digging = false; throwing = false;
+  player.disable(); ui.prompt(''); ui.cross('');
+  if (document.pointerLockElement) document.exitPointerLock();
+  ui.el.hud.classList.add('hidden');
+  try { await reveal.play(); } catch (e) { console.warn('reveal', e); }
+  ui.el.hud.classList.remove('hidden');
+  state = 'play'; player.enable(); player.applyCamera(); lockPointer();
+}
+
 // ---------- stations ----------
 function interact(it) {
   switch (it.id) {
@@ -1492,6 +1761,12 @@ function interact(it) {
       return;
     }
     case 'door': house.toggleDoor(); audio.step(); return;
+    case 'updoor':
+      if (house.room.locked) { audio.deny(); ui.toast('fermée à clef · creuse pour trouver la clef', true, 2600); return; }
+      house.room.toggleDoor(); audio.step();
+      return;
+    case 'vr': startReveal(); return;
+    case 'egg': audio.tick(); ui.toast('trois clefs, trois portes… et un œuf. il y a toujours quelque chose de caché, même sous un lit', false, 3600); return;
     case 'bed': {
       ui.veil(1);
       setTimeout(() => { eco.s.health = 100; ui.veil(0); ui.toast('requinqué · partie sauvegardée'); unlock('nap'); save(); }, 900);
@@ -1538,7 +1813,10 @@ function interact(it) {
       return;
     case 'loot': steal(it.house, it.spot); return;
     case 'lift': useLift(); return;
-    default: openPanel(it.id);
+    default:
+      // the pedestals upstairs: one game each
+      if (it.game) { offerGame(it.game); return; }
+      openPanel(it.id);
   }
 }
 
@@ -1552,6 +1830,7 @@ function resetMap(seed, local) {
   terrains.home.rebuildAll(); terrains.china.rebuildAll();
   moles.clear(); guardiansUp = false;
   ladders.clear();
+  eco.s.mapSeed = seed; quest.place(seed);
   eco.s.best = 0; eco.s.bestChina = 0; eco.s.layerSeen = 0; eco.s.layerSeenChina = 0; eco.s.guardians = false;
   heart.group.visible = true;
   if (elevator.owned) {
@@ -1750,7 +2029,16 @@ function renderPanel(quip) {
       return { id: 'game:' + id, kind: 'jouer', name: g.name, sub: `${g.sub} · ${best}`, done: r != null };
     });
     if (mg.active) rows.push({ id: 'game:stop', kind: '', name: 'abandonner le jeu en cours' });
-    ui.panel({ title: 'la borne d\'arcade', quip, rows, note: 'les mini-jeux rapportent des pièces · r pour quitter le karting', close: 'fermer' });
+    ui.panel({ title: 'la borne d\'arcade', quip, rows, note: MULTI ? 'la partie est proposée à tout le monde · départ dès deux joueurs prêts' : 'les mini-jeux rapportent des pièces', close: 'fermer' });
+  } else if (k === 'modes') {
+    // a game with several modes: the one who starts it picks
+    const g = modesFor, mods = RACES[g].mod.modes;
+    const rec = eco.s.records || {};
+    const rows = mods.map(m => {
+      const r = rec[g + (m.id === mods[0].id ? '' : ':' + m.id)];
+      return { id: 'mode:' + m.id, kind: 'mode', name: m.name, sub: m.sub + (r != null ? ` · record : ${fmtRecord(m.unit || GAMES[g].unit, r)}` : ''), done: r != null };
+    });
+    ui.panel({ title: GAMES[g].name, rows, note: MULTI ? 'le mode choisi est proposé à tout le monde' : 'choisis un mode', close: 'retour' });
   } else if (k === 'board') {
     const rows = ACH_LIST.map(([id, name]) => ({ id: 'ach:' + id, name: eco.s.ach[id] ? name : '? ? ?', done: !!eco.s.ach[id], static: true, kind: eco.s.ach[id] ? '●' : '○' }));
     ui.panel({ title: `exploits · ${Object.keys(eco.s.ach).length}/${ACH_LIST.length}`, rows, close: 'fermer' });
@@ -1816,11 +2104,16 @@ ui.el.shopItems.addEventListener('click', (e) => {
     renderPanel('commandé !');
     ui.flashItem(id, 'bought');
     save();
+  } else if (panelKind === 'modes' && id.startsWith('mode:')) {
+    const g = modesFor;
+    closePanel();
+    offerGame(g, { mode: id.slice(5) });
+    return;
   } else if (panelKind === 'arcade') {
     const g = id.slice(5);
     closePanel();
-    if (g === 'stop') { mg.stop(); return; }
-    if (g === 'kart') startKart(); else mg.start(g);
+    if (g === 'stop') { mg.stop(); syncPauseQuit(); return; }
+    offerGame(g);
     return;
   } else if (panelKind === 'lander' && id.startsWith('lander:')) {
     closePanel();
@@ -1945,11 +2238,20 @@ if (MULTI) {
       ui.toast(`le jardin commun · ${m.players.length + 1} creuseur${m.players.length ? 's' : ''}`, false, 3000);
     },
     onOp(op) { applyOp(op, false); },
-    onFx(id, peer, fx) { mg.onFx(id, peer, fx); },
+    onFx(id, peer, fx) {
+      if (fx.k === 'lobby') onLobby(id, peer, fx);
+      else if (fx.k === 'mgp') { if (mg.active === fx.g) mg.onRival(id, fx); }
+      else if (fx.k === 'race') { if (race && race.id === fx.race) race.mod.onFx(id, fx); }
+      else mg.onFx(id, peer, fx);
+    },
     onSuperReset(m) { startSuperCountdown(m.in, m.seed, m.by); },
     onSuperDenied() { superDenied(); },
     onJoin(name) { ui.toast(`${name} arrive dans le jardin`); },
-    onLeave(name) { ui.toast(`${name} est parti`); },
+    onLeave(name, id) {
+      ui.toast(`${name} est parti`);
+      race?.mod.peerLeft(id); mg.rivalLeft(id);
+      if (lobby) { if (lobby.host === id) { closeLobby(); ui.toast('la partie proposée est annulée'); } else { lobby.ready.delete(id); hostCheck(); renderLobby(); } }
+    },
     onStatus(s) { if (s === 'off') ui.setNet('<span class="t">hors ligne</span>', true); },
   });
   net.connect('jardin', params.get('name') || 'creuseur');
@@ -2060,6 +2362,7 @@ function loop(ts) {
   const dt = Math.min(clock.getDelta(), 0.05);
   t += dt;
   updateClock(dt);
+  updateLobby(dt);
   animals[here].update(dt, player);
 
   if (state === 'attract') {
@@ -2083,10 +2386,11 @@ function loop(ts) {
       moonP.update(playing ? dt : 0, playing ? down : new Set());
       player.pos.copy(moonP.pos); player.vel.copy(moonP.vel);
       player.stats.jetting = moonP.stats.jetting;
-    } else player.update(playing ? dt : 0);
+    } else if (state === 'reveal') reveal.update(dt);
+    else player.update(playing ? dt : 0);
     elevator.update(dt, player);
     updateLaunch(dt);
-    if (state === 'kart') { kart.update(dt, down); kartHud(); }
+    if (state === 'kart' && race) { race.mod.update(dt, down); raceHud(); if (race?.screen) screenView(dt); }
     if (state === 'drive') {
       const input = {
         throttle: (down.has('KeyW') || down.has('ArrowUp') ? 1 : 0) - (down.has('KeyS') || down.has('ArrowDown') ? 1 : 0),
@@ -2142,6 +2446,7 @@ function loop(ts) {
       }
     }
     if (playing) {
+      if (here === 'home' && quest.touches(player.pos)) takeKey();
       eco.s.time += dt;
       if (player.stats.jetting) eco.s.battery = Math.max(0, eco.s.battery - 5 * dt);
     moonP.stats.fuel = onPlanet() && eco.s.battery <= 0 ? 0 : moonP.stats.fuel;
@@ -2234,7 +2539,7 @@ function loop(ts) {
     if (net) net.update(dt, { pos: player.pos, yaw: player.yaw, w: here, dig: (digging || shovel.busy) && !mg.armed, g: mg.active });
     updateNetList(dt);
   }
-  const holding = state !== 'attract' && state !== 'drive' && state !== 'launch' && state !== 'kart' && !onPlanet();
+  const holding = state !== 'attract' && state !== 'reveal' && state !== 'drive' && state !== 'launch' && state !== 'kart' && !onPlanet();
   const drilling = eco.s.tool === 'drill' && eco.s.lv.drill > 0 && !mg.armed;
   shovel.root.visible = holding && !drilling && !mg.armed;
   mg.updateBlaster(dt, holding && mg.armed && state === 'play', Math.hypot(player.vel.x, player.vel.z) > 0.5);
@@ -2253,6 +2558,9 @@ function loop(ts) {
   heart.update(dt);
   for (const c of Object.values(cores)) { c.ball.rotation.y += dt * .3; c.halo.scale.setScalar(1 + Math.sin(t * 2) * .06); }
   house.update(dt);
+  // the upper floor is only drawn from inside the house (its windows don't let you see in)
+  house.room.group.visible = house.inside(camera.position);
+  quest.update(dt, player, !eco.s.upKey && here === 'home' && !mg.active && !race && ['play', 'panel', 'drive', 'paused', 'read'].includes(state));
   // each town only animates while you're in it
   if (here === 'home') world.neighbours.update(dt);
   if (state === 'play') updateAlarm(dt);
@@ -2261,7 +2569,7 @@ function loop(ts) {
   world.grassTime.value = t;
   world.follow(camera.position);
   world.updateFall(dt, camera.position);
-  relockEl.classList.toggle('hidden', !((state === 'play' || state === 'drive' || state === 'kart') && !document.pointerLockElement && !window.__dig.test));
+  relockEl.classList.toggle('hidden', !((state === 'play' || state === 'drive' || (state === 'kart' && !race?.screen)) && !document.pointerLockElement && !window.__dig.test));
   const showMini = settings.minimap && (state === 'play' || state === 'drive') && !onPlanet();
   document.getElementById('o2-row').classList.toggle('hidden', !onPlanet());
   if (onPlanet()) { const f = eco.s.oxygen / eco.cur('o2').o2; document.getElementById('o2-fill').style.width = (f * 100) + '%'; document.getElementById('o2-row').classList.toggle('low', f < .25); }
@@ -2287,11 +2595,24 @@ function loop(ts) {
   // shadows: redrawn when the eye moves, or a few times a second for the sun and the critters
   shadowT += dt;
   if (shadowT > .25 || camera.position.distanceToSquared(shadowAt) > .04) { renderer.shadowMap.needsUpdate = true; shadowT = 0; shadowAt.copy(camera.position); }
-  world.render();
+  if (!race?.screen || race.onScreen) world.render();
 }
 renderer.setAnimationLoop(loop);
 
 // a change of mode on the title screen reloads the page: the new mode then starts straight away
+// the title screen's profile card, and the menus' feel
+{
+  const best = Math.max(eco.s.best || 0, eco.s.bestChina || 0);
+  document.getElementById('pf-best').textContent = best.toFixed(1);
+  document.getElementById('pf-money').textContent = eco.s.money >= 999999 ? '∞' : ui.fmt(eco.s.money);
+  document.getElementById('pf-name').textContent = MULTI ? (params.get('name') || 'creuseur') : EXPLORE ? 'explorateur' : 'creuseur';
+  const RANKS = [[0, 'jardinier'], [10, 'terrassier'], [30, 'mineur'], [80, 'spéléologue'], [150, 'foreur de fond'], [300, 'presque au centre'], [399, 'a touché le cœur']];
+  const rank = RANKS.filter(r => best >= r[0]).length - 1;
+  const rk = document.getElementById('pf-rank');
+  rk.textContent = RANKS[rank][1]; rk.dataset.t = rank;
+}
+initMenus({ hover: () => audio.hover(), press: () => { audio.init(); audio.pop(); } });
+
 if (params.has('go')) {
   params.delete('go');
   history.replaceState(null, '', location.pathname + (params.toString() ? '?' + params : ''));
@@ -2302,7 +2623,7 @@ if (params.has('go')) {
 window.__dig = {
   world, terrains, player, eco, ui, camera, renderer, scene, heart, shovel, delivery, elevator, moles, finds, bombs, plane, animals, hologram, moonP, rocket, gainPart, launch, get landerPos() { return landerPos; }, MOON, MARS, marsRocket, MARS_PAD,
   get net() { return net; },
-  mg, kart, startKart, quitKart,
+  mg, kart, startKart, quitKart, RACES, get race() { return race; }, startRace, quitRace, launchGame, offerGame, get lobby() { return lobby; }, setReady, stepLobby: (dt) => updateLobby(dt),
   steal, get alarm() { return alarm; }, stepAlarm: (dt) => updateAlarm(dt),
   stepLaunch(dt) { updateLaunch(dt); },
   get state() { return state; },
@@ -2311,6 +2632,7 @@ window.__dig = {
   test: false,
   skipSwoop() { swoop = 1; this.test = true; },
   start, toSurface, travel, win, save, useItem, applyUpgrades, openPanel, closePanel, enterVan, exitVan, useLift, explode,
+  quest, takeKey, reveal, startReveal, gameroom: house.room, updateAim, screenView: (dt) => race?.screen && screenView(dt),
   interact: (id) => interact(id === 'van' ? VAN : id === 'lift' ? LIFT : world.interactables.find(i => i.id === id)),
   swing: doDig,
 };
