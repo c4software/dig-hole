@@ -7,6 +7,7 @@
 import * as THREE from 'three';
 import { NX, S } from './terrain.js';
 import { mergeStatic } from './merge.js';
+import * as V from './vehicles.js';
 import { createBlossoms, createPoles, createCars, createContact, createWalkers, puffGeometry, roofColliders, seeded } from './street.js';
 
 export const CHINA = new THREE.Vector3(400, 0, 0);
@@ -670,20 +671,23 @@ export function createChina({ scene, colliders, interactables, label }) {
     c.fillStyle = '#9aa0a8'; c.fillRect(0, 112, w, 16);
   });
   const carMat = new THREE.MeshLambertMaterial({ map: carTex }), carEnd = mat(0xf4f0e6), under = mat(0x3a3e46);
-  const CAR = 18;
+  const CAR = 18, trainWheels = [];
   for (let k = 0; k < 3; k++) {
     const car = new THREE.Group(); car.position.x = k * (CAR + .6);
-    const body = new THREE.Mesh(new THREE.BoxGeometry(CAR, 3, 2.8), [carEnd, carEnd, mat(0xe8e4dc), under, carMat, carMat]);
+    const body = new THREE.Mesh(V.roundBox(CAR, 3, 2.8, .32, 2), [carEnd, carEnd, mat(0xe8e4dc), under, carMat, carMat]);
     body.position.y = 2.25; car.add(body);
     box(CAR - 2, .7, 2.2, under, 0, .55, 0, car);
-    for (const bxo of [-CAR / 2 + 2.5, CAR / 2 - 2.5]) box(2.6, .5, 2.4, mat(0x2a2c30), bxo, .5, 0, car);
+    for (const bxo of [-CAR / 2 + 2.5, CAR / 2 - 2.5]) {
+      box(2.6, .5, 2.4, mat(0x2a2c30), bxo, .5, 0, car);
+      for (const wx of [-.75, .75]) for (const wz of [-1.18, 1.18]) { const w = V.wheel({ r: .42, w: .14, rim: mat(0x8a8e96), tyre: mat(0x2a2c30), spokes: 0 }); w.position.set(bxo + wx, .42, wz); if (wz < 0) w.rotation.y = Math.PI; car.add(w); trainWheels.push(w); }
+    }
     if (k === 1) { box(1.6, .08, 1, mat(0x2a2c30), 0, 4.1, 0, car); const pa = box(1.6, .06, .06, mat(0x2a2c30), 0, 4.8, 0, car); pa.rotation.z = .5; box(1.2, .05, 1.2, mat(0x5a5e66), .6, 5.3, 0, car); }
     train.add(car);
   }
   // the cab ends: a dark windscreen and two headlights
   for (const [xo, s] of [[-CAR / 2 - .02, -1], [2 * (CAR + .6) + CAR / 2 + .02, 1]]) {
     const ws = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 1.1), mat(0x2a3a4a)); ws.position.set(xo + s * .01, 3, 0); ws.rotation.y = s * Math.PI / 2; train.add(ws);
-    for (const zz of [-.8, .8]) { const hl = new THREE.Mesh(new THREE.CircleGeometry(.14, 12), new THREE.MeshBasicMaterial({ color: 0xfff6d8 })); hl.position.set(xo + s * .02, 1.6, zz); hl.rotation.y = s * Math.PI / 2; train.add(hl); }
+    for (const zz of [-.8, .8]) { const hl = new THREE.Mesh(new THREE.CircleGeometry(.16, 14), V.lamp(0xfff6d8, 2.6)); hl.position.set(xo + s * .02, 1.6, zz); hl.rotation.y = s * Math.PI / 2; train.add(hl); }
   }
   train.position.set(-300, 0, TR[0]);
   train.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
@@ -725,6 +729,7 @@ export function createChina({ scene, colliders, interactables, label }) {
         if (left <= .05) { tX = STOP_X; tV = 0; tState = 'stop'; tT = 14; }
       } else if (tState === 'stop') { tT -= dt; if (tT <= 0) tState = 'out'; }
       else if (tState === 'out') { tV = Math.min(18, tV + 1.1 * dt); tX += tV * dt; if (tX > 260) { tState = 'wait'; tT = 25 + Math.random() * 20; tX = -300; } }
+      for (const w of trainWheels) w.spin.rotation.z -= (w.rotation.y ? -1 : 1) * (tX - train.position.x) / .42;
       train.position.x = tX;
       trainCollider.min.set(cx + tX - CAR / 2, 0, cz + TR[0] - 1.5); trainCollider.max.set(cx + tX + TLEN - CAR / 2, 4, cz + TR[0] + 1.5);
       // the crossing rings while the train is anywhere near it
