@@ -175,6 +175,41 @@
   <div class="prompts"><span><b>↑</b><b>↓</b> choisir</span><span><b class="wide">entrée</b> creuser</span></div>
 </div>
 
+<!-- a mini-game's own title screen: its scenery behind, its modes, who's ready, the countdown -->
+<div id="gamemenu" class="screen hidden">
+  <div class="scrim-left"></div>
+  <div class="gm-head in in--logo">
+    <span class="gm-splat" data-splat="29" data-arms="9" data-drops="5"></span>
+    <span class="logo__sub"><span id="gm-kicker">mini-jeu</span></span>
+    <h2 id="gm-title" class="display">mini-jeu</h2>
+  </div>
+  <div class="main-menu gm-menu">
+    <div id="gm-modes"></div>
+    <button type="button" id="gm-play" class="btn btn--xl btn--primary in" style="--i:4">
+      <span class="btn__icon"><svg viewBox="0 0 32 32"><path d="M10 6.5v19c0 1.2 1.3 1.9 2.3 1.3l15-9.5c1-.6 1-2 0-2.6l-15-9.5c-1-.6-2.3.1-2.3 1.3z" fill="currentColor"/></svg></span>
+      <span class="btn__text"><span class="btn__label" id="gm-play-label">jouer</span><span class="btn__sub" id="gm-play-sub"></span></span>
+    </button>
+    <button type="button" id="gm-back" class="btn btn--menu btn--ghost in" style="--i:5" data-desc="revenir dans la salle de jeux">
+      <span class="btn__icon"><svg viewBox="0 0 32 32"><path d="M14 7l-9 9 9 9M6 16h21" fill="none" stroke="currentColor" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+      <span class="btn__text"><span class="btn__label">retour</span></span>
+    </button>
+    <div class="main-desc"><i class="main-desc__dot"></i><span id="main-desc-text2"></span></div>
+  </div>
+  <aside class="main-side">
+    <div class="panel gm-players in in--right" style="--i:3">
+      <div class="seclabel"><i><svg viewBox="0 0 32 32"><circle cx="11" cy="11" r="5" fill="currentColor"/><circle cx="22" cy="12.5" r="4.2" fill="currentColor" opacity=".7"/><path d="M1.5 27c.8-5 4.2-8 9.5-8s8.7 3 9.5 8z" fill="currentColor"/><path d="M19 19.4c.9-.3 1.9-.4 3-.4 4.6 0 7.6 2.6 8.3 7h-8.1c-.5-2.6-1.6-4.9-3.2-6.6z" fill="currentColor" opacity=".7"/></svg></i><span id="gm-players-title">joueurs</span></div>
+      <div id="gm-list"></div>
+      <div id="gm-record"></div>
+    </div>
+    <div class="panel keys-card in in--right" style="--i:5">
+      <div class="seclabel"><i><svg viewBox="0 0 32 32"><rect x="3" y="8" width="26" height="17" rx="4" fill="none" stroke="currentColor" stroke-width="3"/><path d="M8 13h2M13 13h2M18 13h2M23 13h1M10 19h12" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg></i>commandes</div>
+      <div id="gm-keys"></div>
+    </div>
+  </aside>
+  <div id="gm-count" class="hidden"><span class="gm-count__label">départ dans</span><span id="gm-count-n" class="display">10</span></div>
+  <div class="prompts"><span><b>↑</b><b>↓</b> choisir</span><span><b class="wide">entrée</b> valider</span><span><b class="wide">échap</b> retour</span></div>
+</div>
+
 <!-- the super reset: the password, then a countdown everyone sees -->
 <div id="super-pw" class="hidden">
   <form id="super-form" autocomplete="off">
