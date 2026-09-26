@@ -293,6 +293,44 @@ input[type=range]:active::-moz-range-thumb { scale: 1.22; }
   font: 700 var(--fs-s) / 1 var(--text); box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .07), 0 3px 0 rgba(0, 0, 0, .3); animation: fade-in 1s .6s both; white-space: nowrap; }
 .prompts span { display: inline-flex; align-items: center; gap: .3em; }
 
+/* ------------------------------------------------------------------ a mini-game's title screen */
+#gamemenu { position: fixed; inset: 0; z-index: 21; overflow: hidden; }
+.gm-head { position: absolute; left: calc(var(--u) * 5); top: calc(var(--u) * 3.4); display: inline-flex; flex-direction: column; align-items: flex-start; isolation: isolate;
+  font-size: max(34px, calc(var(--u) * 5)); pointer-events: none; white-space: nowrap; }
+.gm-head.long { font-size: max(28px, calc(var(--u) * 3.9)); }
+.gm-splat { position: absolute; z-index: -1; left: -.4em; top: 55%; width: 3.6em; transform: translateY(-50%) rotate(-8deg); opacity: .95; }
+.gm-splat svg { width: 100%; animation: splat-breathe 5s ease-in-out infinite; }
+#gm-title { font-size: 1em; line-height: 1; margin-top: .06em; animation: letter 3.4s ease-in-out infinite; }
+.gm-head .logo__sub { font-size: .3em; margin: 0 0 .1em .2em; }
+.gm-menu { top: max(200px, calc(var(--u) * 17)); }
+#gm-modes { display: flex; flex-direction: column; gap: calc(var(--u) * .8); }
+#gm-modes:empty { display: none; }
+#gm-modes .btn { height: max(44px, calc(var(--u) * 4.2)); font-size: max(17px, calc(var(--u) * 1.8)); }
+#gm-modes .m-opt[disabled] { cursor: default; opacity: .6; }
+#gm-modes .m-opt[disabled][aria-checked="true"] { opacity: 1; }
+.gm-menu > .btn--xl { margin-top: calc(var(--u) * .6); }
+#gamemenu.is-ready #gm-play { --bg: rgba(255, 255, 255, .1); --fill: var(--danger); --fill-ink: #fff; color: #fff; box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .14), 0 calc(var(--u) * .42) 0 rgba(0, 0, 0, .45); }
+#gamemenu.is-ready #gm-play::before { display: none; }
+.gm-players { padding: calc(var(--u) * 1.3) calc(var(--u) * 1.5); display: flex; flex-direction: column; gap: calc(var(--u) * .9); }
+#gm-list { display: flex; flex-direction: column; gap: 6px; }
+#gm-list:empty { display: none; }
+.gm-p { display: flex; align-items: center; gap: 10px; padding: 7px 10px 7px 8px; border-radius: 12px; background: rgba(255, 255, 255, .05); font: 700 var(--fs-s) / 1 var(--text); opacity: .6; transition: opacity .2s, background .2s; }
+.gm-p i { flex: none; width: 20px; height: 20px; border-radius: 50%; box-shadow: 0 0 0 2px var(--k); display: grid; place-items: center; }
+.gm-p span { flex: 1; }
+.gm-p em { font: 900 10px / 1 var(--text); letter-spacing: .12em; text-transform: uppercase; font-style: normal; opacity: .75; }
+.gm-p.on { opacity: 1; background: rgba(var(--a-rgb), .16); box-shadow: inset 0 0 0 2px rgba(var(--a-rgb), .5); animation: tab-pop .4s var(--spring); }
+.gm-p.on i::after { content: ''; width: 8px; height: 5px; border: solid var(--k); border-width: 0 0 2.5px 2.5px; rotate: -45deg; translate: 0 -1px; }
+.gm-p.on em { color: var(--a-light); opacity: 1; }
+#gm-record { font: 600 var(--fs-s) / 1.35 var(--text); color: var(--muted); }
+#gm-record b { font: 400 max(16px, calc(var(--u) * 1.5)) / 1 var(--display); color: var(--a-light); }
+#gm-count { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; gap: 4px; pointer-events: none; }
+#gm-count .gm-count__label { font: 900 var(--fs-s) / 1 var(--text); letter-spacing: .2em; text-transform: uppercase; padding: .5em 1em; border-radius: 999px; background: rgba(20, 14, 10, .8); }
+#gm-count-n { font-size: max(90px, calc(var(--u) * 12)); line-height: 1; color: var(--a); }
+#gm-count-n.tick { animation: count-tick .5s var(--spring2); }
+#gm-count.hot #gm-count-n { color: var(--danger); }
+body.in-menu #hud, body.in-menu #lobby, body.in-menu #quest, body.in-menu #relock { display: none !important; }
+@media (max-width: 900px) { .gm-head { left: 16px; right: 16px; max-width: none; font-size: 38px; } .gm-menu { top: 150px; } }
+
 /* ------------------------------------------------------------------ PAUSE */
 #resume { position: fixed; inset: 0; z-index: 20; cursor: pointer; }
 .pause-dim { position: absolute; inset: 0; background: linear-gradient(90deg, rgba(10, 7, 4, .84), rgba(10, 7, 4, .5)); backdrop-filter: blur(7px) saturate(.8); animation: fade-in .25s both; }
@@ -633,7 +671,7 @@ body.in-kart #hint, body.in-kart #prompt, body.in-kart #crosshair, body.in-kart 
 #note-form button:disabled { opacity: .5; cursor: default; }
 
 /* a 2D game shown on a screen of the game room: the glass glows, the rest of the HUD steps back */
-body.on-screen canvas#nes, body.on-screen canvas#encre { border-radius: 6px; box-shadow: 0 0 0 2px rgba(0, 0, 0, .8), 0 0 40px rgba(120, 200, 255, .35), 0 0 120px rgba(160, 90, 255, .25); }
+body.on-screen canvas#nes, body.on-screen canvas#encre, body.on-screen canvas#worms { border-radius: 6px; box-shadow: 0 0 0 2px rgba(0, 0, 0, .8), 0 0 40px rgba(120, 200, 255, .35), 0 0 120px rgba(160, 90, 255, .25); }
 body.on-screen #coins, body.on-screen #bag, body.on-screen #net, body.on-screen #quest { opacity: .35; }
 
 /* ------------------------------------------------------------------ the lobby: a game offered to everyone */

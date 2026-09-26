@@ -76,7 +76,7 @@ export function initMenus({ hover = () => {}, press = () => {} } = {}) {
     if (snap || !cur.on) cur.snap = true;
     ring.style.borderRadius = getComputedStyle(el).borderTopLeftRadius;
     if (sound) hover();
-    const desc = el.dataset.desc, out = document.getElementById('main-desc-text');
+    const desc = el.dataset.desc, out = el.closest('.screen')?.querySelector('.main-desc span') || document.getElementById('main-desc-text');
     if (desc && out && out.textContent !== desc) { out.textContent = desc; restart(out.parentNode, 'is-swap'); }
     if (!raf) raf = requestAnimationFrame(step);
   }
@@ -134,7 +134,7 @@ export function initMenus({ hover = () => {}, press = () => {} } = {}) {
   }, true);
 
   // ---- the keyboard: arrows walk the items of the screen on top, enter presses
-  const SCREENS = ['#super-pw', '#win', '#resume', '#shop', '#attract'];
+  const SCREENS = ['#super-pw', '#win', '#resume', '#gamemenu', '#shop', '#attract'];
   const top = () => SCREENS.map(s => document.querySelector(s)).find(el => el && !el.classList.contains('hidden') && !el.closest('.hidden'));
   const items = (scr) => [...scr.querySelectorAll('.btn, .ns-item')].filter(el => el.offsetParent !== null && !el.disabled);
   addEventListener('keydown', (e) => {
@@ -162,7 +162,7 @@ export function initMenus({ hover = () => {}, press = () => {} } = {}) {
   });
 
   // ---- a screen appearing: focus its first action, pull the sliders and switches up to date
-  const firstOf = { attract: '#play', resume: '#resume-go', win: '#win .btn:not(.hidden)', 'super-pw': '.sp-go' };
+  const firstOf = { attract: '#play', resume: '#resume-go', win: '#win .btn:not(.hidden)', 'super-pw': '.sp-go', gamemenu: '#gm-play' };
   const syncRanges = () => document.querySelectorAll('input[type=range]').forEach(r => r.style.setProperty('--t', ((r.value - r.min) / (r.max - r.min)).toFixed(3)));
   const syncSeg = (seg) => {
     let hl = seg.querySelector(':scope > .seg__hl');

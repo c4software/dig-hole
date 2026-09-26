@@ -28,6 +28,7 @@ import { createKart } from './kart.js';
 import { createRC } from './rcrace.js';
 import { createNes } from './nes.js';
 import { createEncre } from './encre.js';
+import { createWorms } from './worms.js';
 import { initMenus } from './menufx.js';
 import { createGamepad } from './gamepad.js';
 import { createKeyQuest } from './gameroom.js';
@@ -1298,10 +1299,11 @@ mg.onEnd = (id, r) => {
 // A race module: start({ seed, humans, hostId, meId, send }), update(dt, keys), stop(), respawn(),
 // onFx(peerId, fx), peerLeft(id), hud(), onEnd({ place, time, of }). The host runs the bots.
 const RACES = {
-  kart: { mod: createKart({ scene, camera, audio, ui }), help: '3 tours · zqsd pour piloter · shift pour déraper · espace pour l\'objet · r pour revenir sur la piste', prizes: [1500, 800, 400, 100] },
+  kart: { mod: createKart({ scene, camera, audio, ui }), help: '4 tours · zqsd pour piloter · shift pour déraper · espace pour l\'objet · r pour revenir sur la piste', prizes: [1500, 800, 400, 100] },
   rc: { mod: createRC({ scene, camera, audio, ui, world, terrain: terrains.home }), help: 'petites voitures dans la ville · zqsd · espace pour l\'objet · r pour revenir sur la piste', prizes: [2000, 1100, 600, 300, 150, 80] },
   // the 2D games draw on their own canvas over the world: no mouse to hold
   nes: { mod: createNes({ audio, ui }), screen: true, help: 'flèches / zqsd · espace pour sauter · shift pour courir', prizes: [1800, 900, 450, 200] },
+  worms: { mod: createWorms({ audio, ui }), screen: true, help: 'au tour par tour · chaque taupe a son tour', prizes: [1500, 700, 350, 150] },
   encre: { mod: createEncre({ audio, ui }), screen: true, help: 'zqsd · espace pour sauter · clic ou j pour tirer · shift pour nager', prizes: [1600, 600], value: (r) => r.pct },
 };
 let race = null;
@@ -1369,24 +1371,31 @@ function screenView(dt) {
   const scr = race.onScreen;
   if (!scr) return;
   race.screenT = Math.min(1, (race.screenT || 0) + dt / 1.1);
-  const k = 1 - Math.pow(1 - race.screenT, 3);
+  placeOnScreen(scr, race.mod, race.screenT);
+}
+// the camera in front of a screen of the game room, the game's canvas laid on the glass; `back` > 1 stands further off
+// `frame` ({ w, cx }): the screen takes that share of the page's width, centred at cx — between the menu and its panels
+function placeOnScreen(scr, mod, t, frame = null) {
+  const k = 1 - Math.pow(1 - t, 3);
   // far enough for the glass to fill ~70 % of the height (and of the width), a little closer as it settles
   const vf = Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2);
   const fit = Math.max(scr.h / 2 / vf / .7, scr.w / 2 / (vf * camera.aspect) / .8);
-  const d = fit * (1.9 - .9 * k);
+  const d = frame ? scr.w / (2 * vf * camera.aspect * frame.w) * (1.6 - .6 * k) : fit * (1.9 - .9 * k);
+  const pan = frame ? (frame.cx * 2 - 1) * d * vf * camera.aspect : 0;
   camera.position.copy(scr.center).addScaledVector(scr.normal, d);
   camera.up.copy(scr.up);
-  camera.lookAt(scr.center);
+  // looking a little beside the screen moves it across the page
+  _sv.side.crossVectors(scr.up, scr.normal).normalize();
+  camera.lookAt(_sv.a.copy(scr.center).addScaledVector(_sv.side, -pan));
   camera.updateMatrixWorld();
   // the four corners on the page
-  _sv.side.crossVectors(scr.up, scr.normal).normalize();
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
     _sv.c.copy(scr.center).addScaledVector(_sv.side, sx * scr.w / 2).addScaledVector(scr.up, sy * scr.h / 2).project(camera);
     const px = (_sv.c.x + 1) / 2 * innerWidth, py = (1 - _sv.c.y) / 2 * innerHeight;
     x0 = Math.min(x0, px); x1 = Math.max(x1, px); y0 = Math.min(y0, py); y1 = Math.max(y1, py);
   }
-  race.mod.setRect?.({ x: Math.round(x0), y: Math.round(y0), w: Math.round(x1 - x0), h: Math.round(y1 - y0) });
+  mod.setRect?.({ x: Math.round(x0), y: Math.round(y0), w: Math.round(x1 - x0), h: Math.round(y1 - y0) });
 }
 
 // kept for the tests and the curious
@@ -1407,7 +1416,7 @@ function raceHud() {
 // Picking a game at the arcade offers it to everyone, wherever they are. Players press « prêt »;
 // from two ready, a 10 s countdown (time to take the teleporter home); at zero the host sends the
 // list of the ready ones and they all start together, on the same seed.
-const SCREEN_GAMES = new Set(['nes', 'encre']);   // played on a screen: from anywhere
+const SCREEN_GAMES = new Set(['nes', 'encre', 'worms']);   // played on a screen: from anywhere
 function launchGame(g, seed = Math.floor(Math.random() * 1e9), hostId = null, roster = null, opts = null) {
   const players = raceHumans(roster);
   if (RACES[g]) startRace(g, { seed, hostId: hostId ?? myId(), roster, opts });
@@ -1418,16 +1427,174 @@ const lobbyEl = document.getElementById('lobby');
 const $l = (id) => document.getElementById(id);
 let lobby = null;   // { g, seed, host, ready: Map(id → name), count, left, forced, waitGo }
 let modesFor = null;
-function offerGame(g, opts = null) {
-  // several modes: a menu first, for the one who starts it
-  if (!opts && RACES[g]?.mod.modes?.length) { modesFor = g; openPanel('modes'); return; }
-  if (!net?.online || !net.peers.size) { launchGame(g, undefined, null, null, opts); return; }
+// picking a game (a pedestal, the arcade) opens its own title screen
+function offerGame(g) { openGameMenu(g, { host: true }); }
+function openLobby(g, opts) {
   if (lobby && lobby.host === myId()) net.sendFx({ k: 'lobby', t: 'cancel', seed: lobby.seed });
   lobby = { g, opts, seed: Math.floor(Math.random() * 1e9), host: myId(), ready: new Map([[myId(), myName()]]), count: null };
   net.sendFx({ k: 'lobby', t: 'open', g, opts, seed: lobby.seed });
   showLobby();
   ui.toast('partie proposée à tout le monde', false, 1800);
 }
+
+// ---------- a mini-game's own title screen ----------
+// Its scenery behind (the module started, frozen, the camera circling its start or facing its screen),
+// its modes for the one who starts it, who is ready, the countdown. Solo: « jouer » starts it.
+const GAME_KEYS = {
+  kart: [['z q s d', 'piloter'], ['shift', 'déraper · mini-turbo'], ['espace', 'objet'], ['r', 'revenir sur la piste']],
+  rc: [['z q s d', 'piloter'], ['shift', 'frein à main'], ['espace', 'arme'], ['r', 'replacer la voiture']],
+  nes: [['← →', 'courir'], ['espace', 'sauter'], ['shift', 'sprinter'], ['r', 'dernier drapeau']],
+  encre: [['q d', 'bouger'], ['espace', 'sauter'], ['clic', 'tirer'], ['shift', 'nager, grimper'], ['e', 'déluge'], ['r', 'retour à la base']],
+  peinture: [['z q s d', 'marcher'], ['clic', 'tirer de la peinture']],
+  laser: [['z q s d', 'marcher'], ['clic', 'tirer'], ['maison', 'zone sûre']],
+  taupe: [['clic', 'taper les taupes']],
+  pile: [['clic', 'creuser'], ['e', 'valider la profondeur']],
+  tresor: [['clic', 'creuser'], ['thermo', 'chaud / froid']],
+};
+const DEFAULT_KEYS = [['z q s d', 'marcher'], ['clic', 'creuser'], ['espace', 'sauter'], ['r', 'remonter']];
+const gmEl = document.getElementById('gamemenu'), $g = (id) => document.getElementById(id);
+const escH = (t) => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+let gm = null;   // { g, host, opts, prev, t }
+const defaultOpts = (g) => { const m = RACES[g]?.mod.modes; return m?.length ? { mode: m[0].id } : {}; };
+function openGameMenu(g, { host = true } = {}) {
+  if (!GAMES[g]) return;
+  if (gm) closeGameMenu(true);
+  if (state === 'panel' || state === 'read') { ui.el.shop.classList.add('hidden'); ui.el.reader.classList.add('hidden'); panelKind = null; }
+  gm = { g, host, opts: host ? defaultOpts(g) : (lobby?.opts || defaultOpts(g)), t: 0 };
+  state = 'gamemenu'; digging = false; throwing = false;
+  player.disable(); ui.prompt('');
+  document.body.classList.add('in-menu');
+  if (document.pointerLockElement) document.exitPointerLock();
+  startPreview();
+  renderGameMenu(true);
+  gmEl.classList.remove('hidden');
+  if (host && net?.online && net.peers.size) openLobby(g, gm.opts);
+  audio.pickup(1);
+}
+function closeGameMenu(silent = false) {
+  if (!gm) return;
+  stopPreview();
+  gm = null;
+  gmEl.classList.add('hidden');
+  document.body.classList.remove('in-menu');
+  if (silent) return;
+  state = 'play'; player.enable(); camera.up.set(0, 1, 0);
+  relock();
+}
+function gameMenuBack() {
+  if (!gm) return;
+  if (lobby && lobby.g === gm.g && lobby.ready.has(myId())) setReady(false);
+  closeGameMenu();
+}
+function gameMenuPlay() {
+  if (!gm) return;
+  const g = gm.g, multi = lobby && lobby.g === g;
+  if (!multi) { const opts = gm.opts; closeGameMenu(true); state = 'play'; player.enable(); launchGame(g, undefined, null, null, opts); return; }
+  if (gm.host) { if (lobby.count == null) { lobby.forced = true; hostCheck(); renderLobby(); } }
+  else setReady(!lobby.ready.has(myId()));
+}
+function pickMode(id) {
+  if (!gm || !gm.host || gm.opts.mode === id) return;
+  gm.opts = { mode: id };
+  startPreview();
+  if (lobby && lobby.host === myId() && lobby.g === gm.g) { lobby.opts = gm.opts; net.sendFx({ k: 'lobby', t: 'opts', seed: lobby.seed, opts: gm.opts }); }
+  audio.tick();
+  renderGameMenu();
+}
+function renderGameMenu(fresh = false) {
+  if (!gm) return;
+  const g = gm.g, mods = RACES[g]?.mod.modes || [], me = myId();
+  const multi = !!lobby && lobby.g === g, ready = multi && lobby.ready.has(me);
+  $g('gm-title').textContent = GAMES[g].name;
+  document.querySelector('.gm-head').classList.toggle('long', GAMES[g].name.length > 14);
+  $g('gm-kicker').textContent = multi ? (gm.host ? 'ta partie · en ligne' : `${net.peers.get(lobby.host)?.name ?? '?'} propose`)
+    : SCREEN_GAMES.has(g) ? 'sur un écran de la salle de jeux' : g === 'kart' ? 'autour du village' : RACES[g] ? 'dans les rues de la ville' : 'dans le jardin';
+  const box = $g('gm-modes');
+  if (fresh) {
+    box.innerHTML = mods.map((m, i) => `<button type="button" class="btn btn--menu m-opt in" style="--i:${i + 2};--tilt:${i % 2 ? .5 : -.5}deg" data-mode="${m.id}" data-desc="${escH(m.sub)}"${gm.host ? '' : ' disabled'}>` +
+      `<span class="btn__text"><span class="btn__label">${escH(m.name)}</span></span><span class="m-check"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg></span></button>`).join('');
+    box.querySelectorAll('.btn').forEach(b => b.insertAdjacentHTML('afterbegin', '<span class="btn__blob"></span>'));
+    $g('gm-keys').innerHTML = (RACES[g]?.mod.keys || GAME_KEYS[g] || DEFAULT_KEYS).map(([k, what]) => `<div class="krow"><span class="kk">${k.split(' ').map(x => `<b${x.length > 2 ? ' class="wide"' : ''}>${escH(x)}</b>`).join('')}</span><span>${escH(what)}</span></div>`).join('');
+    $g('gm-play').dataset.desc = GAMES[g].sub;
+    $g('main-desc-text2').textContent = GAMES[g].sub;
+  }
+  box.querySelectorAll('.m-opt').forEach(b => b.setAttribute('aria-checked', String(b.dataset.mode === gm.opts.mode)));
+  const counting = multi && lobby.count != null, left = counting ? Math.max(0, Math.ceil(lobby.left)) : 0;
+  const n = multi ? lobby.ready.size : 1;
+  const mode = mods.find(m => m.id === gm.opts.mode);
+  let label, sub;
+  if (!multi) { label = 'jouer'; sub = mode ? mode.name : 'solo'; }
+  else if (gm.host) { label = counting ? `départ dans ${left}` : 'lancer'; sub = counting ? 'les autres peuvent encore rejoindre' : `${n} prêt${n > 1 ? 's' : ''} · départ auto dès 2`; }
+  else { label = ready ? 'plus prêt' : 'prêt !'; sub = counting ? `départ dans ${left}` : 'l\'hôte choisit le mode'; }
+  $g('gm-play-label').textContent = label; $g('gm-play-sub').textContent = sub;
+  gmEl.classList.toggle('is-ready', !gm.host && ready);
+  // who's there (online), else the record
+  $g('gm-players-title').textContent = multi ? 'joueurs' : 'record';
+  if (multi) {
+    const everyone = [{ id: me, name: 'toi', color: net.color }, ...[...net.peers].map(([id, p]) => ({ id, name: p.name, color: p.color }))];
+    $g('gm-list').innerHTML = everyone.map(p => `<div class="gm-p${lobby.ready.has(p.id) ? ' on' : ''}"><i style="background:${hexc(p.color)}"></i><span>${escH(p.name)}</span><em>${p.id === lobby.host ? 'hôte' : lobby.ready.has(p.id) ? 'prêt' : 'pas prêt'}</em></div>`).join('');
+  } else $g('gm-list').innerHTML = '';
+  const key = mode && mods[0] && mode.id !== mods[0].id ? g + ':' + mode.id : g, rec = (eco.s.records || {})[key];
+  $g('gm-record').innerHTML = rec != null ? `ton record : <b>${escH(fmtRecord(mode?.unit || GAMES[g].unit, rec))}</b>` : multi ? '' : 'pas encore de record · à toi de jouer';
+  const c = $g('gm-count');
+  c.classList.toggle('hidden', !counting);
+  c.classList.toggle('hot', counting && left <= 3);
+  if (counting && $g('gm-count-n').textContent !== String(left)) { const el = $g('gm-count-n'); el.textContent = left; el.classList.remove('tick'); void el.offsetWidth; el.classList.add('tick'); }
+}
+$g('gm-play').addEventListener('click', () => gameMenuPlay());
+$g('gm-back').addEventListener('click', () => gameMenuBack());
+$g('gm-modes').addEventListener('click', (e) => { const b = e.target.closest('[data-mode]'); if (b && !b.disabled) pickMode(b.dataset.mode); });
+
+// the scenery behind the menu: the game itself, set up and frozen
+const PREVIEW_SPOTS = { taupe: [-12.7, 1.6, 6, 3], laser: [0, -16, 15, 6], peinture: [0, -2, 13, 7] };
+function stopPreview() {
+  const pv = gm?.prev;
+  if (!pv) return;
+  gm.prev = null;
+  pv.mod?.stop();
+  document.body.classList.remove('on-screen');
+  camera.up.set(0, 1, 0);
+}
+function startPreview() {
+  stopPreview();
+  const g = gm.g, r = RACES[g], me = myId();
+  if (!r) { const s = PREVIEW_SPOTS[g] || [orbitTarget.x, orbitTarget.z, 15, 8]; gm.prev = { x: s[0], z: s[1], y: 0, rad: s[2], h: s[3] }; return; }
+  r.mod.start({ seed: 7, opts: gm.opts, humans: [{ id: me, name: myName(), color: net?.color ?? 0xc8581a, me: true }], hostId: me, meId: me, send: () => {} });
+  const pv = gm.prev = { mod: r.mod, screen: r.screen };
+  if (r.screen) {
+    pv.scr = here === 'home' && house.room?.screens?.[g];
+    r.mod.setRect?.(null);
+    if (pv.scr) document.body.classList.add('on-screen');
+  } else {
+    const a = g === 'kart' ? r.mod._dbg?.() : r.mod.me;
+    Object.assign(pv, { x: a?.x ?? 0, z: a?.z ?? 0, y: a?.y ?? 0, yaw: a?.yaw ?? 0, rad: g === 'kart' ? 10 : 2.6, h: g === 'kart' ? 3.8 : .9, follow: true });
+  }
+}
+function updateGameMenu(dt) {
+  if (!gm) return;
+  gm.t += dt;
+  const pv = gm.prev;
+  if (!pv) return;
+  if (pv.screen) {
+    pv.mod.update(0, new Set());
+    if (pv.scr) { pv.k = Math.min(1, (pv.k || 0) + dt / 1.1); placeOnScreen(pv.scr, pv.mod, pv.k, { w: .32, cx: .52 }); }
+    return;
+  }
+  camera.up.set(0, 1, 0);
+  if (pv.follow) {
+    // behind the grid, down the track, swaying a little
+    const fx = Math.sin(pv.yaw), fz = Math.cos(pv.yaw), sw = Math.sin(gm.t * .35) * .35;
+    camera.position.set(pv.x - fx * pv.rad + fz * sw * pv.rad, pv.y + pv.h + Math.sin(gm.t * .5) * .1 * pv.h, pv.z - fz * pv.rad - fx * sw * pv.rad);
+    camera.lookAt(pv.x + fx * pv.rad * .8, pv.y + pv.h * .15, pv.z + fz * pv.rad * .8);
+    return;
+  }
+  // a slow circle around the spot, looking at it
+  const a = gm.t * .12;
+  camera.position.set(pv.x + Math.sin(a) * pv.rad, pv.y + pv.h, pv.z + Math.cos(a) * pv.rad);
+  camera.lookAt(pv.x, pv.y + pv.h * .25, pv.z);
+}
+
+// ---------- a game offered online: the lobby card ----------
 function showLobby() {
   lobbyEl.classList.remove('hidden', 'out');
   lobbyEl.style.animation = 'none'; void lobbyEl.offsetWidth; lobbyEl.style.animation = '';
@@ -1441,6 +1608,7 @@ function closeLobby() {
 }
 const hexc = (c) => '#' + (c ?? 0xffffff).toString(16).padStart(6, '0');
 function renderLobby() {
+  if (gm) renderGameMenu();
   if (!lobby) return;
   const me = myId(), host = lobby.host === me, ready = lobby.ready.has(me);
   const mode = lobby.opts?.mode && RACES[lobby.g]?.mod.modes?.find(m => m.id === lobby.opts.mode);
@@ -1491,14 +1659,17 @@ function onLobby(id, peer, fx) {
   if (fx.t === 'ready') { if (fx.on) lobby.ready.set(id, peer.name); else lobby.ready.delete(id); hostCheck(); }
   else if (fx.t === 'count') { lobby.count = 10; lobby.left = 10; audio.buy(); }
   else if (fx.t === 'uncount') lobby.count = null;
-  else if (fx.t === 'cancel') { closeLobby(); ui.toast(`${peer.name} a annulé la partie`); return; }
+  else if (fx.t === 'opts') { lobby.opts = fx.opts; if (gm && !gm.host && gm.g === lobby.g) { gm.opts = fx.opts || {}; startPreview(); renderGameMenu(); } }
+  else if (fx.t === 'cancel') { closeLobby(); if (gm && !gm.host) closeGameMenu(); ui.toast(`${peer.name} a annulé la partie`); return; }
   else if (fx.t === 'go') { go(fx.roster, id); return; }
   renderLobby();
 }
 function go(roster, hostId) {
   const l = lobby;
   closeLobby();
+  if (gm) { const was = gm.g; closeGameMenu(!!(l && was === l.g && roster.includes(myId()))); }
   if (!l || !roster.includes(myId())) return;
+  if (state === 'gamemenu') { state = 'play'; player.enable(); }
   if (!SCREEN_GAMES.has(l.g) && here !== 'home') { ui.toast('tu n\'étais pas dans le jardin · partie ratée', true, 3000); net?.sendFx({ k: 'lobby', t: 'out', seed: l.seed }); return; }
   if (['travel', 'launch', 'faint', 'win', 'attract'].includes(state)) { net?.sendFx({ k: 'lobby', t: 'out', seed: l.seed }); return; }
   if (state === 'paused') { ui.el.resume.classList.add('hidden'); state = pausedFrom; pausedFrom = 'play'; if (state === 'play') player.enable(); }
@@ -1528,9 +1699,20 @@ function updateLobby(dt) {
     go(roster, myId());
   } else if (lobby.left < -4) { closeLobby(); ui.toast('la partie n\'a pas démarré', true); }
 }
-$l('lobby-ready').addEventListener('click', (e) => { e.stopPropagation(); if (lobby) setReady(!lobby.ready.has(myId())); });
+function readyFromCard() {
+  if (!lobby) return;
+  const on = !lobby.ready.has(myId());
+  const canHere = state === 'play' && (here === 'home' || SCREEN_GAMES.has(lobby.g));
+  if (on && canHere && !gm) openGameMenu(lobby.g, { host: false });
+  setReady(on);
+}
+$l('lobby-ready').addEventListener('click', (e) => { e.stopPropagation(); readyFromCard(); });
 $l('lobby-alt').addEventListener('click', (e) => { e.stopPropagation(); if (lobby && lobby.host === myId()) { lobby.forced = true; hostCheck(); renderLobby(); } });
-addEventListener('keydown', (e) => { if (e.code === 'KeyO' && !e.repeat && lobby && !e.target.closest?.('input, textarea')) setReady(!lobby.ready.has(myId())); });
+addEventListener('keydown', (e) => {
+  if (e.target.closest?.('input, textarea') || e.repeat) return;
+  if (e.code === 'KeyO' && lobby && !gm) readyFromCard();
+  if (e.code === 'Escape' && state === 'gamemenu') gameMenuBack();
+});
 
 // the pause menu offers a way out of the game in progress
 const pauseQuit = document.getElementById('set-quit');
@@ -2112,8 +2294,8 @@ ui.el.shopItems.addEventListener('click', (e) => {
     return;
   } else if (panelKind === 'arcade') {
     const g = id.slice(5);
-    closePanel();
-    if (g === 'stop') { mg.stop(); syncPauseQuit(); return; }
+    if (g === 'stop') { closePanel(); mg.stop(); syncPauseQuit(); return; }
+    // straight from the panel to the game's screen: no grab of the mouse in between
     offerGame(g);
     return;
   } else if (panelKind === 'lander' && id.startsWith('lander:')) {
@@ -2251,7 +2433,7 @@ if (MULTI) {
     onLeave(name, id) {
       ui.toast(`${name} est parti`);
       race?.mod.peerLeft(id); mg.rivalLeft(id);
-      if (lobby) { if (lobby.host === id) { closeLobby(); ui.toast('la partie proposée est annulée'); } else { lobby.ready.delete(id); hostCheck(); renderLobby(); } }
+      if (lobby) { if (lobby.host === id) { closeLobby(); if (gm && !gm.host) closeGameMenu(); ui.toast('la partie proposée est annulée'); } else { lobby.ready.delete(id); hostCheck(); renderLobby(); } }
     },
     onStatus(s) { if (s === 'off') ui.setNet('<span class="t">hors ligne</span>', true); },
   });
@@ -2393,6 +2575,7 @@ function loop(ts) {
     elevator.update(dt, player);
     updateLaunch(dt);
     if (state === 'kart' && race) { race.mod.update(dt, down); raceHud(); if (race?.screen) screenView(dt); }
+    if (state === 'gamemenu') updateGameMenu(dt);
     if (state === 'drive') {
       const input = {
         throttle: (down.has('KeyW') || down.has('ArrowUp') ? 1 : 0) - (down.has('KeyS') || down.has('ArrowDown') ? 1 : 0),
@@ -2619,7 +2802,7 @@ initMenus({ hover: () => audio.hover(), press: () => { audio.init(); audio.pop()
 const pad = createGamepad({
   context() {
     if (state === 'reveal') return 'reveal';
-    if (['attract', 'paused', 'panel', 'read', 'win'].includes(state)) return 'menu';
+    if (['attract', 'paused', 'panel', 'read', 'win', 'gamemenu'].includes(state)) return 'menu';
     if (state === 'kart') return race?.screen ? 'screen' : 'race';
     if (state === 'drive') return 'drive';
     if (state === 'play') return bigMap ? 'menu' : 'play';
@@ -2637,7 +2820,8 @@ const pad = createGamepad({
     },
     pause() { openPause(); },
     back() {
-      if (bigMap) toggleMap();
+      if (state === 'gamemenu') gameMenuBack();
+      else if (bigMap) toggleMap();
       else if (!superPw.classList.contains('hidden')) document.getElementById('super-cancel').click();
       else if (state === 'panel' || state === 'read') closePanel();
       else if (state === 'paused') document.getElementById('resume-go').click();
@@ -2664,7 +2848,7 @@ if (params.has('go')) {
 window.__dig = {
   world, terrains, player, eco, ui, camera, renderer, scene, heart, shovel, delivery, elevator, moles, finds, bombs, plane, animals, hologram, moonP, rocket, gainPart, launch, get landerPos() { return landerPos; }, MOON, MARS, marsRocket, MARS_PAD,
   get net() { return net; },
-  mg, kart, startKart, quitKart, RACES, get race() { return race; }, startRace, quitRace, launchGame, offerGame, get lobby() { return lobby; }, setReady, stepLobby: (dt) => updateLobby(dt),
+  mg, kart, startKart, quitKart, RACES, get race() { return race; }, startRace, quitRace, launchGame, offerGame, stepMenu: (dt) => updateGameMenu(dt), openGameMenu, gameMenuPlay, gameMenuBack, pickMode, get gm() { return gm; }, get lobby() { return lobby; }, setReady, stepLobby: (dt) => updateLobby(dt),
   steal, get alarm() { return alarm; }, stepAlarm: (dt) => updateAlarm(dt),
   stepLaunch(dt) { updateLaunch(dt); },
   get state() { return state; },
