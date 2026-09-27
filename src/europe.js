@@ -223,23 +223,37 @@ export function createEurope({ scene, addBox }) {
   const pave = canvasTex(128, 128, (c) => { c.fillStyle = '#fff'; c.fillRect(0, 0, 128, 128); for (let y = 0; y < 128; y += 16) for (let x = (y / 16) % 2 * 8; x < 136; x += 16) { const v = 200 + Math.random() * 55; c.fillStyle = `rgb(${v},${v - 6},${v - 14})`; c.fillRect(x + 1, y + 1, 14, 14); } }, [(SQ.x1 - SQ.x0) / 2, (SQ.z1 - SQ.z0) / 2]);
   const sqMat = new THREE.MeshLambertMaterial({ color: 0xd8ccb8, map: pave });
   box(SQ.x1 - SQ.x0, .1, SQ.z1 - SQ.z0, sqMat, (SQ.x0 + SQ.x1) / 2, .05, (SQ.z0 + SQ.z1) / 2);
-  // the fountain: a stone basin, a column, two bowls, a curtain of water
-  const FX = 61, FZ = 2;
+  // the fountain: a wide stone basin (the mini jet-skis race in it), an island, a column,
+  // two bowls, a curtain of water, and four frogs spitting at the island from the rim
+  const FX = 61, FZ = 2, FR = 4.5, FW = FR - .12, FY = .55;
   const fountain = new THREE.Group(); fountain.position.set(FX, 0, FZ); g.add(fountain);
-  const fs = stone(0xd4c8b0, 2, .3);
-  const basin = new THREE.Mesh(new THREE.CylinderGeometry(2.7, 2.8, .7, 8, 1, true), fs); basin.position.y = .35; fountain.add(basin);
-  const rim = new THREE.Mesh(new THREE.TorusGeometry(2.72, .14, 6, 8), fs); rim.rotation.x = Math.PI / 2; rim.rotation.z = Math.PI / 8; rim.position.y = .72; fountain.add(rim);
+  const fs = stone(0xd4c8b0, 4, .3);
+  const basin = new THREE.Mesh(new THREE.CylinderGeometry(FR, FR + .1, .7, 8, 1, true), fs); basin.position.y = .35; basin.rotation.y = Math.PI / 8; fountain.add(basin);
+  const inner = new THREE.Mesh(new THREE.CylinderGeometry(FW, FW, .7, 8, 1, true), new THREE.MeshLambertMaterial({ color: 0xb8ac94, map: fs.map, side: THREE.BackSide })); inner.position.y = .35; inner.rotation.y = Math.PI / 8; fountain.add(inner);
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(FR - .05, .16, 6, 8), fs); rim.rotation.x = Math.PI / 2; rim.rotation.z = Math.PI / 8; rim.position.y = .72; fountain.add(rim);
+  // a pale floor under the water, so it reads shallow and blue
+  const floor = new THREE.Mesh(new THREE.CircleGeometry(FW, 8), mat(0x8ab4c0)); floor.rotation.x = -Math.PI / 2; floor.rotation.z = Math.PI / 8; floor.position.y = .12; fountain.add(floor);
   const waterMat = new THREE.MeshStandardMaterial({ color: 0x7ab8d8, roughness: .08, metalness: .2, emissive: 0x2a5a78, emissiveIntensity: .5, transparent: true, opacity: .82 });
-  const pool = new THREE.Mesh(new THREE.CircleGeometry(2.62, 8), waterMat); pool.rotation.x = -Math.PI / 2; pool.rotation.z = Math.PI / 8; pool.position.y = .55; fountain.add(pool);
+  const pool = new THREE.Mesh(new THREE.CircleGeometry(FW, 8), waterMat); pool.rotation.x = -Math.PI / 2; pool.rotation.z = Math.PI / 8; pool.position.y = FY; fountain.add(pool);
+  const island = new THREE.Mesh(new THREE.CylinderGeometry(.62, .78, .62, 16), fs); island.position.y = .31; fountain.add(island);
   const col = new THREE.Mesh(new THREE.CylinderGeometry(.22, .32, 2.4, 12), fs); col.position.y = 1.2; fountain.add(col);
   for (const [r, y] of [[1.1, 1.45], [.55, 2.35]]) { const b = new THREE.Mesh(new THREE.CylinderGeometry(r, r * .45, .3, 16), fs); b.position.y = y; fountain.add(b); const w = new THREE.Mesh(new THREE.CircleGeometry(r * .92, 16), waterMat); w.rotation.x = -Math.PI / 2; w.position.y = y + .16; fountain.add(w); }
   const curtainTex = canvasTex(64, 64, (c) => { c.clearRect(0, 0, 64, 64); for (let k = 0; k < 40; k++) { c.fillStyle = `rgba(230,245,255,${.2 + Math.random() * .5})`; c.fillRect(Math.random() * 64, 0, 1 + Math.random() * 2, 64); } }, [6, 1]);
   const curtainMat = new THREE.MeshBasicMaterial({ map: curtainTex, transparent: true, opacity: .75, depthWrite: false, side: THREE.DoubleSide });
   const curtain = new THREE.Mesh(new THREE.CylinderGeometry(1.05, 1.35, .9, 24, 1, true), curtainMat); curtain.position.y = 1.0; fountain.add(curtain);
   const curtain2 = new THREE.Mesh(new THREE.CylinderGeometry(.5, .75, .75, 20, 1, true), curtainMat); curtain2.position.y = 2.0; fountain.add(curtain2);
+  const frogM = mat(0x5a8a5a);
+  for (let k = 0; k < 4; k++) {
+    const a = Math.PI / 4 + k * Math.PI / 2, ca = Math.cos(a), sa = Math.sin(a);
+    const frog = new THREE.Mesh(hedgeGeo, frogM); frog.scale.set(.22, .18, .26); frog.position.set(ca * (FR - .05), .92, sa * (FR - .05)); frog.rotation.y = -a - Math.PI / 2; fountain.add(frog);
+    const arc = new THREE.QuadraticBezierCurve3(new THREE.Vector3(ca * (FR - .25), .95, sa * (FR - .25)), new THREE.Vector3(ca * (FR - 1.6), 1.9, sa * (FR - 1.6)), new THREE.Vector3(ca * 2.2, FY, sa * 2.2));
+    fountain.add(new THREE.Mesh(new THREE.TubeGeometry(arc, 16, .035, 5), curtainMat));
+  }
   fountain.userData.keep = true;
-  addBox(FX - 2.8, 0, FZ - 2.8, FX + 2.8, .75, FZ + 2.8);
-  contact.blob(FX, FZ, 4.2, .12);
+  // the rim, as three boxes round the octagon
+  const fa = FR * .95, fb = FR * .42, fc = FR * .68;
+  addBox(FX - fa, 0, FZ - fb, FX + fa, .8, FZ + fb); addBox(FX - fb, 0, FZ - fa, FX + fb, .8, FZ + fa); addBox(FX - fc, 0, FZ - fc, FX + fc, .8, FZ + fc);
+  contact.blob(FX, FZ, FR * 1.5, .12);
   // the café, facing the square: tables, parasols, a string of lights to the lamp posts
   const cafe = facade(51.6, -5.6, Math.PI / 2, 9, { floors: 3, shop: { name: 'CAFÉ DES CERISIERS', color: '#23402f', text: '#f2d78a', awning: ['#23402f', '#efe6cf'] }, color: 0xecd9b6 });
   void cafe;
@@ -268,7 +282,7 @@ export function createEurope({ scene, addBox }) {
   for (let k = 0; k < 3; k++) flat(2.6, .5, white, FX, .03, ROAD_Z - 1 + k * 1);
   for (let x = SQ.x0 + 1; x < SQ.x1; x += 2.2) if (Math.abs(x - FX) > 2) { box(.16, .75, .16, iron, x, .38, -10.4); const cap = new THREE.Mesh(new THREE.SphereGeometry(.1, 8, 6), iron); cap.position.set(x, .78, -10.4); g.add(cap); }
   const bench = (x, z, rot) => { const b = new THREE.Group(); b.position.set(x, 0, z); b.rotation.y = rot; g.add(b); box(1.8, .06, .42, mat(0x6a8a5a), 0, .45, 0, b); box(1.8, .42, .05, mat(0x6a8a5a), 0, .72, -.2, b); for (const sx of [-.8, .8]) box(.06, .45, .45, iron, sx, .22, 0, b); addBox(x - .9, 0, z - .3, x + .9, .8, z + .3); contact.blob(x, z, 1.2, .12); };
-  bench(FX - 5, FZ + 4, Math.PI * .8); bench(FX + 5, FZ + 4, -Math.PI * .8); bench(FX, FZ + 6.5, Math.PI);
+  bench(FX - 5, FZ + 4, Math.PI * .8); bench(FX + 5, FZ + 4, -Math.PI * .8); bench(FX, FZ + 7.8, Math.PI);
   const post = new THREE.Group(); post.position.set(52, 0, 9); g.add(post);
   box(.5, .7, .4, mat(0xf2c21e), 0, 1.05, 0, post); box(.12, .7, .12, mat(0xf2c21e), 0, .35, 0, post);
   const pl = new THREE.Mesh(new THREE.PlaneGeometry(.42, .14), new THREE.MeshLambertMaterial({ map: lettering('LA POSTE', { w: 256, h: 64, color: '#1d3a78', size: 40, font: SANS }), transparent: true })); pl.position.set(0, 1.25, .21); post.add(pl);
@@ -338,7 +352,7 @@ export function createEurope({ scene, addBox }) {
   // ---------- cherry trees on the square, in the park, along the street ----------
   const blossoms = createBlossoms({ parent: g, addBox, seed: 77 });
   for (const [x, z, s] of [[48.5, 11, 1.05], [73, 11.5, 1.1], [56, 8, .85], [MX - 9, 4, 1], [MX + 9, 3.5, .95], [MX, 14, 1.1], [80.5, 2, .9], [-80, 3, .95], [-44.5, -6, .85], [40, 3, .9]]) blossoms.tree(x, z, s);
-  blossoms.finish({ scatter: [[FX, FZ + 4, 2], [FX - 6, -4, 1.5], [MX, 11, 2]] });
+  blossoms.finish({ scatter: [[FX, FZ + 6, 2], [FX - 6, -4, 1.5], [MX, 11, 2]] });
   for (const t of blossoms.trees) contact.blob(t.x, t.z, t.r * .8, .125);
 
   // ---------- the stone viaduct on the horizon, and the regional train that crosses it ----------
@@ -508,7 +522,7 @@ export function createEurope({ scene, addBox }) {
   const walkers = createWalkers({ parent: g, clothes: [0x2a4a78, 0xc8282e, 0xf4f0e6, 0x3a6a4a, 0xe8b830, 0x8a4a8a, 0x5a6a7a, 0xd88aa0], seed: 41, paths: [
     [[-110, -14.95], [-6, -14.95]], [[6, -14.95], [110, -14.95]],
     [[-110, -11.1], [-42, -11.1]], [[80, -11.1], [110, -11.1]],
-    [[46, -10], [58, 8], [70, 10], [76, -9]], [[FX - 4, FZ + 5], [FX + 4, FZ + 5]],
+    [[46, -10], [58, 8], [70, 10], [76, -9]], [[FX - 5, FZ + 6.4], [FX + 5, FZ + 6.4]],
     [[MX - 12, -9.8], [MX + 12, -9.8]], [[-100, LZ - 1.4], [100, LZ - 1.4]], [[-120, GZ + 3.4], [120, GZ + 3.4]],
   ] });
   for (const [x, z, rot] of [[53.3, -8.4, Math.PI / 2], [54.7, -5.2, -Math.PI / 2], [57.4 - .7, -3.6, Math.PI / 2], [58.1, -6.8, -Math.PI / 2]]) walkers.sit(x, .45, z, rot);
@@ -521,6 +535,8 @@ export function createEurope({ scene, addBox }) {
     group: g,
     // for the maps and the animals: what's built where
     SQ, MX,
+    // the fountain's basin, for the mini jet-skis: its centre, the water's radius and height
+    fountain: { x: FX, z: FZ, r: FW, y: FY, pool, island: .8 },
     setNight(n) {
       glassLit.emissiveIntensity = n * 1.3;
       glassDark.emissiveIntensity = n * .08;

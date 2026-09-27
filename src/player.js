@@ -16,7 +16,7 @@ export function createPlayer(camera, getTerrain, colliders) {
   let eyeLift = 0;              // smooths the camera over auto-steps
   let bob = 0, stepDist = 0;
   const keys = new Set();
-  const stats = { jump: 1.25, fuelMax: 0, fuel: 0, jetting: false, canJet: true, kite: false, gliding: false, inWater: false, onLadder: false };
+  const stats = { jump: 1.25, fuelMax: 0, fuel: 0, jetting: false, canJet: true, kite: false, gliding: false, inWater: false, onLadder: false, away: false };
   let onStep = () => {}, onLand = () => {};
 
   addEventListener('keydown', (e) => { if (enabled) keys.add(e.code); if (e.code === 'Space' && enabled) e.preventDefault(); });
@@ -147,8 +147,11 @@ export function createPlayer(camera, getTerrain, colliders) {
     const t = T();
     // both towns go on beyond their plots: the neighbours' houses, the station, the mars rocket
     const B = t.theme === 'home' || t.theme === 'china' ? 115 : 40;
-    pos.x = THREE.MathUtils.clamp(pos.x, t.ox - B, t.ox + B);
-    pos.z = THREE.MathUtils.clamp(pos.z, t.oz - B, t.oz + B);
+    // (the secret cave lies far beyond them: stats.away lets you be there)
+    if (!stats.away) {
+      pos.x = THREE.MathUtils.clamp(pos.x, t.ox - B, t.ox + B);
+      pos.z = THREE.MathUtils.clamp(pos.z, t.oz - B, t.oz + B);
+    }
 
     const hs = Math.hypot(vel.x, vel.z);
     if (onGround && hs > 0.5) {

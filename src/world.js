@@ -561,11 +561,13 @@ export function createWorld(container) {
   }
 
   let fallT = 0;
+  // under a roof (the secret cave): no petals, no snow
+  let indoor = false;
   function updateFall(dt, eye) {
     fallT += dt;
     skyTime.value += dt;
     if (homeDecor.visible) europe.update(dt);     // the village only moves while you're there
-    fall.visible = !space && eye.y > -3 && (season !== 1 || env.night > .1);
+    fall.visible = !space && !indoor && eye.y > -3 && (season !== 1 || env.night > .1);
     if (!fall.visible) return;
     fall.position.set(eye.x, eye.y - 4, eye.z);
     const sp = FALL[season].speed;
@@ -662,7 +664,8 @@ export function createWorld(container) {
 
   return {
     renderer, scene, camera, sun, hemi, lamp, colliders, interactables, grassTime,
-    setDepth, setTime, setSeason, updateFall, env, label, FENCE: F, house, china, shadows, homeDecor, setSpace, neighbours,
+    setDepth, setTime, setSeason, updateFall, env, label, FENCE: F, house, china, shadows, homeDecor, setSpace, neighbours, fountain: europe.fountain,
+    setIndoor(v) { indoor = v; },
     get space() { return space; },
     // quality: haute (bloom, fine shadows), moyenne (bloom, lighter), basse (no bloom, no shadows)
     setQuality(q) {

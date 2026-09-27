@@ -405,7 +405,7 @@ export function createTerrain(scene, { theme = 'home', seed = 1337, ox = 0, oy =
   patchSkyLight(earthMat, { earth: true }); patchSkyLight(waterMat); patchSkyLight(nugMat); patchSkyLight(pebMat);
   const nugGeo = new THREE.IcosahedronGeometry(1, 0), pebGeo = new THREE.DodecahedronGeometry(1, 0);
 
-  // water keeps flat faces: pools read better flat
+  // the six faces of a cell: which way an ore or a pebble looks out
   const FACES = [
     { n: [1, 0, 0],  c: [[1, 0, 0], [1, 1, 0], [1, 1, 1], [1, 0, 1]] },
     { n: [-1, 0, 0], c: [[0, 0, 0], [0, 0, 1], [0, 1, 1], [0, 1, 0]] },
@@ -450,7 +450,7 @@ export function createTerrain(scene, { theme = 'home', seed = 1337, ox = 0, oy =
   const M = 3;                                   // sample margin around a chunk
   const SX = CX + 2 * M + 1, SY = CY + 2 * M + 1, SZ = CZ + 2 * M + 1;
   const NS = SX * SY * SZ;
-  const occ = new Float32Array(NS), mats = new Uint8Array(NS), B1 = new Float32Array(NS), B2 = new Float32Array(NS), tmpB = new Float32Array(NS);
+  const occ = new Float32Array(NS), mats = new Uint8Array(NS), liq = new Uint8Array(NS), B1 = new Float32Array(NS), B2 = new Float32Array(NS), tmpB = new Float32Array(NS);
   const si = (a, b, c) => a + SX * (c + SZ * b);
   function blur(src, dst) {
     // three separable 3-tap box passes
@@ -481,14 +481,15 @@ export function createTerrain(scene, { theme = 'home', seed = 1337, ox = 0, oy =
     const key = ci + ',' + cj + ',' + ck;
     const i0 = ci * CX, j0 = cj * CY, k0 = ck * CZ;
     const ib = i0 - M, jb = j0 - M, kb = k0 - M;
-    let nSolid = 0;
+    let nSolid = 0, hasLiq = false;
     for (let b = 0; b < SY; b++) for (let c = 0; c < SZ; c++) for (let a = 0; a < SX; a++) {
       const n = si(a, b, c);
       const i = ib + a, j = jb + b, k = kb + c;
       const solid = solidCell(i, j, k);
       occ[n] = solid ? 1 : 0;
       mats[n] = solid ? matAt(i, j, k) : 0;
-      if (solid) nSolid++; else if (isLiquidCell(i, j, k)) nSolid = -1e9;
+      liq[n] = solid ? 0 : isLiquidCell(i, j, k) ? vox[idx(i, j, k)] : 0;
+      if (solid) nSolid++; else if (liq[n]) { nSolid = -1e9; hasLiq = true; }
     }
     // all rock or all air (and no water): no surface to draw, skip the heavy part
     if (nSolid === NS || nSolid === 0) { const old = chunks.get(key); if (old) { disposeChunk(old); chunks.delete(key); } return; }
@@ -579,27 +580,69 @@ export function createTerrain(scene, { theme = 'home', seed = 1337, ox = 0, oy =
       if (a >= M && c >= M && occ[si(a, b + 1, c)] !== o) quad([cubeVertex(a - 1, b, c - 1), cubeVertex(a, b, c - 1), cubeVertex(a, b, c), cubeVertex(a - 1, b, c)], 1, o === 1);
       if (a >= M && b >= M && occ[si(a, b, c + 1)] !== o) quad([cubeVertex(a - 1, b - 1, c), cubeVertex(a, b - 1, c), cubeVertex(a, b, c), cubeVertex(a - 1, b, c)], 2, o === 1);
     }
-    // water: flat faces where it meets air; ores and pebbles: little lumps on open walls
+    // water and lava: a second smooth surface, where the liquid meets the air. Its field counts
+    // rock as full too, so a pool lies flat up to its banks and slips under the ground's skin.
+    if (hasLiq) {
+      for (let n = 0; n < NS; n++) occ[n] = mats[n] || liq[n] ? 1 : 0;
+      blur(occ, B1);
+      const lverts = new Map();
+      const liqVertex = (a, b, c) => {
+        const ck2 = a + SX * (c + SZ * b);
+        const got = lverts.get(ck2);
+        if (got !== undefined) return got;
+        let px = 0, py = 0, pz = 0, cnt = 0, m = 0;
+        for (const [e0, e1] of EDGES) {
+          const c0 = CORNERS[e0], c1 = CORNERS[e1];
+          const s0 = si(a + c0[0], b + c0[1], c + c0[2]), s1 = si(a + c1[0], b + c1[1], c + c1[2]);
+          // only the liquid's own edges place it: its skin stays level against a wall
+          if (!(liq[s0] && !occ[s1]) && !(liq[s1] && !occ[s0])) continue;
+          m = m || liq[s0] || liq[s1];
+          const d0 = B1[s0], d1 = B1[s1];
+          let t = d1 !== d0 ? (0.5 - d0) / (d1 - d0) : 0.5;
+          t = Math.min(0.8, Math.max(0.2, t));
+          px += c0[0] + (c1[0] - c0[0]) * t; py += c0[1] + (c1[1] - c0[1]) * t; pz += c0[2] + (c1[2] - c0[2]) * t;
+          cnt++;
+        }
+        px = a + px / cnt; py = b + py / cnt; pz = c + pz / cnt;
+        let gx = 0, gy = 0, gz = 0;
+        for (const cc of CORNERS) {
+          const d = B1[si(a + cc[0], b + cc[1], c + cc[2])];
+          gx += cc[0] ? d : -d; gy += cc[1] ? d : -d; gz += cc[2] ? d : -d;
+        }
+        const nl = Math.hypot(gx, gy, gz) || 1;
+        pos.push(X0 + (ib + px + .5) * S, Y0 + (jb + py + .5) * S - S * .12, Z0 + (kb + pz + .5) * S);
+        nor.push(-gx / nl, nl > 1e-3 ? -gy / nl : 1, -gz / nl);
+        tmpC.setHex(COLOR[m] ?? COLOR[WATER]);
+        col.push(tmpC.r, tmpC.g, tmpC.b);
+        refs.push(-1); shades.push(1);
+        lverts.set(ck2, vcount);
+        return vcount++;
+      };
+      const lquad = (v, axis, positive, m) => {
+        const [a, b, c] = [P(v[0]), P(v[1]), P(v[2])];
+        const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2], wx = c[0] - a[0], wy = c[1] - a[1], wz = c[2] - a[2];
+        const cr = [uy * wz - uz * wy, uz * wx - ux * wz, ux * wy - uy * wx];
+        const out = m === LAVA ? lavaIdx : waterIdx;
+        if ((cr[axis] > 0) !== positive) out.push(v[0], v[2], v[1], v[0], v[3], v[2]);
+        else out.push(v[0], v[1], v[2], v[0], v[2], v[3]);
+      };
+      for (let b = M; b < M + CY; b++) for (let c = cFrom; c < M + CZ; c++) for (let a = aFrom; a < M + CX; a++) {
+        const s0 = si(a, b, c), l0 = liq[s0], o = occ[s0];
+        const edge = (s1, axis, v) => {
+          const l1 = liq[s1];
+          if (l0 && !occ[s1]) lquad(v(), axis, true, l0);
+          else if (l1 && !o) lquad(v(), axis, false, l1);
+        };
+        if (c >= M) edge(si(a + 1, b, c), 0, () => [liqVertex(a, b - 1, c - 1), liqVertex(a, b, c - 1), liqVertex(a, b, c), liqVertex(a, b - 1, c)]);
+        if (a >= M && c >= M) edge(si(a, b + 1, c), 1, () => [liqVertex(a - 1, b, c - 1), liqVertex(a, b, c - 1), liqVertex(a, b, c), liqVertex(a - 1, b, c)]);
+        if (a >= M && b >= M) edge(si(a, b, c + 1), 2, () => [liqVertex(a - 1, b - 1, c), liqVertex(a, b - 1, c), liqVertex(a, b, c), liqVertex(a - 1, b, c)]);
+      }
+    }
+    // ores and pebbles: little lumps on open walls
     const nugs = [], pebs = [];
     for (let j = j0; j < j0 + CY; j++) for (let k = k0; k < k0 + CZ; k++) for (let i = i0; i < i0 + CX; i++) {
       const m = vox[idx(i, j, k)];
-      if (m === AIR) continue;
-      if (m === WATER || m === LAVA) {
-        for (const f of FACES) {
-          if (!isAir(i + f.n[0], j + f.n[1], k + f.n[2])) continue;
-          tmpC.setHex(COLOR[m]);
-          const o = vcount;
-          for (const c of f.c) {
-            refs.push(-1); shades.push(1);
-            pos.push(X0 + (i + c[0]) * S, Y0 + (j + c[1]) * S - (f.n[1] === 1 ? S * .15 : 0), Z0 + (k + c[2]) * S);
-            nor.push(f.n[0], f.n[1], f.n[2]);
-            col.push(tmpC.r, tmpC.g, tmpC.b);
-          }
-          (m === LAVA ? lavaIdx : waterIdx).push(o, o + 1, o + 2, o, o + 2, o + 3);
-          vcount += 4;
-        }
-        continue;
-      }
+      if (m === AIR || m === WATER || m === LAVA) continue;
       let ax = 0, ay = 0, az = 0, open = 0;
       for (const f of FACES) if (!solidCell(i + f.n[0], j + f.n[1], k + f.n[2])) { ax += f.n[0]; ay += f.n[1]; az += f.n[2]; open++; }
       if (!open) continue;
@@ -1054,5 +1097,13 @@ export function createTerrain(scene, { theme = 'home', seed = 1337, ox = 0, oy =
     lavaAt: (x, y, z) => { const [i, j, k] = cellOf(x, y, z); return inArea(i, k) && j >= 0 && j < NY && vox[idx(i, j, k)] === LAVA; },
     set onSteam(f) { onSteam = f; },
     tickLava(dt) { lavaTime.value += dt; },
+    // tests: pour a liquid into the air cells of a ball
+    _pour(center, radius, liquid = WATER) {
+      const [ci, cj, ck] = cellOf(center.x, center.y, center.z), r = Math.ceil(radius / S);
+      for (let j = cj - r; j <= cj + r; j++) for (let k = ck - r; k <= ck + r; k++) for (let i = ci - r; i <= ci + r; i++) {
+        if (!inArea(i, k) || j < 1 || j >= NY || vox[idx(i, j, k)] !== AIR || Math.hypot(i - ci, j - cj, k - ck) > r) continue;
+        vox[idx(i, j, k)] = liquid; markDirtyCell(i, j, k); wake(i, j, k);
+      }
+    },
   };
 }

@@ -93,6 +93,24 @@ const MINI = {
     add(car, Cy(.003, .003, .16, 4), L(0x222222), .04, .1, -.1);
     add(car, Sp(.009, 6, 4), N(0xff3d5e, 2.5), .04, .18, -.1);
   },
+  // a jet-ski on a curl of wave, a red buoy beside it
+  jetski(g, anim) {
+    const sea = M(0x2f8fd8, .1, .15, 0x0a3a6a), foam = L(0xeaf6ff);
+    add(g, Cy(.2, .22, .03, 24), sea, 0, .015, 0);
+    const wave = add(g, new THREE.TorusGeometry(.13, .035, 8, 20, Math.PI), sea, -.02, .03, -.05, 0, .4, 0);
+    add(g, new THREE.TorusGeometry(.13, .012, 6, 20, Math.PI), foam, -.02, .03, -.05, 0, .4, 0).scale.set(1.02, 1.02, 1.6);
+    void wave;
+    const ski = new THREE.Group(); ski.position.set(.02, .1, .04); ski.rotation.set(-.35, -.6, .15); g.add(ski);
+    add(ski, B(.07, .03, .2), L(0xf4f2ec));
+    add(ski, B(.064, .025, .15), L(0xff3d5e), 0, .025, -.01);
+    add(ski, B(.03, .02, .06), L(0x222226), 0, .045, -.04);
+    add(ski, Cy(.004, .004, .07, 6), L(0x222226), 0, .06, .03, 0, 0, Math.PI / 2);
+    add(ski, B(.035, .05, .025), L(0x2f6bff), 0, .08, -.02);
+    add(ski, Sp(.016, 10, 8), L(0xffd21f), 0, .115, -.01);
+    const buoy = add(g, Sp(.03, 12, 10), L(0xe8303a), .13, .045, .1); buoy.scale.y = 1.25;
+    add(g, B(.004, .06, .004), L(0x222226), .13, .1, .1);
+    anim((dt, t) => { ski.position.y = .1 + Math.sin(t * 2.4) * .012; ski.rotation.z = .15 + Math.sin(t * 1.7) * .08; buoy.position.y = .045 + Math.sin(t * 2 + 1) * .006; });
+  },
   // a grey 8-bit console, a cartridge in, two pads, and a ? block floating above
   nes(g, anim) {
     const grey = L(0xc9c6c0), dark = L(0x3a3a3e);
@@ -338,7 +356,7 @@ const MINI = {
 
 // which game sits where: the front wall, the right wall, the back
 const PLACES = [
-  ['nes', 0xff3d5e], ['rc', 0xff7a1a], ['kart', 0x39c8ff], ['encre', 0x39e05a], ['peinture', 0xffd21f], ['laser', 0x4a9aff], ['taupe', 0xc07aff], ['tresor', 0xffc629],
+  ['nes', 0xff3d5e], ['rc', 0xff7a1a], ['jetski', 0x2fb8ff], ['kart', 0x39c8ff], ['encre', 0x39e05a], ['peinture', 0xffd21f], ['laser', 0x4a9aff], ['taupe', 0xc07aff], ['tresor', 0xffc629],
   ['course', 0x39e0c8], ['plongeon', 0xff9a3a], ['chrono', 0xffe08a],
   ['anneaux', 0xffc629], ['pile', 0xff4ad8], ['ruee', 0xffd21f], ['worms', 0x8ae04a],
 ];
@@ -598,7 +616,7 @@ export function buildGameRoom({ g, addBox, interactables, F, HH, HH2, HW, T, zf,
     neon(x, name, 256, 66, 58, hex(color), DISPLAY, 460);
   });
   const spots = [];
-  for (let n = 0; n < 9; n++) spots.push([-4.6 + n * 1.15, ZF - .55, Math.PI]);
+  for (let n = 0; n < 10; n++) spots.push([-4.6 + n * 9.2 / 9, ZF - .55, Math.PI]);
   for (const z of [-16.75, -17.8, -18.85, -19.9]) spots.push([X1 - .5, z, -Math.PI / 2]);
   for (const x of [.9, 3.75]) spots.push([x, ZB + .55, 0]);   // either side of the old pc
   PLACES.forEach(([id, color], n) => {
