@@ -359,6 +359,23 @@ export function createContact({ parent, color = 0x1e1a30, opacity = .5 }) {
 // ---------- passers-by: they walk the pavements, to and fro ----------
 const SKIN = [0xf2d0b0, 0xe8b894, 0xc89070, 0x8a5a3a, 0xf6dcc4];
 const HAIR = [0x2a1e18, 0x4a3020, 0x8a6a40, 0xd8c090, 0x1a1a1e, 0x9a9a9a];
+// what people say when a disc flies at them, or they come out of a portal
+const SHOUTS = { hit: ['aïe !', 'ouille !', 'au secours !', 'mais ça va pas ?!'], near: ['hé !', 'attention !', 'ouh là !'], fly: ['waaah !', 'mais… ?!', 'au secours !'], dazed: ['où suis-je ?', 'ma tête…', 'drôle de rue…'] };
+const bubbleTex = new Map();
+function bubble(text) {
+  if (bubbleTex.has(text)) return bubbleTex.get(text);
+  const c = document.createElement('canvas'); c.width = 256; c.height = 80;
+  const g = c.getContext('2d');
+  g.font = '700 30px Rubik, sans-serif';
+  const w = Math.min(244, g.measureText(text).width + 34);
+  g.fillStyle = '#fffdf6'; g.strokeStyle = '#1a130d'; g.lineWidth = 5;
+  g.beginPath(); g.roundRect(128 - w / 2, 6, w, 50, 22); g.moveTo(118, 55); g.lineTo(128, 74); g.lineTo(140, 55); g.fill(); g.stroke();
+  g.fillStyle = '#1a130d'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(text, 128, 32);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  bubbleTex.set(text, t);
+  return t;
+}
+
 export function createWalkers({ parent, paths, clothes, seed = 3 }) {
   const rnd = seeded(seed);
   const pick = (a) => a[Math.floor(rnd() * a.length)];
@@ -378,36 +395,128 @@ export function createWalkers({ parent, paths, clothes, seed = 3 }) {
     g.traverse(o => { if (o.isMesh) o.castShadow = true; });
     g.userData.keep = true;           // they move: never baked into the static decor
     parent.add(g);
-    return { g, legs, arms };
+    // what they do: walk their path; fly (out of a portal); lie (knocked down); daze; flee; back (walking home)
+    // body: where they are in the world, for the portals (size: the height of their middle)
+    return { g, legs, arms, mode: 'walk', t2: 0, sitting, body: { pos: new THREE.Vector3(), vel: new THREE.Vector3(), size: .9, cd: 0 }, say: null, sayT: 0, flee: new THREE.Vector3() };
   }
   for (const path of paths) {
     const pts = path.map(([x, z]) => new THREE.Vector3(x, 0, z));
     const n = Math.max(1, Math.round(pts[0].distanceTo(pts[pts.length - 1]) / 22));
     for (let k = 0; k < n; k++) {
       const p = person();
-      people.push({ ...p, pts, seg: Math.floor(rnd() * (pts.length - 1)), t: rnd(), dir: rnd() < .5 ? 1 : -1, speed: 1 + rnd() * .5, ph: rnd() * 6, lane: (rnd() - .5) * .8 });
+      people.push(Object.assign(p, { pts, seg: Math.floor(rnd() * (pts.length - 1)), t: rnd(), dir: rnd() < .5 ? 1 : -1, speed: 1 + rnd() * .5, ph: rnd() * 6, lane: (rnd() - .5) * .8 }));
     }
   }
+  const sitters = [];
+  const off = parent.position;   // the town's own frame is only ever shifted, never turned
+  const tmp = new THREE.Vector3(), tmp2 = new THREE.Vector3();
+  function shout(p, kind, time = 1.8) {
+    if (!p.say) { p.say = new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true, depthWrite: false })); p.say.scale.set(1.1, .34, 1); p.say.position.y = 2.15; p.g.add(p.say); }
+    p.say.material.map = bubble(SHOUTS[kind][Math.floor(Math.random() * SHOUTS[kind].length)]); p.say.material.needsUpdate = true;
+    p.say.visible = true; p.sayT = time;
+  }
+  // where on its path someone should be walking back to
+  function pathPoint(p) {
+    const A = p.pts[p.seg], B = p.pts[p.seg + 1] || A;
+    return tmp2.set(A.x + (B.x - A.x) * p.t, 0, A.z + (B.z - A.z) * p.t);
+  }
+  const limbs = (p, s, arms = .8) => { p.legs[0].rotation.x = s; p.legs[1].rotation.x = -s; p.arms[0].rotation.x = -s * arms; p.arms[1].rotation.x = s * arms; };
   return {
     people,
     // someone sitting still (a café chair, a bench), facing `rot`
-    sit(x, y, z, rot) { const p = person(true); p.g.position.set(x, y - .33, z); p.g.rotation.y = rot; return p; },
+    sit(x, y, z, rot) { const p = person(true); p.g.position.set(x, y - .33, z); p.g.rotation.y = rot; sitters.push(p); return p; },
+    // the person a point (world) is inside of: a capsule for the body, a ball for the head
+    hitTest(w) {
+      for (const p of [...people, ...sitters]) {
+        if (!p.g.visible || p.mode === 'lie' || p.mode === 'fly') continue;
+        const x = w.x - off.x - p.g.position.x, z = w.z - off.z - p.g.position.z, y = w.y - off.y - p.g.position.y;
+        const r = Math.hypot(x, z);
+        if ((y > .05 && y < 1.45 && r < .27) || (y > 1.45 && y < 1.8 && Math.hypot(r, y - 1.62) < .19)) return p;
+      }
+      return null;
+    },
+    // struck by a disc going `dir`: knocked flat, then up and running
+    knock(p, dir) {
+      shout(p, 'hit', 2.2);
+      if (p.sitting) { p.g.position.y += .15; p.t2 = .3; return; }
+      p.mode = 'lie'; p.t2 = 0;
+      p.flee.copy(dir).setY(0).normalize();
+      p.g.rotation.y = Math.atan2(-p.flee.x, -p.flee.z);
+    },
+    // a disc whistling past: a jump and a word
+    startle(w) {
+      for (const p of [...people, ...sitters]) {
+        if (p.mode !== 'walk' || p.sayT > 0) continue;
+        if (Math.hypot(w.x - off.x - p.g.position.x, w.z - off.z - p.g.position.z) < 1.4 && Math.abs(w.y - off.y - 1) < 1.2) shout(p, 'near', 1.2);
+      }
+    },
+    // for the portals: the walking ones' bodies, in the world
+    bodies() { return people.filter(p => p.mode === 'walk' || p.mode === 'flee' || p.mode === 'back'); },
+    // one came out of a portal: flying, then lost somewhere
+    flung(p) { p.mode = 'fly'; p.g.position.copy(p.body.pos).sub(off); shout(p, 'fly', 1.5); },
     update(dt) {
+      for (const p of sitters) {
+        if (p.t2 > 0) { p.t2 -= dt; if (p.t2 <= 0) p.g.position.y -= .15; }
+        if (p.sayT > 0) { p.sayT -= dt; if (p.sayT <= 0) p.say.visible = false; }
+      }
       for (const p of people) {
-        const a = p.pts[p.seg], b = p.pts[p.seg + 1];
-        const len = a.distanceTo(b) || 1;
-        p.t += p.dir * p.speed * dt / len;
-        if (p.t > 1) { if (p.seg + 2 < p.pts.length) { p.seg++; p.t -= 1; } else { p.t = 1; p.dir = -1; } }
-        if (p.t < 0) { if (p.seg > 0) { p.seg--; p.t += 1; } else { p.t = 0; p.dir = 1; } }
-        const A = p.pts[p.seg], B = p.pts[p.seg + 1];
-        const dx = B.x - A.x, dz = B.z - A.z, l = Math.hypot(dx, dz) || 1;
-        p.g.position.set(A.x + dx * p.t - dz / l * p.lane, 0, A.z + dz * p.t + dx / l * p.lane);
-        p.g.rotation.y = Math.atan2(dx * p.dir, dz * p.dir);
-        p.ph += dt * p.speed * 5.5;
-        const s = Math.sin(p.ph) * .5;
-        p.legs[0].rotation.x = s; p.legs[1].rotation.x = -s;
-        p.arms[0].rotation.x = -s * .8; p.arms[1].rotation.x = s * .8;
-        p.g.position.y = Math.abs(Math.cos(p.ph)) * .03;
+        if (p.sayT > 0) { p.sayT -= dt; if (p.sayT <= 0) p.say.visible = false; }
+        const G = p.g.position;
+        if (p.mode === 'fly') {
+          // thrown: arms and legs everywhere, down to the ground, then sat there dazed
+          const v = p.body.vel; v.y -= 14 * dt;
+          G.addScaledVector(v, dt);
+          p.g.rotation.x += dt * 3;
+          limbs(p, Math.sin(p.ph += dt * 30) * 1.2, 1.4);
+          if (G.y <= 0 && v.y < 0) { G.y = 0; p.g.rotation.x = 0; p.mode = 'daze'; p.t2 = 2.5; limbs(p, 0); shout(p, 'dazed', 2.2); }
+        } else if (p.mode === 'lie') {
+          // falling back, a moment on the ground, getting up
+          p.t2 += dt;
+          const k = p.t2 < .35 ? p.t2 / .35 : p.t2 < 2 ? 1 : Math.max(0, 1 - (p.t2 - 2) / .5);
+          p.g.rotation.x = -k * 1.45; G.y = k * .15;
+          if (p.t2 > 2.5) { p.g.rotation.x = 0; G.y = 0; p.mode = 'flee'; p.t2 = 4; }
+        } else if (p.mode === 'daze') {
+          p.t2 -= dt; p.g.rotation.z = Math.sin(p.t2 * 6) * .12;
+          if (p.t2 <= 0) {
+            p.g.rotation.z = 0;
+            // too far from home (another town, the cave): gone, and back on the path in a while
+            if (pathPoint(p).distanceTo(G) > 45) { p.g.visible = false; p.mode = 'gone'; p.t2 = 8; } else p.mode = 'back';
+          }
+        } else if (p.mode === 'gone') {
+          p.t2 -= dt;
+          if (p.t2 <= 0) { p.g.visible = true; p.mode = 'walk'; }
+        } else if (p.mode === 'flee' || p.mode === 'back') {
+          // running off (arms up), or walking back to where they were on their path
+          const home = pathPoint(p);
+          const d = p.mode === 'flee' ? p.flee : tmp.subVectors(home, G).setY(0);
+          const dist = d.length();
+          if (p.mode === 'back' && dist < .4) { p.mode = 'walk'; continue; }
+          d.normalize();
+          const sp = p.mode === 'flee' ? 4.2 : p.speed;
+          G.addScaledVector(d, sp * dt); G.y = 0;
+          p.body.vel.copy(d).multiplyScalar(sp);
+          p.g.rotation.set(0, Math.atan2(d.x, d.z), 0);
+          p.ph += dt * sp * 5.5;
+          const s = Math.sin(p.ph) * .6;
+          p.legs[0].rotation.x = s; p.legs[1].rotation.x = -s;
+          if (p.mode === 'flee') { p.arms[0].rotation.x = p.arms[1].rotation.x = -2.8 + Math.sin(p.ph * 2) * .3; p.t2 -= dt; if (p.t2 <= 0) p.mode = 'back'; }
+          else { p.arms[0].rotation.x = -s * .8; p.arms[1].rotation.x = s * .8; }
+        } else {
+          const a = p.pts[p.seg], b = p.pts[p.seg + 1];
+          const len = a.distanceTo(b) || 1;
+          p.t += p.dir * p.speed * dt / len;
+          if (p.t > 1) { if (p.seg + 2 < p.pts.length) { p.seg++; p.t -= 1; } else { p.t = 1; p.dir = -1; } }
+          if (p.t < 0) { if (p.seg > 0) { p.seg--; p.t += 1; } else { p.t = 0; p.dir = 1; } }
+          const A = p.pts[p.seg], B = p.pts[p.seg + 1];
+          const dx = B.x - A.x, dz = B.z - A.z, l = Math.hypot(dx, dz) || 1;
+          G.set(A.x + dx * p.t - dz / l * p.lane, 0, A.z + dz * p.t + dx / l * p.lane);
+          p.g.rotation.y = Math.atan2(dx * p.dir, dz * p.dir);
+          p.body.vel.set(dx / l * p.dir * p.speed, 0, dz / l * p.dir * p.speed);
+          p.ph += dt * p.speed * 5.5;
+          limbs(p, Math.sin(p.ph) * .5);
+          G.y = Math.abs(Math.cos(p.ph)) * .03;
+        }
+        p.body.pos.copy(G).add(off);
       }
     },
   };

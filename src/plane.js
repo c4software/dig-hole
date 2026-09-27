@@ -76,11 +76,13 @@ function makeBomb() {
   return g;
 }
 
-export function createPlane({ scene, getTerrain, onWarn, onBomb, onEnd, audio }) {
+export function createPlane({ scene, getTerrain, onWarn, onBomb, onEnd, onCrash, audio }) {
   const plane = makePlane();
   plane.visible = false;
   scene.add(plane);
   const falling = [];
+  // shot down: black smoke from the engines, fire, a spiral to the ground
+  const smoke = V.createPuffs(scene, 60, 0x2a2624), fire = V.createPuffs(scene, 30, 0xff7a1a);
   let run = null;
   let next = 150 + Math.random() * 120;   // first raid after a few minutes
 
@@ -104,7 +106,19 @@ export function createPlane({ scene, getTerrain, onWarn, onBomb, onEnd, audio })
       next -= dt;
       if (next <= 0) { next = 180 + Math.random() * 180; launch(); }
     }
-    if (run) {
+    smoke.update(dt); fire.update(dt);
+    if (run && run.down != null) {
+      // going down: nose dipping, rolling over, trailing smoke, until it hits the fields
+      run.down += dt; run.vy -= 7 * dt;
+      run.pos.addScaledVector(run.dir, SPEED * .8 * dt); run.pos.y += run.vy * dt;
+      plane.position.copy(run.pos);
+      plane.rotation.z = -Math.min(1.1, run.down * .35);
+      plane.rotation.x += dt * .9;
+      for (const p of plane.userData.props) p.rotation.x += dt * 10;
+      if (Math.random() < .8) smoke.emit(plane.position, new THREE.Vector3((Math.random() - .5) * 2, 1, (Math.random() - .5) * 2), 3.5, 3);
+      if (Math.random() < .5) fire.emit(plane.position, new THREE.Vector3(0, 1.5, 0), 2, .5);
+      if (run.pos.y < 1) { onCrash?.(run.pos.clone()); run = null; plane.visible = false; audio?.setPlane(0); }
+    } else if (run) {
       run.t += dt;
       run.pos.addScaledVector(run.dir, SPEED * dt);
       plane.position.copy(run.pos);
@@ -123,7 +137,8 @@ export function createPlane({ scene, getTerrain, onWarn, onBomb, onEnd, audio })
         const b = makeBomb();
         b.position.copy(run.pos).add(new THREE.Vector3(0, -1.2, 0));
         scene.add(b);
-        falling.push({ mesh: b, v: run.dir.clone().multiplyScalar(3), whistle: false });
+        const v = run.dir.clone().multiplyScalar(3);
+        falling.push({ mesh: b, v, whistle: false, pos: b.position, vel: v, size: 0 });
       }
       audio?.setPlane(Math.max(0, 1 - dist / 170));
       if (dist > 200 && run.t > 5) { run = null; plane.visible = false; audio?.setPlane(0); onEnd?.(); }
@@ -148,6 +163,16 @@ export function createPlane({ scene, getTerrain, onWarn, onBomb, onEnd, audio })
   return {
     update,
     get active() { return !!run || falling.length > 0; },
+    falling,
+    // does a point touch the bomber: its fuselage, its wings or its tail (in the plane's own frame)?
+    hitTest(p) {
+      if (!run || run.down != null) return false;
+      const l = plane.worldToLocal(p.clone());
+      if (l.x > -6.8 && l.x < 6.6 && Math.hypot(l.y, l.z) < 1.4) return true;
+      if (Math.abs(l.y) < .8 && l.x > -1.3 && l.x < 3.1 && Math.abs(l.z) < 10.8) return true;
+      return l.x < -4.5 && l.x > -7 && Math.abs(l.z) < 4 && l.y > -.6 && l.y < 3;
+    },
+    shootDown() { if (run && run.down == null) { run.down = 0; run.vy = 0; run.dropped = 99; audio?.boom?.(.5); } },
     trigger() { if (!run) launch(); },
   };
 }

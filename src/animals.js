@@ -135,11 +135,15 @@ export function createAnimals(root, { world, center, blocked, count = () => 6, i
   function spawn() {
     const id = pick();
     const m = build(id);
+    // its own shape, facing +z at the origin: what a disc has to touch
+    const box = new THREE.Box3().setFromObject(m.g).expandByScalar(.04);
     const pos = randomSpot(24, 36);
     m.g.position.copy(pos);
     m.g.scale.setScalar(.01);
     scene.add(m.g);
-    list.push({ id, def: ANIMAL[id], ...m, pos, target: randomSpot(12, 34), state: 'wander', t: 0, stamina: 1, rest: 0, heading: Math.random() * 6, born: 0, gone: false });
+    list.push({ id, def: ANIMAL[id], ...m, pos, target: randomSpot(12, 34), state: 'wander', t: 0, stamina: 1, rest: 0, heading: Math.random() * 6, born: 0, gone: false,
+      // for the portals: how it moves, the height of its middle, and whether it's flying out of one
+      vel: new THREE.Vector3(), size: id === 'cerf' ? .9 : id === 'grue' ? .8 : .22, fly: false, box });
   }
 
   function update(dt, player) {
@@ -149,6 +153,16 @@ export function createAnimals(root, { world, center, blocked, count = () => 6, i
       const a = list[n];
       a.t += dt;
       a.born = Math.min(1, a.born + dt * 2);
+      // thrown out of a portal: a fall, legs flailing, until it lands
+      if (a.fly) {
+        a.vel.y -= 18 * dt;
+        a.pos.addScaledVector(a.vel, dt);
+        if (a.pos.y <= 0 && a.vel.y < 0) { a.pos.y = 0; a.fly = false; a.vel.set(0, 0, 0); a.rest = .8; }
+        a.g.position.copy(a.pos);
+        a.g.rotation.set(0, a.heading, 0);
+        a.legs.forEach((l, k) => { l.rotation.x = Math.sin(a.t * 30 + k * Math.PI) * .8; });
+        continue;
+      }
       const dx = a.pos.x - player.pos.x, dz = a.pos.z - player.pos.z;
       const d = Math.hypot(dx, dz);
       let speed = 0, dir = null;
@@ -182,6 +196,7 @@ export function createAnimals(root, { world, center, blocked, count = () => 6, i
         let dh = want - a.heading; dh = Math.atan2(Math.sin(dh), Math.cos(dh));
         a.heading += dh * Math.min(1, dt * 8);
       }
+      a.vel.set(dir && speed ? dir.x * speed : 0, 0, dir && speed ? dir.z * speed : 0);
       a.g.position.copy(a.pos);
       a.g.rotation.y = a.heading;
       const moving = speed > 0;
@@ -192,6 +207,18 @@ export function createAnimals(root, { world, center, blocked, count = () => 6, i
     }
   }
 
+  // a point (world) inside an animal's own shape?
+  const loc = new THREE.Vector3();
+  function touches(a, p) {
+    if (a.gone || a.born < 1) return false;
+    loc.subVectors(p, a.pos).applyAxisAngle(THREE.Object3D.DEFAULT_UP, -a.heading);
+    return a.box.containsPoint(loc);
+  }
+  // struck (a disc): knocked off its feet, lands dazed
+  function knock(a, dir) {
+    a.fly = true;
+    a.vel.copy(dir).setY(0).normalize().multiplyScalar(3.5).setY(4);
+  }
   // a swipe of the shovel: sphere per animal
   function hitTest(origin, dir, far) {
     let best = null, bt = far;
@@ -207,5 +234,5 @@ export function createAnimals(root, { world, center, blocked, count = () => 6, i
   }
   function remove(a) { scene.remove(a.g); list.splice(list.indexOf(a), 1); }
 
-  return { list, update, hitTest, remove, group: scene };
+  return { list, update, hitTest, remove, touches, knock, group: scene };
 }

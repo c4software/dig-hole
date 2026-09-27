@@ -66,7 +66,7 @@ export function createBombs(scene, getTerrain, onExplode) {
     const v = kind === 'fus'
       ? new THREE.Vector3(0, -4, 0)                                   // the drill goes straight down
       : dir.clone().multiplyScalar(8).add(new THREE.Vector3(0, 2.5, 0)).add(inherit.clone().multiplyScalar(.5));
-    live.push({ kind, mesh, v, fuse: BLAST[kind].fuse, spin: new THREE.Vector3(Math.random() * 6, Math.random() * 6, 0) });
+    live.push({ kind, mesh, v, fuse: BLAST[kind].fuse, spin: new THREE.Vector3(Math.random() * 6, Math.random() * 6, 0), pos: mesh.position, vel: v, size: 0 });
   }
 
   function boom(kind, pos) {
@@ -111,5 +111,5 @@ export function createBombs(scene, getTerrain, onExplode) {
     }
   }
 
-  return { throwBomb, boom, update, get count() { return live.length; } };
+  return { throwBomb, boom, update, live, get count() { return live.length; } };
 }

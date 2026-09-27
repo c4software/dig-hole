@@ -1,7 +1,7 @@
 // main.js, boot + state machine: attract → swoop → play ⇄ panels, the van, the bottom, China.
 import * as THREE from 'three';
 import { createWorld } from './world.js';
-import { createTerrain, ORE, isOre, isLetter, S, setGrassColors } from './terrain.js';
+import { createTerrain, ORE, isOre, isLetter, S, setGrassColors, WATER, LAVA } from './terrain.js';
 import { createPlayer } from './player.js';
 import { createShovel, createDebris, createHeart, createDrill } from './tool.js';
 import { createAudio } from './audio.js';
@@ -27,7 +27,7 @@ import { createMiniGames, GAMES, fmtRecord } from './minigames.js';
 import { createKart } from './kart.js';
 import { createRC } from './rcrace.js';
 import { createJetski } from './jetski.js';
-import { createCave, GUN_REGEN, slotAt } from './cave.js';
+import { createCave, createTrapGuide, GUN_REGEN, slotAt } from './cave.js';
 import { createBatballons } from './batballons.js';
 import { createCanards } from './canards.js';
 import { createBagarre } from './bagarre.js';
@@ -36,6 +36,7 @@ import { createBallons } from './ballons.js';
 import { createMoto } from './moto.js';
 import { createBomber } from './bomber.js';
 import { createPortals } from './portal.js';
+import { createOrgan, createDiscLauncher, createBats, createReliquary, SONGS } from './church.js';
 import { createNes } from './nes.js';
 import { createEncre } from './encre.js';
 import { createWorms } from './worms.js';
@@ -135,11 +136,42 @@ const house = world.house;
 // the secret cave behind the shed, and the portal gun waiting in it
 const cave = createCave({ scene: homeRoot, colliders: world.colliders, interactables: world.interactables });
 const portals = createPortals({ scene, camera, renderer: world.renderer, audio });
-let gunOut = false;
+// the portal gun is a tool like the shovel and the drill: eco.s.tool === 'portal'
+const gunOut = () => eco.s.tool === 'portal' && eco.s.portal;
+const trapGuide = createTrapGuide();
+// the church: its organ for everyone, the launcher in the reliquary, the bats round the belfry
+const CH = world.church;
+const organ = createOrgan({ parent: homeRoot, at: CH.organ, rot: -Math.PI / 2 });
+world.colliders.push({ min: new THREE.Vector3(CH.organ.x, 0, CH.organ.z - 1.75), max: new THREE.Vector3(CH.organ.x + .9, 5.6, CH.organ.z + 1.75) });
+world.colliders.push({ min: new THREE.Vector3(CH.organ.x - 1, 0, CH.organ.z - .95), max: new THREE.Vector3(CH.organ.x, 1, CH.organ.z + .95) });
+world.interactables.push({ id: 'organ', pos: new THREE.Vector3(CH.organ.x - 1.3, 1.1, CH.organ.z), reach: 2 });
+const reliquary = createReliquary({ parent: homeRoot, at: new THREE.Vector3(CH.altar.x, 0, CH.altar.z - .95) });
+world.colliders.push({ min: new THREE.Vector3(CH.altar.x - .47, 0, CH.altar.z - 1.22), max: new THREE.Vector3(CH.altar.x + .47, .5, CH.altar.z - .68) });
+world.interactables.push({ id: 'dgun', pos: new THREE.Vector3(CH.altar.x, .7, CH.altar.z - .95), reach: 1.8 });
+const launcher = createDiscLauncher({ scene, camera, audio });
+const bats = createBats({ scene: homeRoot, center: CH.tower });
+const DGUN_REGEN = 120;
+// the organ: e plays the next piece, for everyone
+let organSong = SONGS.length - 1;   // so the first press plays the toccata
+function playOrgan(song, local, by = null) {
+  organ.play(song, local ? 0 : .1);
+  organSong = song;
+  if (local) net?.sendFx({ k: 'organ', s: song });
+  ui.toast((by ? `${by} joue de l'orgue · ` : '♪ ') + SONGS[song].name, false, 3200);
+}
+// every front door in both towns: e to open or shut it (for everyone)
+for (const [w, list] of Object.entries(world.doors)) list.forEach((d, i) => world.interactables.push({ id: 'sdoor', w, i, pos: (d.mid || d.pos).clone(), reach: 1.9 }));
+const doorOf = (it) => world.doors[it.w]?.[it.i];
+function setDoor(w, i, open, local) {
+  const d = world.doors[w]?.[i];
+  if (!d || d.open === open) return;
+  d.open = open; audio.step();
+  if (local) net?.sendFx({ k: 'sdoor', w, i, o: open ? 1 : 0 });
+}
 house.room.noShadows();
 // the key to upstairs: buried in the garden, where the map's seed says; exploration starts with it
 const quest = createKeyQuest({ parent: house.group, terrain: terrains.home, camera });
-if (EXPLORE) eco.s.upKey = true;
+if (EXPLORE) { eco.s.upKey = true; eco.s.portal = true; }
 quest.place(eco.s.mapSeed ?? 1337);
 quest.setDone(!!eco.s.upKey);
 house.room.setUnlocked(!!eco.s.upKey);
@@ -168,7 +200,7 @@ function applyUpgrades() {
   player.stats.kite = eco.s.lv.kite > 0;
   shovel.setLevel(eco.s.lv.shovel);
   drill.setLevel(eco.s.lv.drill);
-  if (!eco.s.lv.drill) eco.s.tool = 'shovel';
+  if ((eco.s.tool === 'drill' && !eco.s.lv.drill) || (eco.s.tool === 'portal' && !eco.s.portal) || (eco.s.tool === 'disc' && !eco.s.discs)) eco.s.tool = 'shovel';
   elevator.setOwned(eco.s.lv.lift > 0);
   eco.s.battery = Math.min(eco.s.battery, eco.batteryMax);
   ui.setBag(eco.s.sackN, eco.cap);
@@ -374,6 +406,7 @@ function start() {
     return;
   }
   audio.init();
+  if (settings.full) goFull(true);
   ui.el.attract.classList.add('hidden');
   ui.el.hud.classList.remove('hidden');
   swoopFrom.p.copy(camera.position);
@@ -384,8 +417,11 @@ function start() {
   lockPointer();
   if (EXPLORE) setTimeout(() => ui.hint('exploration : tout est illimité · jetpack, bombes, pelle en jade… amuse-toi', 7000), 1500);
   else if (giftText) setTimeout(() => { ui.hint(giftText, 7000); giftText = null; }, 1500);
+
   else if (!eco.s.upKey) setTimeout(() => hintOnce('key', 'une clef est enterrée dans le potager : suis le thermomètre en bas à droite · clic gauche pour creuser', 7000), 1400);
   else if (eco.s.best < 0.5) setTimeout(() => hintOnce('dig', 'clic gauche pour creuser · e pour interagir · la maison est ouverte', 6000), 1400);
+  // the portal gun is put away between two visits: say where it is
+  if (eco.s.portal && !gunOut()) setTimeout(() => hintOnce('portaltool', 'molette ou x : changer d\'outil · le pistolet à portails est avec la pelle', 6000), 9000);
 }
 document.getElementById('play').addEventListener('click', start);
 resetBtn.addEventListener('click', (e) => {
@@ -419,7 +455,8 @@ addEventListener('mousedown', (e) => {
   if ((state === 'play' || state === 'drive' || (state === 'kart' && !race?.screen)) && !document.pointerLockElement && e.target === renderer.domElement) { lockPointer(); return; }
   if (state === 'kart' && race && !race.screen) { race.mod.press?.(e.button, true); return; }
   if (state !== 'play') return;
-  if (gunOut && !mg.armed && (e.button === 0 || e.button === 2)) { shootPortal(e.button === 0 ? 0 : 1); return; }
+  if (gunOut() && !mg.armed && (e.button === 0 || e.button === 2)) { shootPortal(e.button === 0 ? 0 : 1); return; }
+  if (eco.s.tool === 'disc' && eco.s.discs && !mg.armed && e.button === 0) { fireDisc(); return; }
   if (e.button === 0) digging = true;
   if (e.button === 2) { throwing = true; throwT = THROW_EVERY; useItem(); }
 });
@@ -429,7 +466,7 @@ addEventListener('mousemove', (e) => { if (state === 'kart' && race?.mod.look &&
 const THROW_EVERY = 0.35;
 let throwing = false, throwT = 0;
 const EXPLOSIVES = new Set(['dyn', 'sup', 'fus', 'met']);
-addEventListener('wheel', () => { if (state === 'play' && !onPlanet() && eco.s.lv.drill) switchTool(); }, { passive: true });
+addEventListener('wheel', () => { if (state === 'play' && (eco.s.lv.drill || eco.s.portal || eco.s.discs) && (!onPlanet() || eco.s.portal || eco.s.discs)) switchTool(); }, { passive: true });
 addEventListener('keydown', (e) => {
   if (e.repeat || e.target.closest?.('input, textarea')) return;
   if (state === 'drive') {
@@ -449,7 +486,6 @@ addEventListener('keydown', (e) => {
   if (e.code === 'KeyR' && state === 'kart') { race?.mod.respawn(); return; }
   if (e.code === 'KeyM' && (state === 'play' || bigMap)) { if (onPlanet() && !bigMap) ui.toast('pas de carte ici… pour l\'instant'); else toggleMap(); }
   if (state !== 'play') return;
-  if (e.code === 'KeyG') { if (eco.s.portal) { gunOut = !gunOut; audio.tick(); if (gunOut) hintOnce('portal', 'clic gauche : portail bleu · clic droit : portail orange · g pour le ranger', 5000); } else ui.toast('il te faudrait un pistolet à portails… il paraît qu\'il y a une cave quelque part'); }
   if (e.code === 'KeyR') toSurface();
   if (e.code === 'KeyT' && near && near.id === 'globe') {
     if (eco.s.china) travel('china', 'globe');
@@ -544,7 +580,7 @@ const PROMPTS = {
   charger: '<b>e</b> recharger la batterie', computer: '<b>e</b> commander en ligne', board: '<b>e</b> les exploits',
   globe: null, shelf: '<b>e</b> les trophées', letters: '<b>e</b> les lettres · le livre d\'or', globe: '<b>e</b> faire tourner le globe',
   well: '<b>e</b> rentrer à la maison', parcel: '<b>e</b> ouvrir les colis', craft: '<b>e</b> l\'établi',
-  trapdoor: '<b>e</b> soulever la trappe…', caveup: '<b>e</b> remonter l\'échelle',
+  trapdoor: '<b>e</b> soulever la trappe…', caveup: '<b>e</b> remonter l\'échelle', organ: '<b>e</b> jouer de l\'orgue · pour tout le monde',
   van: '<b>e</b> piquer la camionnette', arcade: '<b>e</b> la borne d\'arcade · mini-jeux', reset: '<b>e</b> RESET · reboucher le trou, nouvelle carte',
 };
 
@@ -575,6 +611,9 @@ function updateAim() {
     else if (near.id === 'updoor') p = house.room.locked ? 'la porte de l\'étage · fermée à clef' : house.room.doorOpen ? '<b>e</b> fermer la porte' : '<b>e</b> ouvrir la porte';
     else if (near.id === 'vr') p = '<b>e</b> mettre le casque… ?';
     else if (near.id === 'egg') p = '<b>e</b> l\'œuf d\'or';
+    else if (near.id === 'sdoor') p = doorOf(near)?.open ? '<b>e</b> fermer la porte' : '<b>e</b> ouvrir la porte';
+    else if (near.id === 'dgun') p = !reliquary.ready ? 'le reliquaire est vide · il en revient un bientôt' : eco.s.discs ? '<b>e</b> le lance-disques · tu as déjà le tien' : '<b>e</b> prendre le lance-disques chasse-vampire';
+    else if (near.id === 'organ') p = `<b>e</b> ${organ.playing ? 'morceau suivant' : 'jouer de l\'orgue'} · ${SONGS[(organSong + 1) % SONGS.length].name}`;
     else if (near.id === 'pgun') p = !cave.gunReady ? 'le socle du pistolet à portails · il en revient un bientôt' : eco.s.portal ? '<b>e</b> le pistolet à portails · tu as déjà le tien' : '<b>e</b> prendre le pistolet à portails';
     else if (near.game) p = `<b>e</b> jouer · ${GAMES[near.game].name}`;
     else if (near.id === 'lift') p = elevator.holds(player.pos) ? (elevator.y > -1 ? `<b>e</b> descendre à ${liftBottomDepth().toFixed(0)} m` : '<b>e</b> remonter') : '<b>e</b> appeler l\'ascenseur';
@@ -607,10 +646,12 @@ function activeTool() {
   if (eco.s.tool === 'drill' && eco.s.lv.drill > 0) return { kind: 'drill', ...eco.cur('drill') };
   return { kind: 'shovel', ...eco.cur('shovel'), cost: 1 };
 }
+// the tools you own, in turn: shovel, drill, portal gun
 function switchTool() {
-  if (!eco.s.lv.drill) { ui.toast('pas encore de foreuse · la quincaillerie en vend', true); return; }
-  eco.s.tool = eco.s.tool === 'drill' ? 'shovel' : 'drill';
-  ui.toast(activeTool().name);
+  const tools = ['shovel', ...(eco.s.lv.drill ? ['drill'] : []), ...(eco.s.portal ? ['portal'] : []), ...(eco.s.discs ? ['disc'] : [])];
+  if (tools.length < 2) { ui.toast('pas encore de foreuse · la quincaillerie en vend', true); return; }
+  eco.s.tool = tools[(tools.indexOf(eco.s.tool) + 1) % tools.length];
+  ui.toast(eco.s.tool === 'portal' ? 'pistolet à portails · clic gauche : bleu · clic droit : orange' : eco.s.tool === 'disc' ? 'lance-disques chasse-vampire · clic pour tirer' : activeTool().name);
   audio.tick();
 }
 let drillT = 0, drillBite = 0;
@@ -1770,6 +1811,8 @@ const plane = createPlane({
   },
   onBomb(p) { if (here === 'home') bombs.boom('air', p); },
   onEnd() { if (here === 'home' && planeHits && state !== 'faint') unlock('plane'); },
+  // it came down in the fields: a far boom, a flash
+  onCrash(p) { if (here === 'home') { audio.boom(Math.max(.3, 1 - p.length() / 250)); bombs.boom('air', p); } },
 });
 
 // ---------- the bottom, and China ----------
@@ -1987,6 +2030,9 @@ function interact(it) {
     case 'trapdoor': goCave(true); return;
     case 'caveup': goCave(false); return;
     case 'pgun': takeGun(); return;
+    case 'dgun': takeLauncher(); return;
+    case 'sdoor': setDoor(it.w, it.i, !doorOf(it)?.open, true); return;
+    case 'organ': playOrgan((organSong + 1) % SONGS.length, true); return;
     case 'egg': audio.tick(); ui.toast('trois clefs, trois portes… et un œuf. il y a toujours quelque chose de caché, même sous un lit', false, 3600); return;
     case 'bed': {
       ui.veil(1);
@@ -2054,10 +2100,94 @@ function goCave(down) {
 function takeGun() {
   if (!cave.gunReady) { audio.deny(); ui.toast('le socle est vide · il en revient un bientôt', true); return; }
   if (eco.s.portal) { ui.toast('tu as déjà le tien · g pour le sortir'); return; }
-  eco.s.portal = true; gunOut = true;
+  eco.s.portal = true; eco.s.tool = 'portal';
   // gone for everyone, back in two minutes for the next one
   cave.takeGun(); net?.sendFx({ k: 'pgun', left: GUN_REGEN });
-  audio.win(); ui.layer('le pistolet à portails', 'clic gauche : portail bleu · clic droit : orange · g pour le ranger ou le sortir'); save();
+  audio.win(); ui.layer('le pistolet à portails', 'clic gauche : portail bleu · clic droit : orange · molette ou x : changer d\'outil'); save();
+}
+function takeLauncher() {
+  if (!reliquary.ready) { audio.deny(); ui.toast('le reliquaire est vide · il en revient un bientôt', true); return; }
+  if (eco.s.discs) { ui.toast('tu as déjà le tien · molette ou x pour le sortir'); return; }
+  eco.s.discs = true; eco.s.tool = 'disc';
+  reliquary.take(DGUN_REGEN); net?.sendFx({ k: 'dgun', left: DGUN_REGEN });
+  // the church answers: the toccata, the vampire hunter's anthem, for everyone
+  playOrgan(0, true);
+  audio.win(); ui.layer('le lance-disques chasse-vampire', 'clic : un disque d\'argent · ils ricochent · la nuit, les chauves-souris du clocher…'); save();
+}
+function fireDisc() {
+  camera.getWorldPosition(eye); camera.getWorldDirection(dir);
+  const shot = launcher.fire(eye, dir);
+  if (shot) net?.sendFx({ k: 'disc', ...shot });
+}
+// where a disc bounces: the ground, or any wall of the world
+function solidAt(x, y, z) {
+  const t = T(), [i, j, k] = t.cellOf(x, y, z);
+  if (t.solidCell(i, j, k)) return true;
+  for (const c of world.colliders) if (!c.off && x > c.min.x && x < c.max.x && y > c.min.y && y < c.max.y && z > c.min.z && z < c.max.z) return true;
+  return false;
+}
+// what a disc of yours strikes: a bat, a mole, an animal
+function discHit(d) {
+  // the bomber, for whoever manages it: the big prize
+  if (here === 'home' && plane.hitTest(d.pos)) {
+    plane.shootDown(); audio.win();
+    reward(5000, 'bombardier abattu ! super bonus');
+    ui.layer('bombardier abattu !', 'un tir de légende · +5 000 ●');
+    net?.sendFx({ k: 'planedown' });
+    return true;
+  }
+  const b = here === 'home' && bats.hit(d.pos);
+  if (b) { audio.pop(); reward(150, 'chauve-souris vampire abattue'); return true; }
+  for (const m of moles.list) if ((m.state === 'chase' || m.state === 'emerge') && m.pos.distanceTo(d.pos) < .6) { moles.damage(m, 2, d.vel.clone().setY(0).normalize()); audio.bonk(); return true; }
+  const W = world.walkers[here];
+  const who = W?.hitTest(d.pos);
+  if (who) { W.knock(who, d.vel); audio.bonk(); return true; }
+  W?.startle(d.pos);
+  for (const a of animals[here].list) if (animals[here].touches(a, d.pos)) { animals[here].knock(a, d.vel); audio.squeak(); return true; }
+  return false;
+}
+// ---------- water and lava pour through the portals too ----------
+// The cells of liquid just in front of one portal go out of the other: into the hole as real water
+// (or lava) that flows on; out of the plot, a gush that falls away; into a full side, not at all.
+let liqT = 0;
+const lc = new THREE.Vector3(), fresh = new Map();   // cells just poured out, by key → time they may go in again
+function portalCells(t, P) {
+  const out = [], r = Math.ceil(portals.RY / S) + 1;
+  const [ci, cj, ck] = t.cellOf(P.pos.x, P.pos.y, P.pos.z);
+  for (let j = cj - r; j <= cj + r; j++) for (let k = ck - r; k <= ck + r; k++) for (let i = ci - r; i <= ci + r; i++) {
+    lc.set(t.X0 + (i + .5) * S, t.Y0 + (j + .5) * S, t.Z0 + (k + .5) * S).sub(P.pos);
+    const d = lc.dot(P.n);
+    if (d < 0 || d > S * 1.2 || (lc.dot(P.right) / portals.RX) ** 2 + (lc.dot(P.up) / portals.RY) ** 2 > 1) continue;
+    out.push([i, j, k]);
+  }
+  return out;
+}
+function pourThrough(dt) {
+  if ((liqT -= dt) > 0) return;
+  liqT = .12;
+  const t = T();
+  if (t.sphere) return;
+  const now = performance.now();
+  for (const [key, until] of fresh) if (until < now) fresh.delete(key);
+  for (const pair of portals.pairs()) for (let s = 0; s < 2; s++) {
+    const A = pair[s], B = pair[1 - s], floor = A.n.y > .5;
+    // what goes in: liquid falling onto a floor portal, or leaning (resting on something) against a wall one;
+    // not what just came out of it
+    const src = portalCells(t, A).filter(([i, j, k]) => {
+      const m = t.get(i, j, k);
+      if ((m !== WATER && m !== LAVA) || fresh.has(i + ',' + j + ',' + k)) return false;
+      return floor || t.get(i, j - 1, k) !== 0;
+    });
+    if (!src.length) continue;
+    const exit = portalCells(t, B), inside = exit.some(([i, , k]) => t.inArea(i, k));
+    const free = exit.filter(([i, j, k]) => t.inArea(i, k) && t.get(i, j, k) === 0);
+    for (const [i, j, k] of src.slice(0, 10)) {
+      const m = t.get(i, j, k), to = free.shift();
+      if (to) { t.setCell(i, j, k, 0); t.setCell(...to, m); fresh.set(to.join(), now + 500); }
+      else if (!inside) { t.setCell(i, j, k, 0); debris.burst(B.pos.clone().addScaledVector(B.n, .3), B.n, m === LAVA ? 0xff6a1a : 0x4a9ad8, 5, 1.3); }
+      else break;
+    }
+  }
 }
 function shootPortal(which) {
   camera.getWorldPosition(eye); camera.getWorldDirection(dir);
@@ -2493,6 +2623,11 @@ if (MULTI) {
       else if (fx.k === 'race') { if (race && race.id === fx.race) race.mod.onFx(id, fx.f); }
       else if (fx.k === 'portal') portals.set(id, fx.i, fx.a, fx.w);
       else if (fx.k === 'pgun') cave.takeGun(fx.left);
+      else if (fx.k === 'dgun') { reliquary.take(fx.left); ui.toast(`${peer?.name ?? 'quelqu\'un'} a trouvé le lance-disques`, false, 2600); }
+      else if (fx.k === 'sdoor') setDoor(fx.w, fx.i, !!fx.o, false);
+      else if (fx.k === 'planedown') ui.toast(`${peer?.name ?? 'quelqu\'un'} a abattu le bombardier !`, false, 3500);
+      else if (fx.k === 'organ') playOrgan(fx.s | 0, false, peer?.name ?? 'quelqu\'un');
+      else if (fx.k === 'disc' && fx.p && fx.d) launcher.remote(fx);
       else mg.onFx(id, peer, fx);
     },
     onSuperReset(m) { startSuperCountdown(m.in, m.seed, m.by); },
@@ -2565,7 +2700,7 @@ function watchFrames(ms) {
 }
 
 // ---------- settings: volume, mouse, field of view, minimap ----------
-const settings = { volume: .7, sens: 1, fov: 72, minimap: true, invert: false };
+const settings = { volume: .7, sens: 1, fov: 72, minimap: true, invert: false, full: true };
 try { Object.assign(settings, JSON.parse(localStorage.getItem('a-hole-settings') || '{}')); } catch {}
 const $s = (id) => document.getElementById(id);
 function applySettings() {
@@ -2577,6 +2712,7 @@ function applySettings() {
   $s('set-fov').value = settings.fov; $s('set-fov-v').textContent = settings.fov + '°';
   $s('set-minimap').textContent = settings.minimap ? 'oui' : 'non'; $s('set-minimap').classList.toggle('on', settings.minimap);
   $s('set-invert').textContent = settings.invert ? 'oui' : 'non'; $s('set-invert').classList.toggle('on', settings.invert);
+  $s('set-full').textContent = settings.full ? 'oui' : 'non'; $s('set-full').classList.toggle('on', settings.full);
   try { localStorage.setItem('a-hole-settings', JSON.stringify(settings)); } catch {}
 }
 $s('set-volume').addEventListener('input', (e) => { settings.volume = +e.target.value; applySettings(); });
@@ -2584,6 +2720,14 @@ $s('set-sens').addEventListener('input', (e) => { settings.sens = +e.target.valu
 $s('set-fov').addEventListener('input', (e) => { settings.fov = +e.target.value; applySettings(); });
 $s('set-minimap').addEventListener('click', () => { settings.minimap = !settings.minimap; applySettings(); });
 $s('set-invert').addEventListener('click', () => { settings.invert = !settings.invert; applySettings(); });
+// full screen: asked for on the click that starts the game (a browser only allows it on a click), or here
+function goFull(on) {
+  try {
+    if (on && !document.fullscreenElement) document.documentElement.requestFullscreen?.({ navigationUI: 'hide' })?.catch(() => {});
+    else if (!on && document.fullscreenElement) document.exitFullscreen?.()?.catch(() => {});
+  } catch { /* not allowed here */ }
+}
+$s('set-full').addEventListener('click', () => { settings.full = !settings.full; applySettings(); goFull(settings.full); });
 $s('set-title').addEventListener('click', () => { save(); location.reload(); });
 applySettings();
 
@@ -2621,6 +2765,25 @@ function loop(ts) {
   touch.render(state === 'kart' ? (race?.screen ? 'screen' : 'race') : state === 'drive' ? 'drive' : state === 'play' && !bigMap ? 'play' : '', { lobby: !!lobby && !gm });
   updateLobby(dt);
   animals[here].update(dt, player);
+  // everything that moves goes through the portals too: the animals, the thrown bombs, the clods
+  if (portals.open) {
+    for (const an of animals[here].list) if (!an.gone && portals.pass(an, dt)) an.fly = true;
+    for (const b of bombs.live) portals.pass(b, dt);
+    for (const q of debris.parts) if (q.life > 0) portals.pass(q, dt, true);
+    for (const d of launcher.discs) portals.pass(d, dt, true);
+    pourThrough(dt);
+    for (const f of plane.falling) portals.pass(f, dt, true);
+    // the moles on your heels: their speed read from how far they went since the last frame
+    for (const m of moles.list) {
+      if (m.state !== 'chase') continue;
+      m.size = .25; m.vel ??= new THREE.Vector3(); m.prev ??= m.pos.clone();
+      m.vel.subVectors(m.pos, m.prev).divideScalar(Math.max(dt, 1e-3));
+      portals.pass(m, dt, true);
+      m.prev.copy(m.pos);
+    }
+    const W = world.walkers[here];
+    if (W) for (const p of W.bodies()) if (portals.pass(p.body, dt)) W.flung(p);
+  }
 
   if (state === 'attract') {
     camera.position.set(Math.sin(t * .05) * 22, 11, Math.cos(t * .05) * 22);
@@ -2800,15 +2963,19 @@ function loop(ts) {
   const holding = state !== 'attract' && state !== 'reveal' && state !== 'drive' && state !== 'launch' && state !== 'kart' && !onPlanet();
   const drilling = eco.s.tool === 'drill' && eco.s.lv.drill > 0 && !mg.armed;
   portals.setWorld(here);
-  portals.held = gunOut && holding && !mg.armed;
+  portals.held = gunOut() && holding && !mg.armed;
   if (portals.update(dt, state === 'play' ? (onPlanet() ? planetBody : player) : null, Math.hypot(player.vel.x, player.vel.z) > 0.5) && !onPlanet()) player.unstick();
   const inCave = here === 'home' && cave.inside(player.pos);
   player.stats.away = inCave;
   world.setIndoor(inCave);
-  cave.update(dt, inCave);
-  shovel.root.visible = holding && !drilling && !mg.armed && !portals.held;
+  cave.update(dt, inCave, here === 'home' ? player.pos : null);
+  launcher.held = eco.s.tool === 'disc' && eco.s.discs && holding && !mg.armed;
+  launcher.update(dt, Math.hypot(player.vel.x, player.vel.z) > 0.5, solidAt, discHit);
+  reliquary.update(dt); organ.update(dt, camera.position);
+  if (here === 'home') bats.update(dt, t, world.env.night);
+  shovel.root.visible = holding && !drilling && !mg.armed && !portals.held && !launcher.held;
   mg.updateBlaster(dt, holding && mg.armed && state === 'play', Math.hypot(player.vel.x, player.vel.z) > 0.5);
-  drill.root.visible = holding && drilling && !portals.held;
+  drill.root.visible = holding && drilling && !portals.held && !launcher.held;
   drillBite = Math.max(0, drillBite - dt);
   const biting = drillBite > 0;
   if (!biting) drillHeat = Math.max(0, drillHeat - dt * (overheated ? .28 : .4));
@@ -2826,6 +2993,7 @@ function loop(ts) {
   // the upper floor is only drawn from inside the house (its windows don't let you see in)
   house.room.group.visible = house.inside(camera.position);
   quest.update(dt, player, !eco.s.upKey && here === 'home' && !mg.active && !race && ['play', 'panel', 'drive', 'paused', 'read'].includes(state));
+  trapGuide.update(dt, player, !!eco.s.upKey && !eco.s.caveSeen && here === 'home' && !cave.inside(player.pos) && !mg.active && !race && ['play', 'panel', 'drive', 'paused', 'read'].includes(state));
   // each town only animates while you're in it
   if (here === 'home') world.neighbours.update(dt);
   if (state === 'play') updateAlarm(dt);
@@ -2947,7 +3115,7 @@ window.__dig = {
   test: false,
   skipSwoop() { swoop = 1; this.test = true; },
   start, toSurface, travel, win, save, useItem, applyUpgrades, openPanel, closePanel, enterVan, exitVan, useLift, explode,
-  quest, takeKey, reveal, startReveal, cave, portals, shootPortal, gameroom: house.room, updateAim, get pad() { return pad; }, get touch() { return touch; }, get down() { return down; }, screenView: (dt) => race?.screen && screenView(dt),
+  quest, takeKey, reveal, startReveal, cave, portals, shootPortal, trapGuide, launcher, bats, organ, portalCells, gameroom: house.room, updateAim, get pad() { return pad; }, get touch() { return touch; }, get down() { return down; }, screenView: (dt) => race?.screen && screenView(dt),
   interact: (id) => interact(id === 'van' ? VAN : id === 'lift' ? LIFT : world.interactables.find(i => i.id === id)),
   swing: doDig,
 };
