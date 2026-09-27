@@ -719,8 +719,8 @@ export function createRC({ scene, camera, audio, ui, world, terrain }) {
     bin(A, 51.95, -.55, PI / 2); bin(A, 74.15, -.55, PI / 2);
     blocks(A, 51.7, 8.1, 57.6, 12.25, { rows: 2 }); blocks(A, 64.35, 14.05, 74.45, 14.05, { rows: 2 }); blocks(A, 74.55, 8.1, 74.55, 13.9, { rows: 2 });
     // a plank over the fountain, a kicker, a cushion, a crate
-    ramp(A, 62.75, -2.9, 0, 3, .46, 0, .85); ramp(A, 62.75, 2, 0, 6.8, .46, .85, .85); ramp(A, 62.75, 6.9, 0, 3, .46, .85, 0);
-    A.waters.push({ x: 61, z: 2, r: 2.62, d: .2, lip: .7 });
+    ramp(A, 62.75, -3.9, 0, 2.2, .46, 0, .85); ramp(A, 62.75, 2, 0, 9.6, .46, .85, .85); ramp(A, 62.75, 7.9, 0, 2.2, .46, .85, 0);
+    A.waters.push({ x: 61, z: 2, r: 4.38, d: .2, lip: .7 });
     ramp(A, 70.6, -5.5, 0, 1.4, 1, 0, .32);
     cushion(A, 68.6, 2.6, 1.5, .35, 0x3a6ea8);
     crate(A, 55.2, 2.45, 0, 1.4, 1.4, .3); ramp(A, 55.2, 1.15, 0, 1.2, 1, 0, .3);
