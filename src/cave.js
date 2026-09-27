@@ -246,6 +246,12 @@ export function createCave({ scene, colliders, interactables }) {
     l.position.set(Math.cos(a) * r - .15, .07 + rnd() * .01, Math.sin(a) * r * .8); trap.add(l);
   }
   interactables.push({ id: 'trapdoor', pos: new THREE.Vector3(TRAP.x, .4, TRAP.z), reach: 1.6 });
+  // a glint between the leaves, once you're close enough to notice
+  const glint = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex(128, 128, (c) => {
+    const r = c.createRadialGradient(64, 64, 0, 64, 64, 64); r.addColorStop(0, 'rgba(255,240,200,1)'); r.addColorStop(.25, 'rgba(255,200,90,.6)'); r.addColorStop(1, 'rgba(255,160,40,0)');
+    c.fillStyle = r; c.fillRect(0, 0, 128, 128); c.fillStyle = 'rgba(255,250,230,.9)'; c.fillRect(62, 4, 4, 120); c.fillRect(4, 62, 120, 4);
+  }), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0 }));
+  glint.position.set(TRAP.x + .2, .25, TRAP.z); glint.scale.setScalar(.5); scene.add(glint);
 
   mergeStatic(g, (o) => o.userData.keep || o === stal);
 
@@ -256,8 +262,10 @@ export function createCave({ scene, colliders, interactables }) {
     inside: (p) => Math.abs(p.x - X) < HX + 2 && Math.abs(p.z - Z) < HZ + 2 && p.y > -2 && p.y < HH + 8,
     get gunReady() { return back <= 0; },
     takeGun(seconds = GUN_REGEN) { back = seconds; },
-    update(dt, near) {
+    update(dt, near, eye) {
       t += dt;
+      const dg = eye ? Math.hypot(eye.x - TRAP.x, eye.z - TRAP.z) : 99;
+      glint.material.opacity = Math.max(0, Math.min(.8, (6 - dg) / 3)) * (.5 + .5 * Math.sin(t * 5));
       if (back > 0) back = Math.max(0, back - dt);
       const ready = back <= 0;
       gun.visible = ready;
@@ -269,6 +277,45 @@ export function createCave({ scene, colliders, interactables }) {
       if (!near) return;
       for (const [k, f] of flames.entries()) { const s = .85 + Math.sin(t * 13 + k * 1.7) * .1 + Math.sin(t * 7.3 + k) * .08; f.scale.set(s, s * (1 + Math.sin(t * 9 + k) * .1), s); }
       for (const [k, m] of shards.entries()) m.color.copy(HUES[k % 4]).multiplyScalar(1.6 + Math.sin(t * 1.2 + k) * .3);
+    },
+  };
+}
+
+// ---------- after the key upstairs: the quest card again, now pointing at the trapdoor ----------
+const WORDS = [[2, 'brûlant !!!'], [4, 'très chaud'], [8, 'chaud'], [15, 'tiède'], [25, 'froid'], [Infinity, 'glacial']];
+export function createTrapGuide() {
+  const $ = (id) => document.getElementById(id);
+  const card = $('quest'), word = $('quest-word'), fill = $('quest-fill'), arrow = $('quest-arrow'), depthEl = $('quest-depth');
+  const last = {};
+  const set = (k, v, f) => { if (last[k] !== v) { last[k] = v; f(v); } };
+  let shown = false, wait = 2;
+  return {
+    update(dt, player, show) {
+      // let the key's card fly off first
+      wait = show ? Math.max(0, wait - dt) : 2;
+      show = show && wait <= 0;
+      if (show !== shown) {
+        shown = show;
+        if (show) {
+          for (const k in last) delete last[k];
+          card.querySelector('.seclabel span').textContent = 'et maintenant…';
+          $('quest-title').textContent = 'trouve la trappe secrète';
+          $('quest-sub').textContent = 'quelque part dans le jardin · elle mène à une cave';
+          card.classList.remove('hidden', 'got', 'out');
+          card.style.animation = 'none'; void card.offsetWidth; card.style.animation = '';
+        } else card.classList.add('hidden');
+      }
+      if (!show) return;
+      const dx = TRAP.x - player.pos.x, dz = TRAP.z - player.pos.z, d = Math.hypot(dx, dz);
+      const heat = Math.max(0, 1 - d / 40);
+      set('w', WORDS.find(([m]) => d < m)[1], (v) => { word.textContent = v; });
+      set('c', Math.round(heat * 40), (v) => { word.style.color = `hsl(${200 - v * 5}, 95%, ${60 + v * .2}%)`; card.style.setProperty('--heat', v / 40); });
+      set('f', Math.round(heat * 100), (v) => { fill.style.width = v + '%'; });
+      const rel = Math.atan2(-dx, -dz) - player.yaw;
+      set('a', d < 1.2 ? 'down' : Math.round(rel * 30), (v) => { arrow.classList.toggle('down', v === 'down'); if (v !== 'down') arrow.style.transform = `rotate(${-v / 30}rad)`; });
+      set('d', d < 2 ? 'elle est là, sous les feuilles · e pour la soulever' : `à ${Math.round(d)} m d'ici`, (v) => { depthEl.textContent = v; });
+      const lob = $('lobby');
+      set('l', lob && !lob.classList.contains('hidden') ? lob.offsetHeight + 12 : 0, (v) => card.style.setProperty('--lift', v + 'px'));
     },
   };
 }

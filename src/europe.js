@@ -1,11 +1,13 @@
 // europe.js, the village around our garden: terraced houses along the street, some
 // half-timbered, with shutters, dormers and flower boxes; a square with a fountain, a café
 // terrace, a bakery and the church; the town hall and its flags; shops with their signs;
-// a stone viaduct on the horizon where a regional train goes by. Pure scenery: the
-// houses you can walk into are in neighbours.js.
+// a stone viaduct on the horizon where a regional train goes by. Every door opens: the
+// rooms behind them (homes, shops, the café, the bakery, the town hall, the church) are
+// built by interiors.js.
 import * as THREE from 'three';
 import { createBlossoms, createCars, createContact, createLamps, createWalkers, puffGeometry, roofColliders, seeded } from './street.js';
 import * as V from './vehicles.js';
+import { createInteriors } from './interiors.js';
 
 const ROAD_Z = -13.1;
 const NORTH_FRONT = -16.2;          // house fronts on our side of the street
@@ -70,16 +72,27 @@ export function createEurope({ scene, addBox }) {
   const carBuilder = createCars({ parent: g, addBox });
   const contact = createContact({ parent: g });
   const cars = (x, z, rot, color, kind) => { const c = carBuilder(x, z, rot, color, kind); contact.blob(x, z, 2.4, .125); return c; };
+  // the rooms behind the doors, with their own seeded random so the street keeps its looks
+  const I = createInteriors({ addBox });
+  const camera = scene.children.find(o => o.isCamera);
 
   // ---------- one house of a terrace: a street front, built in its own frame, front at +z ----------
-  function facade(x, zFront, rot, W, { floors = rnd() < .45 ? 3 : 2, shop = null, timbered = rnd() < .25, color = pick(WALLS), roofC = pick(ROOFS) } = {}) {
+  function facade(x, zFront, rot, W, { floors = rnd() < .45 ? 3 : 2, shop = null, timbered = rnd() < .25, color = pick(WALLS), roofC = pick(ROOFS), floorY = 0 } = {}) {
     const h = new THREE.Group();
     const D = 8, FH = 2.9, H = floors * FH;
-    h.position.set(x, 0, zFront); h.rotation.y = rot;
+    h.position.set(x, 0, zFront); h.rotation.y = rot; h.updateMatrix();
     g.add(h);
     const wall = plaster(timbered ? 0xf2e8d2 : color);
-    box(W, H, D, wall, 0, H / 2, -D / 2, h);
-    box(W + .04, .5, D + .04, stone(0xc8bca8, W / 3, .3), 0, .25, -D / 2, h);
+    // the upper floors are a solid block; the ground floor is a room (walls built below)
+    const REF = { x0: -W / 2, x1: W / 2, y0: 0, y1: H, z0: -D, z1: 0 };
+    I.skin(h, wall, -W / 2, FH, -D, W / 2, H, 0, REF);
+    const cols = Math.max(1, Math.round((W - 1) / 2.3));
+    const dx = shop ? W / 2 - 1.1 : -W / 2 + (Math.floor(cols / 2) + .5) * W / cols, d0 = dx - .5, d1 = dx + .5;
+    // the stone plinth, as four strips so the room stays clear, cut at the door
+    const plin = stone(0xc8bca8, W / 3, .3), PR = { x0: -W / 2 - .02, x1: W / 2 + .02, y0: 0, y1: .5, z0: -D - .02, z1: .02 };
+    I.skin(h, plin, -W / 2 - .02, 0, -D - .02, W / 2 + .02, .5, -D + .02, PR);
+    for (const sx of [-1, 1]) I.skin(h, plin, sx * W / 2 - .02, 0, -D + .02, sx * W / 2 + .02, .5, -.02, PR);
+    I.skin(h, plin, -W / 2 - .02, 0, -.02, d0 - .08, .5, .02, PR); I.skin(h, plin, d1 + .08, 0, -.02, W / 2 + .02, .5, .02, PR);
     for (let f = 1; f < floors; f++) box(W + .06, .14, .1, mat(new THREE.Color(color).multiplyScalar(.85).getHex()), 0, f * FH, .03, h);
     box(W + .1, .22, .3, white, 0, H - .05, .1, h);
     // the roof: a gable along the street, tiles, a chimney, sometimes a dormer
@@ -113,7 +126,6 @@ export function createEurope({ scene, addBox }) {
     }
     // windows: shutters, sills, flower boxes, now and then a little iron balcony
     const shut = mat(pick(SHUTTERS)), flower = mat(pick(FLOWERS));
-    const cols = Math.max(1, Math.round((W - 1) / 2.3));
     for (let f = shop ? 1 : 0; f < floors; f++) for (let k = 0; k < cols; k++) {
       const wx = -W / 2 + (k + .5) * W / cols, wy = f * FH + 1.55;
       if (f === 0 && k === Math.floor(cols / 2)) continue;
@@ -126,12 +138,11 @@ export function createEurope({ scene, addBox }) {
       else if (rnd() < .6) { box(.85, .18, .2, mat(0x8a5a3a), wx, wy - .66, .16, h); for (let q = 0; q < 4; q++) { const m = new THREE.Mesh(hedgeGeo, q % 2 ? flower : leafMat); m.scale.setScalar(.12 + rnd() * .05); m.position.set(wx - .3 + q * .2, wy - .52, .18); h.add(m); } }
     }
     // the ground floor: a front door, or a shop front with its awning and sign
-    if (shop) shopFront(h, W, shop);
+    if (shop) shopFront(h, W, shop, d0, d1);
     else {
-      const dx = -W / 2 + (Math.floor(cols / 2) + .5) * W / cols;
-      box(1.15, 2.25, .06, white, dx, 1.12, .03, h);
-      box(1, 2.15, .06, mat(pick([0x5a3a28, 0x2f4a6a, 0x3a5a3a, 0x7a2a24, 0x4a4a4a])), dx, 1.08, .05, h);
-      box(.08, .08, .1, mat(0xd9a125), dx + .35, 1.05, .1, h);
+      // a frame round the doorway, and the door itself on its hinge (it opens as you come)
+      box(.075, 2.25, .06, white, d0 - .0375, 1.125, .03, h); box(.075, 2.25, .06, white, d1 + .0375, 1.125, .03, h); box(1.15, .1, .06, white, dx, 2.2, .03, h);
+      I.door(h, { x: d0, z: -.06, w: 1, h: 2.15, color: pick([0x5a3a28, 0x2f4a6a, 0x3a5a3a, 0x7a2a24, 0x4a4a4a]) });
       box(1.4, .12, .5, stone(0xc8bca8), dx, .06, .25, h);
       box(1.3, .08, .12, white, dx, 2.3, .08, h);
     }
@@ -145,13 +156,23 @@ export function createEurope({ scene, addBox }) {
     }
     // by the door: a pot of flowers, now and then a bin or a bicycle
     if (!shop) {
-      const dx = -W / 2 + (Math.floor(cols / 2) + .5) * W / cols;
       if (rnd() < .7) { const pot = new THREE.Mesh(new THREE.CylinderGeometry(.22, .16, .4, 10), mat(0xb8643a)); pot.position.set(dx + .9, .2, .3); h.add(pot); const pl = new THREE.Mesh(hedgeGeo, rnd() < .5 ? leafMat : mat(pick(FLOWERS))); pl.scale.set(.32, .38, .32); pl.position.set(dx + .9, .6, .3); h.add(pl); }
       if (rnd() < .3) { box(.55, .95, .6, mat(pick([0x3a6a3a, 0x5a5e66, 0xd8b830])), dx - 1.1, .48, .4, h); box(.6, .06, .66, mat(0x2a2e34), dx - 1.1, .98, .4, h); }
     }
     h.updateMatrix();
     const bb = new THREE.Box3(new THREE.Vector3(-W / 2, 0, -D), new THREE.Vector3(W / 2, H, 0)).applyMatrix4(h.matrix);
-    addBox(bb.min.x, 0, bb.min.z, bb.max.x, H, bb.max.z);
+    addBox(bb.min.x, FH, bb.min.z, bb.max.x, H, bb.max.z);
+    // the ground floor: walls round a room, a doorway, and what the room is for
+    const inside = shop ? shop.inside : 'home';
+    const room = I.shell(h, { x0: -W / 2, x1: W / 2, z0: -D, z1: 0, y0: floorY, y1: FH, ext: wall, ref: REF, door: [d0, d1, 2.15],
+      int: inside === 'cafe' ? I.lit(0xe8d6ae, .42) : inside === 'home' ? I.paper(I.pick(I.PAPERS)) : I.lit(0xf2efe6, .42),
+      floor: inside === 'cafe' ? I.lit(0xffffff, .3, I.checkTex) : inside === 'bakery' ? I.lit(0xc8845a, .38, I.tileTex) : inside === 'home' ? I.parquet(I.pick(I.WOODS)) : I.lit(0xd8d0c0, .4, I.tileTex) });
+    if (inside === 'home') {
+      const wins = []; for (let k = 0; k < cols; k++) if (k !== Math.floor(cols / 2)) wins.push(-W / 2 + (k + .5) * W / cols);
+      I.home(h, room, [d0, d1], { wins, sides: [['left', -D / 2], ['right', -D / 2]] });
+    } else if (inside === 'cafe') I.cafe(h, room, [d0, d1]);
+    else if (inside === 'bakery') I.bakery(h, room, [d0, d1]);
+    else I.shop(h, room, inside, [d0, d1]);
     roofColliders(addBox, { x0: -W / 2, x1: W / 2, z0: -D - .4, z1: .4, y: H, h: ridge, kind: 'x', matrix: h.matrix });
     contact.rect((bb.min.x + bb.max.x) / 2, (bb.min.z + bb.max.z) / 2, bb.max.x - bb.min.x, bb.max.z - bb.min.z, 0, .125);
     return h;
@@ -163,11 +184,13 @@ export function createEurope({ scene, addBox }) {
     c.fillStyle = 'rgba(255,255,255,.3)'; for (let k = 0; k < 4; k++) { c.beginPath(); c.moveTo(k * 70 + 10, 128); c.lineTo(k * 70 + 50, 0); c.lineTo(k * 70 + 64, 0); c.lineTo(k * 70 + 24, 128); c.fill(); }
   }), emissive: 0xfff0d0, emissiveIntensity: .12 });
   const awningTex = (a, b) => canvasTex(128, 64, (c) => { for (let k = 0; k < 8; k++) { c.fillStyle = k % 2 ? a : b; c.fillRect(k * 16, 0, 16, 64); } c.fillStyle = 'rgba(0,0,0,.15)'; c.fillRect(0, 56, 128, 8); });
-  function shopFront(h, W, { name, color = '#1d3a5a', text = '#f2d78a', awning = ['#b8282e', '#f4efe6'], sign = null }) {
-    const front = new THREE.Color(color);
-    box(W - .2, 2.9, .12, mat(front.getHex()), 0, 1.45, .06, h);
-    box(W - 1.4, 1.9, .06, shopGlass, 0, 1.2, .13, h);
-    box(.9, 2.1, .07, mat(0x2a2e34), W / 2 - 1.1, 1.05, .13, h);
+  function shopFront(h, W, { name, color = '#1d3a5a', text = '#f2d78a', awning = ['#b8282e', '#f4efe6'], sign = null }, d0, d1) {
+    const fm = mat(new THREE.Color(color).getHex()), dark = mat(0x2a2e34);
+    // the painted front round the doorway, the window up to the door, a glazed door
+    I.skin(h, fm, -W / 2 + .1, 0, 0, d0, 2.9, .12); I.skin(h, fm, d1, 0, 0, W / 2 - .1, 2.9, .12); I.skin(h, fm, d0, 2.15, 0, d1, 2.9, .12);
+    I.skin(h, shopGlass, -W / 2 + .7, .25, .1, d0 - .15, 2.15, .16);
+    I.skin(h, dark, d0 - .07, 0, 0, d0, 2.2, .16); I.skin(h, dark, d1, 0, 0, d1 + .07, 2.2, .16); I.skin(h, dark, d0 - .07, 2.15, 0, d1 + .07, 2.22, .16);
+    I.door(h, { x: d0, z: -.06, w: 1, h: 2.15, color: 0x2a2e34 });
     const lt = lettering(name, { color: text, size: 70, font: SERIF, spacing: 8 });
     const nm = new THREE.Mesh(new THREE.PlaneGeometry(W - .6, .55), new THREE.MeshLambertMaterial({ map: lt, transparent: true, emissive: 0xffffff, emissiveMap: lt, emissiveIntensity: .08 }));
     nm.position.set(0, 2.55, .135); h.add(nm);
@@ -195,13 +218,15 @@ export function createEurope({ scene, addBox }) {
     while (x1 - x > 5) {
       const W = Math.min(x1 - x, 5.5 + rnd() * 3.5);
       const cx = rot === 0 ? x + W / 2 : x + W / 2;
-      facade(cx, zFront, rot, W, shops[Math.round(cx)] ? { shop: shops[Math.round(cx)], floors: 3 } : {});
+      // a shop goes to the house that spans its spot
+      const k = Object.keys(shops).find(k => +k >= x && +k < x + W);
+      facade(cx, zFront, rot, W, k ? { shop: shops[k], floors: 3 } : {});
       x += W + (rnd() < .25 ? .35 : 0);
     }
   }
   // our side of the street (fronts face the street, +z), leaving room for the houses you can enter
   const NORTH_GAPS = [[-117, -103], [-91, -76], [-64, -50], [-38, -9], [9, 36], [48, 61], [73, 88], [100, 117]];
-  const northShops = { [-26]: { name: 'TABAC · PRESSE', color: '#8a1f24', text: '#f6e8c8', awning: ['#8a1f24', '#f4efe6'], sign: 'tabac' } };
+  const northShops = { [-26]: { name: 'TABAC · PRESSE', color: '#8a1f24', text: '#f6e8c8', awning: ['#8a1f24', '#f4efe6'], sign: 'tabac', inside: 'tabac' } };
   for (const [a, b] of NORTH_GAPS) terrace(a, b, NORTH_FRONT, 0, a === -38 ? northShops : {});
   // across the street, beyond the garden: fronts face the street (−z)
   function terraceSouth(x0, x1, shops = {}) {
@@ -214,7 +239,7 @@ export function createEurope({ scene, addBox }) {
     }
   }
   terraceSouth(-117, -72);
-  terraceSouth(84, 117, { e: { name: 'PHARMACIE', color: '#f2f0ea', text: '#1d7a44', awning: ['#1d7a44', '#f4efe6'], sign: 'pharmacie' } });
+  terraceSouth(84, 117, { e: { name: 'PHARMACIE', color: '#f2f0ea', text: '#1d7a44', awning: ['#1d7a44', '#f4efe6'], sign: 'pharmacie', inside: 'pharmacie' } });
   // a second row behind, seen over the roofs
   for (let x = -115; x < 115; x += 8 + rnd() * 3) if (rnd() < .8) facade(x, -27.8, 0, 6 + rnd() * 2, {});
 
@@ -255,7 +280,7 @@ export function createEurope({ scene, addBox }) {
   addBox(FX - fa, 0, FZ - fb, FX + fa, .8, FZ + fb); addBox(FX - fb, 0, FZ - fa, FX + fb, .8, FZ + fa); addBox(FX - fc, 0, FZ - fc, FX + fc, .8, FZ + fc);
   contact.blob(FX, FZ, FR * 1.5, .12);
   // the café, facing the square: tables, parasols, a string of lights to the lamp posts
-  const cafe = facade(51.6, -5.6, Math.PI / 2, 9, { floors: 3, shop: { name: 'CAFÉ DES CERISIERS', color: '#23402f', text: '#f2d78a', awning: ['#23402f', '#efe6cf'] }, color: 0xecd9b6 });
+  const cafe = facade(51.6, -5.6, Math.PI / 2, 9, { floors: 3, shop: { name: 'CAFÉ DES CERISIERS', color: '#23402f', text: '#f2d78a', awning: ['#23402f', '#efe6cf'], inside: 'cafe' }, color: 0xecd9b6, floorY: .11 });
   void cafe;
   const rattan = mat(0x9a6a3a), tableTop = mat(0xe8e4dc);
   for (const [tx, tz] of [[54, -8.4], [54, -5.2], [54, -2], [57.4, -6.8], [57.4, -3.6]]) {
@@ -275,9 +300,10 @@ export function createEurope({ scene, addBox }) {
   const festoonLine = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(festoon.flatMap((p, k) => k && festoon[k - 1].distanceTo(p) < 1 ? [festoon[k - 1], p] : [])), new THREE.LineBasicMaterial({ color: 0x2a2e34 }));
   g.add(festoonLine);
   // the bakery on the other side
-  facade(74.4, -5.6, -Math.PI / 2, 9, { floors: 2, shop: { name: 'BOULANGERIE', color: '#2a4a78', text: '#f2d78a', awning: ['#2a4a78', '#f4efe6'] }, color: 0xf2dcc2, roofC: 0xa84c33 });
-  facade(74.4, 4, -Math.PI / 2, 8, { floors: 3, color: 0xe8c9a8 });
-  facade(51.6, 4, Math.PI / 2, 8, { floors: 2, timbered: true });
+  facade(74.4, -5.6, -Math.PI / 2, 9, { floors: 2, shop: { name: 'BOULANGERIE', color: '#2a4a78', text: '#f2d78a', awning: ['#2a4a78', '#f4efe6'], inside: 'bakery' }, color: 0xf2dcc2, roofC: 0xa84c33, floorY: .11 });
+  // (the square's paving stands 10 cm proud: these rooms' floors sit on top of it)
+  facade(74.4, 4, -Math.PI / 2, 8, { floors: 3, color: 0xe8c9a8, floorY: .11 });
+  facade(51.6, 4, Math.PI / 2, 8, { floors: 2, timbered: true, floorY: .11 });
   // a zebra crossing from the square to our side, bollards, benches, a post box
   for (let k = 0; k < 3; k++) flat(2.6, .5, white, FX, .03, ROAD_Z - 1 + k * 1);
   for (let x = SQ.x0 + 1; x < SQ.x1; x += 2.2) if (Math.abs(x - FX) > 2) { box(.16, .75, .16, iron, x, .38, -10.4); const cap = new THREE.Mesh(new THREE.SphereGeometry(.1, 8, 6), iron); cap.position.set(x, .78, -10.4); g.add(cap); }
@@ -288,12 +314,19 @@ export function createEurope({ scene, addBox }) {
   const pl = new THREE.Mesh(new THREE.PlaneGeometry(.42, .14), new THREE.MeshLambertMaterial({ map: lettering('LA POSTE', { w: 256, h: 64, color: '#1d3a78', size: 40, font: SANS }), transparent: true })); pl.position.set(0, 1.25, .21); post.add(pl);
   addBox(51.7, 0, 8.8, 52.3, 1.4, 9.2);
   // the church closes the square: a nave, a tower with a clock and a slate spire
-  const ch = new THREE.Group(); ch.position.set(FX, 0, 25); ch.rotation.y = Math.PI; g.add(ch);
+  const ch = new THREE.Group(); ch.position.set(FX, 0, 25); ch.rotation.y = Math.PI; g.add(ch); ch.updateMatrix();
   const cStone = stone(0xd8ccb4, 3, 3);
-  box(11, 10, 22, cStone, 0, 5, -3, ch);
+  // inside, the same stone lit softly, and flagstones
+  const inStone = (() => { const t = stoneTex.clone(); t.needsUpdate = true; t.repeat.set(4, 2); return new THREE.MeshLambertMaterial({ color: 0xe6dac4, map: t, emissive: 0x4a4436 }); })();
+  const NAVE = { x0: -5.5, x1: 5.5, y0: 0, y1: 10, z0: -14, z1: 8 }, TOWER = { x0: -3.25, x1: 3.25, y0: 0, y1: 22, z0: 6.25, z1: 12.75 };
+  const flagstones = I.lit(0xd0c4b0, .36, I.tileTex);
+  const naveR = I.shell(ch, { x0: -5.5, x1: 5.5, z0: -14, z1: 8, y1: 10, t: .5, ext: cStone, ref: NAVE, int: inStone, floor: flagstones, ceil: I.lit(0x6a4a30, .35), door: [-1.1, 1.1, 3.9], skirt: false });
   const nave = new THREE.Shape(); nave.moveTo(-6, 0); nave.lineTo(6, 0); nave.lineTo(0, 5); nave.closePath();
   const ng = new THREE.ExtrudeGeometry(nave, { depth: 22.4, bevelEnabled: false }); ng.translate(0, 10, -14.2); ch.add(new THREE.Mesh(ng, tiles(0x4d5563)));
-  box(6.5, 22, 6.5, cStone, 0, 11, 9.5, ch);
+  // the tower: a porch on the ground floor, solid above it
+  I.skin(ch, cStone, -3.25, 5, 6.25, 3.25, 22, 12.75, TOWER); I.solid(ch, -3.25, 5, 6.25, 3.25, 22, 12.75);
+  const porch = I.shell(ch, { x0: -3.25, x1: 3.25, z0: 8, z1: 12.75, y1: 5, t: .5, ext: cStone, ref: TOWER, int: inStone, floor: flagstones, back: false, front: false, door: [0, 0, 0], skirt: false });
+  porch.Z1 = 12.25;
   const spire = new THREE.Mesh(new THREE.ConeGeometry(4.2, 12, 4), tiles(0x434b58)); spire.rotation.y = Math.PI / 4; spire.position.set(0, 28, 9.5); ch.add(spire);
   const cross = new THREE.Group(); cross.position.set(0, 35, 9.5); ch.add(cross); box(.12, 1.4, .12, mat(0xd9a125), 0, 0, 0, cross); box(.8, .12, .12, mat(0xd9a125), 0, .2, 0, cross);
   const clockTex = canvasTex(128, 128, (c) => { c.fillStyle = '#f4efe2'; c.beginPath(); c.arc(64, 64, 62, 0, 7); c.fill(); c.strokeStyle = '#2a2a2a'; c.lineWidth = 5; c.stroke(); c.fillStyle = '#2a2a2a'; c.font = `700 14px ${SERIF}`; c.textAlign = 'center'; c.textBaseline = 'middle'; ['XII', 'III', 'VI', 'IX'].forEach((r, k) => { const a = k / 4 * Math.PI * 2 - Math.PI / 2; c.fillText(r, 64 + Math.cos(a) * 46, 64 + Math.sin(a) * 46); }); c.lineWidth = 5; c.beginPath(); c.moveTo(64, 64); c.lineTo(64, 28); c.moveTo(64, 64); c.lineTo(88, 74); c.stroke(); });
@@ -301,12 +334,38 @@ export function createEurope({ scene, addBox }) {
   // a rose window and a pointed door on the front of the tower
   const rose = new THREE.Mesh(new THREE.CircleGeometry(1.1, 24), new THREE.MeshLambertMaterial({ map: canvasTex(128, 128, (c) => { c.fillStyle = '#2a3a6a'; c.beginPath(); c.arc(64, 64, 62, 0, 7); c.fill(); for (let k = 0; k < 12; k++) { const a = k / 12 * Math.PI * 2; c.fillStyle = ['#c83a3a', '#f2c21e', '#3a8ac8', '#6ac85a'][k % 4]; c.beginPath(); c.arc(64 + Math.cos(a) * 38, 64 + Math.sin(a) * 38, 13, 0, 7); c.fill(); } c.fillStyle = '#f2c21e'; c.beginPath(); c.arc(64, 64, 16, 0, 7); c.fill(); }), emissive: 0xffc070, emissiveIntensity: 0 }));
   rose.position.set(0, 10.5, 12.8); ch.add(rose); glows.push({ m: rose.material, a: 0, b: .9 });
-  const arch = new THREE.Shape(); arch.moveTo(-1.1, 0); arch.lineTo(1.1, 0); arch.lineTo(1.1, 2.4); arch.quadraticCurveTo(1.1, 3.6, 0, 3.9); arch.quadraticCurveTo(-1.1, 3.6, -1.1, 2.4); arch.closePath();
-  const door = new THREE.Mesh(new THREE.ShapeGeometry(arch), mat(0x4a2e22)); door.position.set(0, 0, 12.78); ch.add(door);
+  // its front wall with the pointed doorway cut through, two leaves and the arch above them
+  const archPath = (P) => { P.moveTo(-1.1, 0); P.lineTo(1.1, 0); P.lineTo(1.1, 2.4); P.quadraticCurveTo(1.1, 3.6, 0, 3.9); P.quadraticCurveTo(-1.1, 3.6, -1.1, 2.4); P.closePath(); return P; };
+  const tw = new THREE.Shape(); tw.moveTo(-3.25, 0); tw.lineTo(3.25, 0); tw.lineTo(3.25, 5); tw.lineTo(-3.25, 5); tw.closePath(); tw.holes.push(archPath(new THREE.Path()));
+  for (const [dep, z, m] of [[.04, 12.71, cStone], [.46, 12.25, inStone]]) { const eg = new THREE.ExtrudeGeometry(tw, { depth: dep, bevelEnabled: false, curveSegments: 6 }); eg.translate(0, 0, z); ch.add(new THREE.Mesh(I.refUV(eg, TOWER), m)); }
+  I.solid(ch, -3.25, 0, 12.25, -1.1, 5, 12.75); I.solid(ch, 1.1, 0, 12.25, 3.25, 5, 12.75); I.solid(ch, -1.1, 3.9, 12.25, 1.1, 5, 12.75);
+  const tymp = new THREE.Shape(); tymp.moveTo(-1.1, 2.4); tymp.lineTo(1.1, 2.4); tymp.quadraticCurveTo(1.1, 3.6, 0, 3.9); tymp.quadraticCurveTo(-1.1, 3.6, -1.1, 2.4);
+  const ty = new THREE.Mesh(new THREE.ShapeGeometry(tymp, 6), new THREE.MeshLambertMaterial({ color: 0x4a2e22, side: THREE.DoubleSide })); ty.position.z = 12.5; ch.add(ty);
+  I.door(ch, { x: -1.1, z: 12.5, w: 1.1, h: 2.4, dir: 1, color: 0x4a2e22 }); I.door(ch, { x: 1.1, z: 12.5, w: 1.1, h: 2.4, dir: -1, color: 0x4a2e22 });
+  // stained glass down both sides and over the altar: lit from inside by day, glowing out at night
+  const stainedTex = canvasTex(64, 192, (c) => {
+    c.fillStyle = '#1e2430'; c.fillRect(0, 0, 64, 192);
+    const cols = ['#c83a3a', '#2a5ac8', '#f2c21e', '#3aa85a', '#8a3ac8', '#e87a2a', '#5ab8e8'];
+    for (let y = 0; y < 192; y += 16) for (let x = 0; x < 64; x += 16) { c.fillStyle = cols[Math.floor(Math.random() * cols.length)]; c.fillRect(x + 2, y + 2, 12, 12); }
+    c.fillStyle = '#f2e8c0'; c.beginPath(); c.arc(32, 40, 14, 0, 7); c.fill(); c.fillStyle = '#c83a3a'; c.beginPath(); c.arc(32, 40, 7, 0, 7); c.fill();
+  });
+  const lancet = (w, hh) => {
+    const sh = new THREE.Shape(); sh.moveTo(-w / 2, 0); sh.lineTo(w / 2, 0); sh.lineTo(w / 2, hh - w * .7); sh.quadraticCurveTo(w / 2, hh - w * .15, 0, hh); sh.quadraticCurveTo(-w / 2, hh - w * .15, -w / 2, hh - w * .7); sh.closePath();
+    const geo = new THREE.ShapeGeometry(sh, 4), P = geo.attributes.position, U = geo.attributes.uv;
+    for (let k = 0; k < P.count; k++) U.setXY(k, P.getX(k) / w + .5, P.getY(k) / hh);
+    return geo;
+  };
+  const stainOut = new THREE.MeshLambertMaterial({ map: stainedTex, emissive: 0xffffff, emissiveMap: stainedTex, emissiveIntensity: .1 }), stainIn = new THREE.MeshBasicMaterial({ map: stainedTex });
+  glows.push({ m: stainOut, a: .1, b: .9 });
+  const sideWin = lancet(1.3, 4.2), backWin = lancet(2, 5);
+  const pane = (geo, m, x, y, z, ry) => { const w = new THREE.Mesh(geo, m); w.position.set(x, y, z); w.rotation.y = ry; (m === stainIn ? I.inner(ch) : ch).add(w); };
+  for (const z of [-11, -5, 1]) for (const sx of [-1, 1]) { pane(sideWin, stainOut, sx * 5.51, 3.5, z, sx * Math.PI / 2); pane(sideWin, stainIn, sx * 4.99, 3.5, z, -sx * Math.PI / 2); }
+  pane(backWin, stainOut, 0, 4.4, -14.01, Math.PI); pane(backWin, stainIn, 0, 4.4, -13.49, 0);
+  I.span(ch, flagstones, -1.1, 0, 7.5, 1.1, .005, 8);          // the floor through the arch into the nave
+  I.church(ch, naveR, porch, inStone);
   for (const sx of [-1, 1]) for (let k = 0; k < 3; k++) box(.5, 1.8, .6, cStone, sx * 5.8, 3 + k * 3, -8 + k * 6, ch);
   ch.updateMatrix();
   roofColliders(addBox, { x0: -6, x1: 6, z0: -14.2, z1: 8.2, y: 10, h: 5, kind: 'z', matrix: ch.matrix });
-  addBox(FX - 5.6, 0, 17, FX + 5.6, 10, 39); addBox(FX - 3.3, 0, 12.2, FX + 3.3, 22, 18.8);
   contact.rect(FX, 28, 11, 22); contact.rect(FX, 15.5, 6.5, 6.5, 0, .12);
   // parked cars along the square's east side
   const CARC = [0xc8282e, 0xf4f4f2, 0x2a4a78, 0x9ec4a0, 0xd8d0b8, 0x3a3e46, 0xe8b830];
@@ -315,21 +374,30 @@ export function createEurope({ scene, addBox }) {
 
   // ---------- the town hall: stone, three floors, flags over the door ----------
   const MX = -60;
-  const mh = new THREE.Group(); mh.position.set(MX, 0, SOUTH_FRONT); mh.rotation.y = Math.PI; g.add(mh);
+  const mh = new THREE.Group(); mh.position.set(MX, 0, SOUTH_FRONT); mh.rotation.y = Math.PI; g.add(mh); mh.updateMatrix();
   const ms = stone(0xe0d6c2, 6, 3);
-  box(20, 10.5, 11, ms, 0, 5.25, -5.5, mh);
+  // the floors upstairs are solid; the ground floor is the hall, up four steps
+  const MREF = { x0: -10, x1: 10, y0: 0, y1: 10.5, z0: -11, z1: 0 };
+  I.skin(mh, ms, -10, 3.6, -11, 10, 10.5, 0, MREF); I.solid(mh, -10, 3.6, -11, 10, 10.5, 0);
+  const hallR = I.shell(mh, { x0: -10, x1: 10, z0: -11, z1: 0, y0: .6, y1: 3.6, t: .3, ext: ms, ref: MREF, int: I.lit(0xf2e8d4, .42), floor: I.lit(0xffffff, .32, I.checkTex), door: [-1, 1, 3, .6] });
+  const hallWins = [];
   const mr = new THREE.Mesh(new THREE.ConeGeometry(1, 1, 4, 1), tiles(0x4d5563)); mr.rotation.y = Math.PI / 4; mr.scale.set(15.5, 4, 8.6); mr.position.set(0, 12.5, -5.5); mh.add(mr);
   box(20.4, .4, 11.4, white, 0, 10.5, -5.5, mh);
   for (const f of [0, 1, 2]) for (let k = 0; k < 7; k++) {
     const wx = -8.6 + k * 2.87, wy = 1.8 + f * 3.3;
     if (f === 0 && k === 3) continue;
+    if (f === 0) hallWins.push(wx);
     box(1.2, 1.9, .06, white, wx, wy, .03, mh); box(1, 1.7, .05, rnd() < .5 ? glassLit : glassDark, wx, wy, .05, mh);
     box(1.4, .12, .2, white, wx, wy + 1.05, .1, mh);
   }
   box(3.2, .12, 1.2, white, 0, 4.2, .6, mh);
   for (let q = 0; q < 12; q++) box(.03, .8, .03, iron, -1.5 + q * .27, 4.6, 1.15, mh);
-  box(2, 3, .08, mat(0x3a2a20), 0, 1.5, .05, mh);
-  for (let k = 0; k < 4; k++) box(4 - k * .4, .15, .5, ms, 0, .08 + k * .15, .3 + (3 - k) * .3, mh);
+  // the double door, a stone frame round it, steps you can climb
+  for (const x of [-1.05, 1.05]) box(.1, 3.1, .1, white, x, 1.55, .04, mh);
+  box(2.2, .12, .1, white, 0, 3.06, .04, mh);
+  I.door(mh, { x: -1, y: .6, z: -.075, w: 1, h: 2.4, dir: 1, color: 0x3a2a20 }); I.door(mh, { x: 1, y: .6, z: -.075, w: 1, h: 2.4, dir: -1, color: 0x3a2a20 });
+  for (let k = 0; k < 4; k++) { box(4 - k * .4, .15, .5, ms, 0, .08 + k * .15, .3 + (3 - k) * .3, mh); const hw = 2 - k * .2, sz = .3 + (3 - k) * .3; I.solid(mh, -hw, 0, sz - .25, hw, .155 + k * .15, sz + .25); }
+  I.hall(mh, hallR, hallWins);
   const mairie = new THREE.Mesh(new THREE.PlaneGeometry(6, .7), new THREE.MeshLambertMaterial({ map: lettering('MAIRIE', { color: '#2a2a2a', size: 88, spacing: 24 }), transparent: true })); mairie.position.set(0, 8.1, .04); mh.add(mairie);
   const motto = new THREE.Mesh(new THREE.PlaneGeometry(9, .5), new THREE.MeshLambertMaterial({ map: lettering('LIBERTÉ · ÉGALITÉ · FRATERNITÉ', { color: '#2a2a2a', size: 60, spacing: 6 }), transparent: true })); motto.position.set(0, 9.4, .04); mh.add(motto);
   const flags = [];
@@ -341,7 +409,6 @@ export function createEurope({ scene, addBox }) {
     const fl = new THREE.Mesh(fg, new THREE.MeshLambertMaterial({ map: flagTex[k], side: THREE.DoubleSide }));
     fl.position.set(sx + .6, 6.2, 1.5); fl.userData.keep = true; mh.add(fl); flags.push({ fl, base: fg.attributes.position.array.slice(), ph: k * 1.3 });
   }
-  addBox(MX - 10, 0, SOUTH_FRONT, MX + 10, 10.5, SOUTH_FRONT + 11);
   mh.updateMatrix();
   roofColliders(addBox, { x0: -10, x1: 10, z0: -11, z1: 0, y: 10.5, h: 4, kind: 'hip', matrix: mh.matrix });
   contact.rect(MX, SOUTH_FRONT + 5.5, 20, 11, 0, .125);
@@ -351,7 +418,7 @@ export function createEurope({ scene, addBox }) {
 
   // ---------- cherry trees on the square, in the park, along the street ----------
   const blossoms = createBlossoms({ parent: g, addBox, seed: 77 });
-  for (const [x, z, s] of [[48.5, 11, 1.05], [73, 11.5, 1.1], [56, 8, .85], [MX - 9, 4, 1], [MX + 9, 3.5, .95], [MX, 14, 1.1], [80.5, 2, .9], [-80, 3, .95], [-44.5, -6, .85], [40, 3, .9]]) blossoms.tree(x, z, s);
+  for (const [x, z, s] of [[48.5, 11, 1.05], [73, 11.5, 1.1], [56, 8, .85], [MX - 9, 4, 1], [MX + 9, 3.5, .95], [MX, 14, 1.1], [85, 3, .9], [-80, 3, .95], [-44.5, -6, .85], [40, 3, .9]]) blossoms.tree(x, z, s);
   blossoms.finish({ scatter: [[FX, FZ + 6, 2], [FX - 6, -4, 1.5], [MX, 11, 2]] });
   for (const t of blossoms.trees) contact.blob(t.x, t.z, t.r * .8, .125);
 
@@ -395,7 +462,7 @@ export function createEurope({ scene, addBox }) {
   let tX = -400, tWait = 6;
 
   // ---------- street lamps on the square and in front of the town hall ----------
-  const lamps = createLamps({ parent: g, addBox, points: [[SQ.x0 + 2, 12.5], [SQ.x1 - 2, 12.5], [SQ.x0 + 2, -9.8], [SQ.x1 - 2, -9.8], [FX - 4, FZ - 3.5], [FX + 4, FZ - 3.5], [MX - 11, -9.8], [MX + 11, -9.8], [-100, -9.8], [-84, -9.8], [96, -9.8], [110, -9.8]] });
+  const lamps = createLamps({ parent: g, addBox, points: [[SQ.x0 + 2, 12.5], [SQ.x1 - 2, 12.5], [53, -10.3], [72.5, -10.3], [FX - 4, FZ - 3.5], [FX + 4, FZ - 3.5], [MX - 11, -9.8], [MX + 11, -9.8], [-100, -11.4], [-84, -11.4], [96, -11.4], [110, -11.4]] });
 
   // ---------- a blue street sign at the corner, as every French street has ----------
   const plaque = new THREE.MeshLambertMaterial({ map: canvasTex(256, 96, (c) => { c.fillStyle = '#1d3a78'; c.fillRect(0, 0, 256, 96); c.strokeStyle = '#f4f4f2'; c.lineWidth = 5; c.strokeRect(8, 8, 240, 80); c.fillStyle = '#f4f4f2'; c.textAlign = 'center'; c.font = `700 22px ${SANS}`; c.fillText('RUE DES', 128, 38); c.font = `700 28px ${SANS}`; c.fillText('CERISIERS', 128, 70); }) });
@@ -522,21 +589,27 @@ export function createEurope({ scene, addBox }) {
   const walkers = createWalkers({ parent: g, clothes: [0x2a4a78, 0xc8282e, 0xf4f0e6, 0x3a6a4a, 0xe8b830, 0x8a4a8a, 0x5a6a7a, 0xd88aa0], seed: 41, paths: [
     [[-110, -14.95], [-6, -14.95]], [[6, -14.95], [110, -14.95]],
     [[-110, -11.1], [-42, -11.1]], [[80, -11.1], [110, -11.1]],
-    [[46, -10], [58, 8], [70, 10], [76, -9]], [[FX - 5, FZ + 6.4], [FX + 5, FZ + 6.4]],
-    [[MX - 12, -9.8], [MX + 12, -9.8]], [[-100, LZ - 1.4], [100, LZ - 1.4]], [[-120, GZ + 3.4], [120, GZ + 3.4]],
+    [[53, -10.3], [58, 8], [70, 10], [72.5, -9.5]], [[FX - 5, FZ + 6.4], [FX + 5, FZ + 6.4]],
+    [[MX - 12, -12.4], [MX + 12, -12.4]], [[-100, LZ - 1.4], [100, LZ - 1.4]], [[-120, GZ + 3.4], [120, GZ + 3.4]],
   ] });
   for (const [x, z, rot] of [[53.3, -8.4, Math.PI / 2], [54.7, -5.2, -Math.PI / 2], [57.4 - .7, -3.6, Math.PI / 2], [58.1, -6.8, -Math.PI / 2]]) walkers.sit(x, .45, z, rot);
   contact.finish();
 
   g.traverse(o => { if (o.isMesh && !o.material.transparent) { o.castShadow = true; o.receiveShadow = true; } });
+  I.finish(g);
 
   let t = 0;
   return {
     group: g,
     // for the maps and the animals: what's built where
     SQ, MX,
+    // the front doors, opened and shut with e
+    doors: I.doors,
+    walkers,
     // the fountain's basin, for the mini jet-skis: its centre, the water's radius and height
     fountain: { x: FX, z: FZ, r: FW, y: FY, pool, island: .8 },
+    // the church, for what goes inside it: the altar (its front at z 36), the organ's corner, the tower
+    church: { altar: new THREE.Vector3(61, 0, 36.5), organ: new THREE.Vector3(65.3, 0, 33), tower: new THREE.Vector3(FX, 0, 25 - 9.5) },
     setNight(n) {
       glassLit.emissiveIntensity = n * 1.3;
       glassDark.emissiveIntensity = n * .08;
@@ -562,6 +635,7 @@ export function createEurope({ scene, addBox }) {
       else { train.visible = true; tX += 24 * dt; if (tX > 320) { tX = -400; tWait = 20 + Math.random() * 25; } }
       train.position.x = tX;
       walkers.update(dt);
+      if (camera) I.update(dt, camera.position);
     },
   };
 }

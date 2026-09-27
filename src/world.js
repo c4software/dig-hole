@@ -277,7 +277,8 @@ export function createWorld(container) {
 
   // ---------- colliders (axis-aligned boxes) ----------
   const colliders = [];
-  const addBox = (x0, y0, z0, x1, y1, z1) => colliders.push({ min: new THREE.Vector3(x0, y0, z0), max: new THREE.Vector3(x1, y1, z1) });
+  // returns the box, so a door can switch its own off while it stands open
+  const addBox = (x0, y0, z0, x1, y1, z1) => { const c = { min: new THREE.Vector3(x0, y0, z0), max: new THREE.Vector3(x1, y1, z1) }; colliders.push(c); return c; };
 
   const std = (color) => new THREE.MeshLambertMaterial({ color });
   const interactables = [];
@@ -664,7 +665,11 @@ export function createWorld(container) {
 
   return {
     renderer, scene, camera, sun, hemi, lamp, colliders, interactables, grassTime,
-    setDepth, setTime, setSeason, updateFall, env, label, FENCE: F, house, china, shadows, homeDecor, setSpace, neighbours, fountain: europe.fountain,
+    setDepth, setTime, setSeason, updateFall, env, label, FENCE: F, house, china, shadows, homeDecor, setSpace, neighbours, fountain: europe.fountain, church: europe.church,
+    // every front door of both towns: { eu: [...], jp: [...] }
+    doors: { eu: europe.doors, jp: china.interiors.doors },
+    // the people in the streets of each town
+    walkers: { home: europe.walkers, china: china.walkers },
     setIndoor(v) { indoor = v; },
     get space() { return space; },
     // quality: haute (bloom, fine shadows), moyenne (bloom, lighter), basse (no bloom, no shadows)

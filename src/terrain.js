@@ -1097,6 +1097,13 @@ export function createTerrain(scene, { theme = 'home', seed = 1337, ox = 0, oy =
     lavaAt: (x, y, z) => { const [i, j, k] = cellOf(x, y, z); return inArea(i, k) && j >= 0 && j < NY && vox[idx(i, j, k)] === LAVA; },
     set onSteam(f) { onSteam = f; },
     tickLava(dt) { lavaTime.value += dt; },
+    // a cell of the plot turned to air or to a liquid (what a portal takes and gives back)
+    setCell(i, j, k, m) {
+      if (!inArea(i, k) || j < 1 || j >= NY) return false;
+      vox[idx(i, j, k)] = m; markDirtyCell(i, j, k); wake(i, j, k);
+      return true;
+    },
+    inArea,
     // tests: pour a liquid into the air cells of a ball
     _pour(center, radius, liquid = WATER) {
       const [ci, cj, ck] = cellOf(center.x, center.y, center.z), r = Math.ceil(radius / S);

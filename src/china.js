@@ -9,6 +9,7 @@ import { NX, S } from './terrain.js';
 import { mergeStatic } from './merge.js';
 import * as V from './vehicles.js';
 import { createBlossoms, createPoles, createCars, createContact, createWalkers, puffGeometry, roofColliders, seeded } from './street.js';
+import { jpInteriors } from './interiors-jp.js';
 
 export const CHINA = new THREE.Vector3(400, 0, 0);
 const HALF = NX * S / 2;
@@ -49,6 +50,7 @@ export function createChina({ scene, colliders, interactables, label }) {
   const flat = (w, d, m, x, y, z, rot = 0, parent = g) => { const p = new THREE.Mesh(new THREE.PlaneGeometry(w, d), m); p.rotation.set(-Math.PI / 2, 0, rot); p.position.set(x, y, z); p.receiveShadow = true; parent.add(p); return p; };
   const animated = [];
   const contact = createContact({ parent: g });
+  const J = jpInteriors({ box, mat, colliders, sign });
 
   // ---------- textures ----------
   const noiseTex = (base, spots, rep) => canvasTex(256, 256, (c, w, h) => {
@@ -342,11 +344,13 @@ export function createChina({ scene, colliders, interactables, label }) {
     g.add(h);
     const W = big ? 9 : 7.4 + rnd(), D = 7 + rnd(), H1 = 2.9, H2 = H1 * 2;
     const wall = siding(pick(WALLC)), roofM = roofTile(pick(ROOFC));
-    box(W, H2, D, wall, 0, H2 / 2, 0, h);
+    // hollow now: walls round a doorway, the siding's courses laid as on the old solid box
+    const dx = -W * .28, DW = 1, DH = 2.15, WT = .2, dr = { x: dx, w: DW, h: DH };
+    J.shell(h, { W, D, H: H2, T: WT, m: wall, door: dr, collide: true });
     // some houses wear a darker ground floor
-    if (rnd() < .45) box(W + .04, H1, D + .04, siding(new THREE.Color(pick(WALLC)).multiplyScalar(.82).getHex()), 0, H1 / 2, 0, h);
-    box(W + .08, .35, D + .08, mat(0x9a948c), 0, .17, 0, h);
-    box(W + .1, .12, D + .1, mat(0xe8e8e4), 0, H1, 0, h);
+    if (rnd() < .45) J.shell(h, { W: W + .04, D: D + .04, H: H1, T: .02, m: siding(new THREE.Color(pick(WALLC)).multiplyScalar(.82).getHex()), door: dr });
+    J.shell(h, { W: W + .08, D: D + .08, H: .35, T: .04, m: mat(0x9a948c), door: dr });
+    J.shell(h, { W: W + .1, D: D + .1, H: .12, y: H1 - .06, T: .05, m: mat(0xe8e8e4) });
     // hip roof: a flattened four-sided pyramid over wide eaves
     const roof = new THREE.Mesh(new THREE.ConeGeometry(1, 1, 4, 1), roofM);
     roof.rotation.y = Math.PI / 4; roof.scale.set((W + 1.3) * .71, 2.3 + rnd() * .6, (D + 1.3) * .71); roof.position.y = H2 + .2 + roof.scale.y / 2;
@@ -355,7 +359,7 @@ export function createChina({ scene, colliders, interactables, label }) {
     box(W + 1.25, .28, D + 1.25, mat(0xe4e6ea), 0, H2 + .1, 0, h);
     // the front (+z): a door with a little canopy, windows in aluminium frames
     const f = D / 2 + .02;
-    box(1, 2.1, .08, mat(pick([0x6a4a30, 0x4a3a30, 0x8a8f96])), -W * .28, 1.05, f, h);
+    J.door(h, { x: dx, z: D / 2 - WT / 2, w: DW, h: DH, m: J.pal(pick([0x6a4a30, 0x4a3a30, 0x8a8f96])) });
     box(1.5, .08, .8, mat(0xd8d8d4), -W * .28, 2.35, f + .4, h);
     const win = (wx, wy, ww, wh, face = 1) => {
       box(ww + .12, wh + .12, .06, alu, wx, wy, f * face, h);
@@ -372,7 +376,7 @@ export function createChina({ scene, colliders, interactables, label }) {
     for (let k = 0; k < 16; k++) box(.03, .9, .03, alu, -W * .2 - 1.55 + k * .207, H1 + .7, f + 1.12, h);
     if (rnd() < .5) { box(2.6, .02, .02, alu, -W * .2, H1 + 2.1, f + .8, h); for (let k = 0; k < 4; k++) box(.4, .55, .02, mat(pick([0xf4f4f0, 0x8ab0d8, 0xf0c0c8, 0xe8e0a0])), -W * .2 - .9 + k * .6, H1 + 1.8, f + .8, h); }
     // the air conditioner's outdoor unit, the gas meter, the back and side windows
-    box(.8, .55, .3, mat(0xe4e4e0), W / 2 + .16, .6, D * .2, h);
+    box(.8, .55, .3, mat(0xe4e4e0), W / 2 + .2, .6, D * .2, h);
     const fan = new THREE.Mesh(new THREE.CircleGeometry(.2, 16), mat(0x5a5e66)); fan.rotation.y = Math.PI / 2; fan.position.set(W / 2 + .32, .6, D * .1); h.add(fan);
     box(.3, .4, .15, mat(0xb8bcc2), -W / 2 - .08, 1.2, -D * .2, h);
     for (const sx of [-1, 1]) { box(.07, 1.1, 1.3, glass, sx * (W / 2 + .01), H1 + 1.4, -D * .1, h); box(.07, 1, 1, glass, sx * (W / 2 + .01), 1.5, -D * .2, h); }
@@ -386,14 +390,18 @@ export function createChina({ scene, colliders, interactables, label }) {
     for (let k = 0; k < Math.floor(W / 2 / .8); k++) { const m = new THREE.Mesh(hedgeGeo, hedgeMat); m.scale.set(.55, .6, .5); m.position.set(W / 2 - .5 - k * .8, 1.3, yz - .35); h.add(m); }
     for (let k = 0; k < 3; k++) box(.8, .04, .6, mat(0xb8b2a8), -W * .28, .03, f + .5 + k * .7, h);
     // a car in the drive, now and then
-    if (rnd() < .45) { h.updateMatrix(); const p = new THREE.Vector3(W * .22, 0, f + 1.25).applyMatrix4(h.matrix); car(p.x, p.z, rot + Math.PI / 2, pick(CARC)); }
+    // (parked clear of the facade: its tail would show in the living room)
+    if (rnd() < .45) { const col = pick(CARC), kei = rnd() < .55; h.updateMatrix(); const p = new THREE.Vector3(W * .22, 0, f + (kei ? 3.4 : 4.3) / 2 + .1).applyMatrix4(h.matrix); car(p.x, p.z, rot + Math.PI / 2, col, kei); }
     h.updateMatrixWorld();
     const bb = new THREE.Box3(new THREE.Vector3(-W / 2 - .2, 0, -D / 2), new THREE.Vector3(W / 2 + .2, H2, D / 2)).applyMatrix4(h.matrix);
-    addBox(bb.min.x, 0, bb.min.z, bb.max.x, H2, bb.max.z);
+    J.S(h, W / 2, 0, D * .2 - .15, W / 2 + .6, .9, D * .2 + .15); J.S(h, -W / 2 - .23, 1, -D * .2 - .08, -W / 2, 1.4, -D * .2 + .08);
+    // inside: genkan, stairs, kitchen, a tatami room, the living room
+    const di = D / 2 - WT, wi = W / 2 - WT;
+    J.house(h, { W, D, H1, T: WT, dx, DW, DH, wins: [['z', di, W * .14, 1.3, 2.4, 1.7, 1], ['z', di, W * .4, 1.6, .9, 1, 1], ['x', wi, -D * .2, 1.5, 1, 1, 1], ['x', -wi, -D * .2, 1.5, 1, 1, -1]] });
     roofColliders(addBox, { x0: -W / 2 - .6, x1: W / 2 + .6, z0: -D / 2 - .6, z1: D / 2 + .6, y: H2 + .2, h: roof.scale.y, kind: 'hip', matrix: h.matrix });
     contact.rect((bb.min.x + bb.max.x) / 2, (bb.min.z + bb.max.z) / 2, bb.max.x - bb.min.x, bb.max.z - bb.min.z, 0, .06);
-    const wb = new THREE.Box3(new THREE.Vector3(-W / 2, 0, yz - .1), new THREE.Vector3(W / 2, 1.2, yz + .1)).applyMatrix4(h.matrix);
-    addBox(wb.min.x, 0, wb.min.z, wb.max.x, 1.2, wb.max.z);
+    // the block wall, open where it is open: the gap is the way in
+    J.S(h, -W / 2, 0, yz - .1, -1.1, 1.2, yz + .1); J.S(h, .2, 0, yz - .1, W / 2, 1.2, yz + .1);
     return h;
   };
   // north of street A, facing it
@@ -431,18 +439,26 @@ export function createChina({ scene, colliders, interactables, label }) {
   for (const k of [0, 1]) { lantern(SX - 1.8, SZ0 - 4 - k * 5); lantern(SX + 1.8, SZ0 - 4 - k * 5); }
   // the hall: raised on posts, a sweeping dark roof, a rope and bell
   const hall = new THREE.Group();
-  box(6, .7, 5, mat(0x8a6a4a), 0, .35, 0, hall);
-  box(5.2, 2.6, 4.2, mat(0xa87a52), 0, 2, 0, hall);
-  box(3.2, 2.2, .06, mat(0xe8dcc0), 0, 1.9, 2.12, hall);
-  for (const [px, pz] of [[-2.7, 2.3], [2.7, 2.3], [-2.7, -2.3], [2.7, -2.3]]) box(.25, 3.3, .25, mat(0x6a4a30), px, 1.65, pz, hall);
-  const hr = new THREE.Mesh(new THREE.ConeGeometry(1, 1, 4, 1), roofTile(0x2f343c)); hr.rotation.y = Math.PI / 4; hr.scale.set(5.6, 2.4, 4.8); hr.position.y = 4.4; hall.add(hr);
-  box(4.4, .5, 3.6, mat(0x2f343c), 0, 5.6, 0, hall);
-  box(1.1, .6, .6, mat(0xa8844a), 0, .95, 2.9, hall);
-  box(.08, 1.6, .08, mat(0xd8c8a0), 0, 2.6, 2.4, hall);
-  for (let k = 0; k < 3; k++) box(.6, .08, .5, mat(0x9a948a), 0, .2 + k * .12, 3.3 - k * .3, hall);
   hall.position.set(SX, 0, SZ0 - 14);
   shrine.add(hall);
-  addBox(SX - 3, 0, SZ0 - 16.6, SX + 3, 4, SZ0 - 11.4);
+  J.S(hall, -3, 0, -2.5, 3, .7, 2.5, mat(0x8a6a4a));
+  // the walls round a doorway, and inside the altar (interiors-jp.js)
+  J.hall(hall, { wood: mat(0xa87a52) });
+  // the lattice front either side of the doors, which open inwards
+  const lattice = mat(0xe8dcc0), latBar = mat(0x8a6a4a);
+  for (const sx of [-1, 1]) { J.B(hall, sx * .65, .8, 2.09, sx * 1.6, 3, 2.15, lattice); for (let k = 1; k < 4; k++) J.B(hall, sx * (.65 + k * .2375) - .02, .8, 2.15, sx * (.65 + k * .2375) + .02, 3, 2.17, latBar); }
+  J.B(hall, -.65, 2.85, 2.09, .65, 3, 2.15, lattice);
+  J.door(hall, { x: 0, y: .7, z: 2.1 - .075, w: 1.3, h: 2.12, t: .15, m: J.pal(0xe8dcc0), leaves: 2, handle: J.pal(0x3a2a1e) });
+  for (const [px, pz] of [[-2.7, 2.3], [2.7, 2.3], [-2.7, -2.3], [2.7, -2.3]]) J.S(hall, px - .125, 0, pz - .125, px + .125, 3.3, pz + .125, mat(0x6a4a30));
+  const hr = new THREE.Mesh(new THREE.ConeGeometry(1, 1, 4, 1), roofTile(0x2f343c)); hr.rotation.y = Math.PI / 4; hr.scale.set(5.6, 2.4, 4.8); hr.position.y = 4.4; hall.add(hr);
+  box(4.4, .5, 3.6, mat(0x2f343c), 0, 5.6, 0, hall);
+  // a veranda before the doors with the offering box on it, broad wooden steps up to it
+  J.S(hall, -2.2, 0, 2.5, 2.2, .7, 3.6, mat(0x8a6a4a));
+  J.S(hall, -1.4, 0, 3.6, 1.4, .47, 3.9, mat(0x8a6a4a)); J.S(hall, -1.4, 0, 3.9, 1.4, .23, 4.2, mat(0x8a6a4a));
+  J.S(hall, -.55, .7, 2.75, .55, 1.3, 3.35, mat(0xa8844a));
+  box(.08, 1.6, .08, mat(0xd8c8a0), 0, 2.6, 2.4, hall);
+  J.B(hall, -.04, 3.34, 2.36, .04, 3.45, 2.44, J.pal(0x3a2a1e)); J.cyl(hall, .1, .26, J.lit(0xc8a040, .2), 0, 3.2, 2.4, 10, .17);
+  J.S(hall, -3, 3.3, -2.6, 3, 4, 2.6);
   contact.rect(SX, SZ0 - 14, 6, 5, 0, .04);
   // a low wall round the precinct
   for (const [x0, z0, x1, z1] of [[SX - 4.6, SZ0 - 17.5, SX - 4.6, SZ0 - .6], [SX + 4.6, SZ0 - 17.5, SX + 4.6, SZ0 - .6], [SX - 4.6, SZ0 - 17.5, SX + 4.6, SZ0 - 17.5]]) {
@@ -537,7 +553,9 @@ export function createChina({ scene, colliders, interactables, label }) {
   for (const [k, col] of [[0, 0x2f6cc0], [1, 0x2f9a58], [2, 0xd8262e]]) box(.45, .8, .45, mat(col), 44 + k * .55, PH + .4, PL.z1 - .45);
   // the building on the plaza: a pitched roof, a clock, the name in big letters
   const st = new THREE.Group(); g.add(st);
-  box(14, 4, 6, siding(0xe8e0d0), 0, 2, 0, st);
+  st.position.set(34, 0, PL.z1 + 4.2);
+  // hollow: in from the plaza, through the ticket gates, out the back onto the platform
+  J.station(st, { wall: siding(0xe8e0d0), goodsM, fridgeM: fridge, glassM: kGlass });
   const sr = new THREE.Mesh(new THREE.ConeGeometry(1, 1, 4, 1), roofTile(0x3a4150)); sr.rotation.y = Math.PI / 4; sr.scale.set(11, 2, 5.4); sr.position.y = 5; st.add(sr);
   box(15.2, .15, 7.2, mat(0x2f343c), 0, 4.02, 0, st);
   const bigName = sign('桜ヶ丘駅', { w: 1024, h: 192, bg: '#fbf6ee', color: '#2a2a2e', size: 120, stripe: [[.9, .1, '#e87aa0']] });
@@ -546,8 +564,6 @@ export function createChina({ scene, colliders, interactables, label }) {
   const clock = new THREE.Mesh(new THREE.CircleGeometry(.45, 24), new THREE.MeshLambertMaterial({ map: clockTex })); clock.position.set(3.8, 3.3, 3.06); st.add(clock);
   box(4, 2.4, .06, shop, -2.5, 1.3, 3.02, st);
   box(3, .1, 1.2, mat(0xd8d8d4), -2.5, 2.6, 3.6, st);
-  st.position.set(34, 0, PL.z1 + 4.2);
-  addBox(27, 0, PL.z1 + 1.2, 41, 4, PL.z1 + 7.2);
   contact.rect(34, PL.z1 + 4.2, 14, 6, 0, .08);
   // the plaza: paving, a flower bed, bollards, a bus stop, a clock on a pole, a mailbox
   const PZ = { x0: 10, x1: 44, z0: PL.z1 + 7.2, z1: A.z0 - 2 - 12.6 };
@@ -600,11 +616,12 @@ export function createChina({ scene, colliders, interactables, label }) {
 
   // ---------- cherry trees: the shrine, the plaza, the station, the gardens ----------
   const blossoms = createBlossoms({ parent: g, addBox, seed: 5 });
-  for (const [x, z, s] of [[SX - 3.4, SZ0 - 3, 1.1], [SX + 3.4, SZ0 - 8, 1.2], [SX - 3.2, SZ0 - 12, 1], [SX + 3.3, SZ0 - 15.5, 1.05],
-    [30, PZ.z0 + 5, 1.35], [14, -8, 1], [17, -2, .9], [B.x0 - 3.4, -9.5, 1], [B.x0 - 3.4, 1.5, .95],
+  // (kept clear of the houses and the hall: their branches would poke into the rooms)
+  for (const [x, z, s] of [[SX - 3.4, SZ0 - 3, 1.1], [SX + 3.4, SZ0 - 8, 1.2], [SX - 3.6, SZ0 - 19.6, 1], [SX + 3.8, SZ0 - 19.9, 1.05],
+    [30, PZ.z0 + 5, 1.35], [14, -8, 1], [17, -2, .9], [B.x0 - 1, -10, 1], [B.x0 - 1, 2, .95],
     [9.5, -21.5, .85], [48, PL.z1 + 5.6, 1.1], [56, PL.z1 + 4.5, 1], [-26, RAIL.z1 + 5, 1.1], [-40, RAIL.z1 + 5, 1], [-55, RAIL.z1 + 4.5, 1.05],
-    [-60, A.z1 + 10.5, .9], [3.5, A.z1 + 10.5, .85], [39, A.z1 + 10.5, .9], [64, A.z1 + 10.5, .95], [-34, A.z1 + 10.5, .8],
-    [-24, 4, .9], [-26, -12, .95]]) blossoms.tree(x, z, s);
+    [-60, A.z1 + 10.5, .9], [3.5, A.z1 + 2, .85], [39, A.z1 + 2, .9], [64, A.z1 + 2, .95], [-34, A.z1 + 10.5, .8],
+    [-34.5, 4, .9], [-34.5, -12, .95]]) blossoms.tree(x, z, s);
   const scatter = [];
   for (let k = 0; k < 40; k++) scatter.push([-80 + rnd() * 160, az + (rnd() - .5) * 6, .6 + rnd() * 1.2]);
   for (let k = 0; k < 16; k++) scatter.push([bx + (rnd() - .5) * 6, -20 + rnd() * 80, .6 + rnd() * 1]);
@@ -699,12 +716,14 @@ export function createChina({ scene, colliders, interactables, label }) {
 
   // everything that doesn't move: a few merged meshes
   mergeStatic(g, (o) => o === train || o.userData.keep || booms.some(b => b.pivot === o) || flashers.some(f => f.m === o.material) || o === sleepers);
+  // the rooms sit in shut boxes: they need not cast shadows
+  for (const o of g.children) if (o.material === J.palM) o.castShadow = false;
 
   let t = 0, night = 0, doorOpen = 0, playerPos = null;
   const doorBox = { min: new THREE.Vector3(cx + DX0, 0, cz + kz - .12), max: new THREE.Vector3(cx + DX1, 2.7, cz + kz) };
   colliders.push(doorBox);
   return {
-    group: g,
+    group: g, interiors: J, walkers,
     spawn: new THREE.Vector3(cx, 0.05, cz - 10.4),
     // for pictures and tests: the train waiting at the platform
     set playerPos(f) { playerPos = f; },
@@ -716,6 +735,7 @@ export function createChina({ scene, colliders, interactables, label }) {
       lampMat.emissiveIntensity = .1 + n * 2.5;
       for (const a of animated) { if (a.vend) a.vend.emissiveIntensity = .3 + n * 1.1; if (a.lamp) a.lamp.emissiveIntensity = .15 + n * 1.6; }
       blossoms.setNight(n);
+      J.setNight(n);
       poolMat.opacity = n * .32; pools.forEach(p => { p.visible = n > .02; });
     },
     update(dt) {
@@ -746,6 +766,7 @@ export function createChina({ scene, colliders, interactables, label }) {
       const half = (DX1 - DX0) / 4;
       for (const [pane, fr, k] of doorPanes) { const x = (DX0 + DX1) / 2 + (k ? 1 : -1) * (half + doorOpen * half * 1.9); pane.position.x = x; fr.position.x = x; }
       doorBox.off = doorOpen > .5;
+      J.update(dt);
     },
   };
 }

@@ -194,7 +194,6 @@ export function createDelivery({ scene, label, interactables, getTerrain }) {
   // state lives in the save: orders waiting to ship, parcels waiting to be opened
   let S = { orders: [], parcels: [] };
   let trip = null;   // { phase, x, store, cargo, wait }
-  let rounds = 25;   // seconds until the van's next pass
   let onArrive = () => {};
 
   function sync() { layParcels(S.parcels.length); spot.off = !S.parcels.length; }
@@ -244,17 +243,6 @@ export function createDelivery({ scene, label, interactables, getTerrain }) {
       trip.wait -= dt;
       if (trip.wait <= 0 || S.orders.some(o => o.eta <= 0)) { trip = null; van.visible = false; van.rotation.set(0, 0, 0); van.position.y = 0; }
       return;
-    }
-    // the van also does its rounds for the neighbours, orders or not
-    if (!trip && !S.orders.some(o => o.eta <= 0)) {
-      rounds -= dt;
-      if (rounds <= 0) {
-        rounds = 55 + Math.random() * 35;
-        const store = Math.random() < .5 ? 'amazone' : 'aliexpresso';
-        trip = { phase: 'in', x: -110, store, cargo: [], wait: 0, speed: 0 };
-        paint(store);
-        van.visible = true;
-      }
     }
     if (!trip) {
       const due = S.orders.filter(o => o.eta <= 0);
