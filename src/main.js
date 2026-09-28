@@ -1640,12 +1640,12 @@ function quitRace(result, silent = false) {
 // A game's code comes on demand, the first time it's needed: its title screen, the lobby's countdown,
 // its terminal close by (preloaded when the page is idle). Until then RACES[id].mod is null.
 for (const r of Object.values(RACES)) r.mod = null;
-const gameLoads = new Map();
+const gameLoads = new Map(), gameFailed = new Map();   // id → when its code last failed to come
 function loadGame(id) {
   const r = RACES[id];
   if (!r || r.mod) return Promise.resolve(r?.mod ?? null);
   if (!gameLoads.has(id)) gameLoads.set(id, GAME_CODE[id]().then(create => r.make(create)).then(mod => { r.mod = mod; mod.onEnd = (res) => quitRace(res); return mod; })
-    .catch(e => { gameLoads.delete(id); console.warn('jeu', id, e); throw e; }));
+    .catch(e => { gameLoads.delete(id); gameFailed.set(id, performance.now()); console.warn('jeu', id, e); throw e; }));
   return gameLoads.get(id);
 }
 const gameReady = (id) => !RACES[id] || !!RACES[id].mod;
@@ -1656,25 +1656,26 @@ function withGame(id, then) {
   return loadGame(id).then(() => { clearTimeout(t); return then(); }, () => { clearTimeout(t); ui.toast('le jeu n\'a pas pu se charger', true); });
 }
 // in idle time, the games whose terminal is near (and the whole cave once you're down there)
-const idle = window.requestIdleCallback || ((f) => setTimeout(f, 200));
-let preloadT = 0, preloading = false;
-function preloadNear(dt) {
-  if ((preloadT -= dt) > 0 || preloading) return;
-  preloadT = 1;
+const idle = (f) => window.requestIdleCallback ? requestIdleCallback(f, { timeout: 2000 }) : setTimeout(f, 200);
+let preloadAt = 0, preloading = false;
+function preloadNear() {
+  const now = performance.now();
+  if (now < preloadAt || preloading) return;
+  preloadAt = now + 1000;
   const at = onPlanet() ? moonP.pos : player.pos, want = [];
   const its = onPlanet() ? space.terminals?.(here) || [] : world.interactables;
   for (const it of its) {
     const gs = it.game ? [it.game] : it.id === 'organ' ? ['orgue'] : it.id === 'pkdoor' ? ['painkiller'] : it.id === 'trapdoor' ? [...CAVE_GAMES] : null;
     if (!gs || !it.pos) continue;
     const d = onPlanet() ? at.distanceTo(it.pos) : Math.hypot(at.x - it.pos.x, at.z - it.pos.z);
-    if (d < 14 && (onPlanet() || Math.abs(at.y - it.pos.y) < 8)) for (const g of gs) if (!gameReady(g)) want.push([d, g]);
+    if (d < (onPlanet() ? 8 : 6) && (onPlanet() || Math.abs(at.y + 1 - it.pos.y) < 2.5)) for (const g of gs) if (!gameReady(g) && !(now - gameFailed.get(g) < 30000)) want.push([d, g]);
   }
-  if (here === 'home' && cave.inside(player.pos)) for (const g of CAVE_GAMES) if (!gameReady(g)) loadGame(g).catch(() => {});   // the dioramas all around
-  if (lobby && !gameReady(lobby.g)) want.push([-1, lobby.g]);
+  if (here === 'home' && cave.inside(player.pos)) for (const g of CAVE_GAMES) if (!gameReady(g) && !(now - gameFailed.get(g) < 30000)) loadGame(g).catch(() => {});   // the dioramas all around
+  if (lobby && !gameReady(lobby.g) && !(now - gameFailed.get(lobby.g) < 5000)) want.push([-1, lobby.g]);
   if (!want.length) return;
   want.sort((a, b) => a[0] - b[0]);
   preloading = true;
-  idle(() => { loadGame(want[0][1]).catch(() => {}).finally(() => { preloading = false; preloadT = 0; }); }, { timeout: 2000 });
+  idle(() => { loadGame(want[0][1]).catch(() => {}).finally(() => { preloading = false; preloadAt = 0; }); });
 }
 // the sky of the world being looked at: a game's own (the kart from the moon is raced under the garden's sky)
 const viewNow = () => race?.view || gm?.prev?.view || here;
@@ -3318,7 +3319,7 @@ function loop(ts) {
   player.stats.away = inCave;
   world.setIndoor(inCave || (here === 'home' && crypt.inside(player.pos)));
   cave.update(dt, inCave, here === 'home' ? player.pos : null);
-  if (state !== 'attract') preloadNear(dt);
+  if (state !== 'attract') preloadNear();
   crypt.update(dt, here === 'home' ? player : null);
   holy.update(dt, { here, pos: onPlanet() ? moonP.pos : player.pos, live: bombs.live });
   launcher.held = eco.s.tool === 'disc' && eco.s.discs && holding && !mg.armed;
