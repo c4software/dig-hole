@@ -45,6 +45,9 @@ import { createGamepad } from './gamepad.js';
 import { createTouch } from './touch.js';
 import { createKeyQuest } from './gameroom.js';
 import { createReveal } from './vrreveal.js';
+import { createSpaceArcade, spaceWorld, HALL_DIR } from './spacearcade.js';
+import { createSpaceRace, DECK_DIR } from './spacerace.js';
+import { createPodrace } from './podrace.js';
 
 const REACH = 3.2;
 const params = new URLSearchParams(location.search);
@@ -557,7 +560,7 @@ const LIFT = { id: 'lift' };
 
 function findNear() {
   camera.getWorldDirection(dir);
-  if (onPlanet()) return moonP.pos.distanceTo(LANDERS[here]) < (here === 'mars' ? 6 : 4.5) ? LANDER : null;
+  if (onPlanet()) return space.near(here, moonP.pos) || orbit.near(here, moonP.pos) || (moonP.pos.distanceTo(LANDERS[here]) < (here === 'mars' ? 6 : 4.5) ? LANDER : null);
   if (here === 'home' && delivery.canSteal(player.pos)) return VAN;
   if (here === 'home' && elevator.owned && elevator.near(player.pos)) return LIFT;
   let best = null, bd = Infinity;
@@ -581,7 +584,7 @@ const PROMPTS = {
   globe: null, shelf: '<b>e</b> les trophées', letters: '<b>e</b> les lettres · le livre d\'or', globe: '<b>e</b> faire tourner le globe',
   well: '<b>e</b> rentrer à la maison', parcel: '<b>e</b> ouvrir les colis', craft: '<b>e</b> l\'établi',
   trapdoor: '<b>e</b> soulever la trappe…', caveup: '<b>e</b> remonter l\'échelle', organ: '<b>e</b> jouer de l\'orgue · pour tout le monde',
-  van: '<b>e</b> piquer la camionnette', arcade: '<b>e</b> la borne d\'arcade · mini-jeux', reset: '<b>e</b> RESET · reboucher le trou, nouvelle carte',
+  deck: '<b>e</b> regarder le grand prix orbital · parier', van: '<b>e</b> piquer la camionnette', arcade: '<b>e</b> la borne d\'arcade · mini-jeux', reset: '<b>e</b> RESET · reboucher le trou, nouvelle carte',
 };
 
 function updateAim() {
@@ -1205,10 +1208,19 @@ scene.add(marsDecor);
 function setupPlanet(w) {
   if (LANDERS[w]) return;
   terrains[w].ensure();
-  if (w === 'mars') { buildMars(); return; }
-  landerPos = LANDERS.moon = surfaceAt('moon', UP).add(new THREE.Vector3(0, -.3, 0));
-  lander.group.position.copy(landerPos);
-  flag.position.copy(landerPos).add(new THREE.Vector3(2.4, .1, .6));
+  if (w === 'mars') buildMars();
+  else {
+    landerPos = LANDERS.moon = surfaceAt('moon', UP).add(new THREE.Vector3(0, -.3, 0));
+    lander.group.position.copy(landerPos);
+    flag.position.copy(landerPos).add(new THREE.Vector3(2.4, .1, .6));
+  }
+  buildSpace(w);
+}
+// the game hall and the grandstand of the orbital grand prix (spacearcade.js, spacerace.js)
+function buildSpace(w) {
+  const t = terrains[w], at = (d) => surfaceAt(w, new THREE.Vector3(...d).normalize());
+  scene.add(space.build(w, { terrain: t, center: PLANET[w], at: at(HALL_DIR[w]), face: LANDERS[w] }));
+  scene.add(orbit.build(w, { terrain: t, center: PLANET[w], radius: t.radius, at: at(DECK_DIR[w]), face: LANDERS[w] }));
 }
 // where you stand on arriving, next to the lander
 const landerSpot = (w) => LANDERS[w].clone().add(new THREE.Vector3(2.5, 1.5, -2));
@@ -1376,9 +1388,46 @@ const RACES = {
   nes: { mod: createNes({ audio, ui }), screen: true, help: 'flèches / zqsd · espace pour sauter · shift pour courir', prizes: [1800, 900, 450, 200] },
   worms: { mod: createWorms({ audio, ui }), screen: true, help: 'au tour par tour · chaque taupe a son tour', prizes: [1500, 700, 350, 150] },
   encre: { mod: createEncre({ audio, ui }), screen: true, help: 'zqsd · espace pour sauter · clic ou j pour tirer · shift pour nager', prizes: [1600, 600], value: (r) => r.pct },
+  // mars: the pod race, in its own canyon (the terminal is in the martian hall)
+  podrace: { mod: createPodrace({ scene, camera, audio, ui }), help: '3 tours · z : gaz · q d : piloter · shift : boost (ça chauffe) · r : revenir sur la piste', prizes: [2500, 1300, 700, 350, 150, 80] },
 };
 let race = null;
 const raceReturn = { pos: new THREE.Vector3(), yaw: 0 };
+// ---------- the moon and mars: a game hall, a grandstand, the orbital grand prix ----------
+const space = createSpaceArcade({ has: (id) => !!RACES[id] && !!GAMES[id], name: (id) => GAMES[id]?.name || id });
+const orbit = createSpaceRace({ ui, audio, pay: (n) => { if (!EXPLORE && !eco.pay(n)) return false; ui.setCoins(eco.s.money, true); return true; }, earn: (v, text) => { reward(v, text); save(); }, me: () => onPlanet() ? moonP.pos : null });
+moonP.setSolid((p, r) => onPlanet() && (space.solid(here, p, r) || orbit.solid(here, p, r)));
+// where a game's world is: its scenery and its sky (null: a 2D game, played on any screen)
+const gameView = (id) => RACES[id]?.world ?? spaceWorld(id) ?? (RACES[id]?.screen ? null : 'home');
+// the glass a 2D game is played on: the game room at home, a terminal in a planet's hall
+const screenOf = (id) => here === 'home' ? house.room?.screens?.[id] : onPlanet() ? space.screen(here, id) : null;
+// watching the orbital grand prix from the grandstand
+let watchAt = 0;
+function startWatch() {
+  if (!orbit.watch(here)) return;
+  watchAt = performance.now();
+  state = 'watch'; digging = false; throwing = false;
+  player.disable(); ui.prompt(''); ui.cross('');
+  document.body.classList.add('in-kart');
+  if (document.pointerLockElement) document.exitPointerLock();
+  audio.pickup(1);
+}
+function stopWatch() {
+  if (state !== 'watch') return;
+  orbit.unwatch();
+  document.body.classList.remove('in-kart');
+  document.getElementById('mg').classList.add('hidden');
+  state = 'play'; player.enable(); relock();
+}
+addEventListener('keydown', (e) => {
+  if (state !== 'watch' || e.repeat) return;
+  // the e that opened the view is still going round the listeners
+  if ((e.code === 'KeyE' && performance.now() - watchAt > 250) || e.code === 'Escape') stopWatch();
+  else if (e.code === 'KeyA' || e.code === 'ArrowLeft') orbit.cycle(-1);
+  else if (e.code === 'KeyD' || e.code === 'ArrowRight') orbit.cycle(1);
+  else if (e.code === 'KeyC') orbit.toggleCam();
+  else if (e.code === 'KeyB') orbit.placeBet();
+});
 const myId = () => net?.id ?? 'me';
 // who races: me, and everyone else in the garden (they all join), sorted so every client agrees
 const myName = () => MULTI ? (params.get('name') || 'creuseur') : 'toi';
@@ -1389,15 +1438,16 @@ function raceHumans(roster = null) {
 }
 function startRace(id, { seed = Math.floor(Math.random() * 1e9), hostId = myId(), roster = null, opts = null } = {}) {
   if (race) quitRace(null, true);
-  else { raceReturn.pos.copy(player.pos); raceReturn.yaw = player.yaw; }
+  else { raceReturn.pos.copy(onPlanet() ? moonP.pos : player.pos); raceReturn.yaw = player.yaw; }
   mg.stop(false);
   state = 'kart'; digging = false;
   player.disable();
   document.body.classList.add('in-kart');
-  race = { id, ...RACES[id], opts };
+  race = { id, ...RACES[id], opts, view: gameView(id) };
+  applyView();
   race.mod.start({ seed, opts: opts || {}, humans: raceHumans(roster), hostId, meId: myId(), send: (fx) => net?.sendFx({ k: 'race', race: id, f: fx }) });
   if (race.screen) {
-    const scr = here === 'home' && house.room?.screens?.[id];
+    const scr = screenOf(id);
     race.onScreen = scr || null; race.screenT = 0;
     race.mod.setRect?.(null);
     if (scr) { document.body.classList.add('on-screen'); screenView(0); }
@@ -1414,6 +1464,7 @@ function quitRace(result, silent = false) {
   const r = race;
   race = null;
   r.mod.stop();
+  applyView();
   document.body.classList.remove('in-kart', 'on-screen');
   document.getElementById('mg').classList.add('hidden');
   syncPauseQuit();
@@ -1421,6 +1472,8 @@ function quitRace(result, silent = false) {
   if (state === 'paused') { ui.el.resume.classList.add('hidden'); pausedFrom = 'play'; }
   state = 'play';
   player.pos.copy(raceReturn.pos); player.yaw = raceReturn.yaw; player.vel.set(0, 0, 0);
+  // on a planet, the astronaut is back where it stood (in the hall, most likely)
+  if (onPlanet()) { moonP.pos.copy(raceReturn.pos); moonP.vel.set(0, 0, 0); T().setFocus(moonP.pos); }
   player.enable();
   camera.up.set(0, 1, 0);
   if (!result) { ui.toast(r.screen ? 'partie abandonnée' : 'course abandonnée'); return; }
@@ -1435,6 +1488,9 @@ function quitRace(result, silent = false) {
   save();
 }
 for (const r of Object.values(RACES)) r.mod.onEnd = (res) => quitRace(res);
+// the sky of the world being looked at: a game's own (the kart from the moon is raced under the garden's sky)
+const viewNow = () => race?.view || gm?.prev?.view || here;
+function applyView() { const v = viewNow(); world.setSpace(onPlanet(v) ? v : false); }
 // the 2D games are played on a screen of the game room upstairs: the camera walks up to it,
 // and the game's canvas is laid exactly over the glass (away from home: the whole page)
 const _sv = { a: new THREE.Vector3(), b: new THREE.Vector3(), side: new THREE.Vector3(), c: new THREE.Vector3() };
@@ -1491,6 +1547,8 @@ function raceHud() {
 // list of the ready ones and they all start together, on the same seed.
 const SCREEN_GAMES = new Set(['nes', 'encre', 'worms']);   // played on a screen: from anywhere
 const CAVE_GAMES = new Set(['bomber', 'canards', 'empile', 'ballons', 'moto', 'bagarre', 'batballons']);   // dioramas in the secret cave
+// the races (their own scenery) can be joined from a planet too; the garden's games only from the garden
+const playableHere = (g) => here === 'home' || SCREEN_GAMES.has(g) || !!RACES[g]?.screen || (onPlanet() && !!RACES[g]);
 function launchGame(g, seed = Math.floor(Math.random() * 1e9), hostId = null, roster = null, opts = null) {
   const players = raceHumans(roster);
   if (RACES[g]) startRace(g, { seed, hostId: hostId ?? myId(), roster, opts });
@@ -1517,6 +1575,7 @@ function openLobby(g, opts) {
 const GAME_KEYS = {
   kart: [['z q s d', 'piloter'], ['shift', 'déraper · mini-turbo'], ['espace', 'objet'], ['r', 'revenir sur la piste']],
   rc: [['z q s d', 'piloter'], ['shift', 'frein à main'], ['espace', 'arme'], ['r', 'replacer la voiture']],
+  podrace: [['z', 'gaz'], ['q d', 'piloter'], ['s', 'freiner'], ['shift', 'boost · ça chauffe'], ['r', 'revenir sur la piste']],
   nes: [['← →', 'courir'], ['espace', 'sauter'], ['shift', 'sprinter'], ['r', 'dernier drapeau']],
   encre: [['q d', 'bouger'], ['espace', 'sauter'], ['clic', 'tirer'], ['shift', 'nager, grimper'], ['e', 'déluge'], ['r', 'retour à la base']],
   peinture: [['z q s d', 'marcher'], ['clic', 'tirer de la peinture']],
@@ -1582,7 +1641,7 @@ function renderGameMenu(fresh = false) {
   $g('gm-title').textContent = GAMES[g].name;
   document.querySelector('.gm-head').classList.toggle('long', GAMES[g].name.length > 14);
   $g('gm-kicker').textContent = multi ? (gm.host ? 'ta partie · en ligne' : `${net.peers.get(lobby.host)?.name ?? '?'} propose`)
-    : SCREEN_GAMES.has(g) ? 'sur un écran de la salle de jeux' : g === 'kart' ? 'autour du village' : g === 'jetski' ? 'dans la fontaine de la place' : CAVE_GAMES.has(g) ? 'dans la cave secrète' : RACES[g] ? 'dans les rues de la ville' : 'dans le jardin';
+    : spaceWorld(g) ? (spaceWorld(g) === 'moon' ? 'sur la lune' : 'sur mars') : SCREEN_GAMES.has(g) ? 'sur un écran de la salle de jeux' : g === 'kart' ? 'autour du village' : g === 'jetski' ? 'dans la fontaine de la place' : CAVE_GAMES.has(g) ? 'dans la cave secrète' : RACES[g] ? 'dans les rues de la ville' : 'dans le jardin';
   const box = $g('gm-modes');
   if (fresh) {
     box.innerHTML = mods.map((m, i) => `<button type="button" class="btn btn--menu m-opt in" style="--i:${i + 2};--tilt:${i % 2 ? .5 : -.5}deg" data-mode="${m.id}" data-desc="${escH(m.sub)}"${gm.host ? '' : ' disabled'}>` +
@@ -1626,17 +1685,19 @@ function stopPreview() {
   if (!pv) return;
   gm.prev = null;
   pv.mod?.stop();
+  applyView();
   document.body.classList.remove('on-screen');
   camera.up.set(0, 1, 0);
 }
 function startPreview() {
   stopPreview();
   const g = gm.g, r = RACES[g], me = myId();
-  if (!r) { const s = PREVIEW_SPOTS[g] || [orbitTarget.x, orbitTarget.z, 15, 8]; gm.prev = { x: s[0], z: s[1], y: 0, rad: s[2], h: s[3] }; return; }
+  if (!r) { const s = PREVIEW_SPOTS[g] || [orbitTarget.x, orbitTarget.z, 15, 8]; gm.prev = { x: s[0], z: s[1], y: 0, rad: s[2], h: s[3], view: 'home' }; applyView(); return; }
   r.mod.start({ seed: 7, opts: gm.opts, humans: [{ id: me, name: myName(), color: net?.color ?? 0xc8581a, me: true }], hostId: me, meId: me, send: () => {} });
-  const pv = gm.prev = { mod: r.mod, screen: r.screen };
+  const pv = gm.prev = { mod: r.mod, screen: r.screen, view: gameView(g) };
+  applyView();
   if (r.screen) {
-    pv.scr = here === 'home' && house.room?.screens?.[g];
+    pv.scr = screenOf(g);
     r.mod.setRect?.(null);
     if (pv.scr) document.body.classList.add('on-screen');
   } else {
@@ -1699,9 +1760,9 @@ function renderLobby() {
   $l('lobby-ready').querySelector('.btn__label').textContent = ready ? (host ? 'annuler' : 'plus prêt') : 'prêt !';
   // the host can start alone (or with whoever is ready) without waiting for a second player
   $l('lobby-alt').classList.toggle('hidden', !(host && lobby.count == null && n < 2));
-  const away = !SCREEN_GAMES.has(lobby.g) && here !== 'home';
+  const away = !playableHere(lobby.g);
   const w = $l('lobby-where');
-  w.textContent = away ? 'reviens au jardin (téléporteur)' : SCREEN_GAMES.has(lobby.g) ? 'se joue d\'où tu veux' : 'dans le jardin';
+  w.textContent = away ? 'reviens au jardin (téléporteur)' : SCREEN_GAMES.has(lobby.g) || RACES[lobby.g]?.screen ? 'se joue d\'où tu veux' : onPlanet() ? 'se joue d\'ici' : 'dans le jardin';
   w.classList.toggle('warn', away);
   const c = $l('lobby-count');
   c.classList.toggle('hidden', lobby.count == null);
@@ -1746,7 +1807,8 @@ function go(roster, hostId) {
   if (gm) { const was = gm.g; closeGameMenu(!!(l && was === l.g && roster.includes(myId()))); }
   if (!l || !roster.includes(myId())) return;
   if (state === 'gamemenu') { state = 'play'; player.enable(); }
-  if (!SCREEN_GAMES.has(l.g) && here !== 'home') { ui.toast('tu n\'étais pas dans le jardin · partie ratée', true, 3000); net?.sendFx({ k: 'lobby', t: 'out', seed: l.seed }); return; }
+  if (!playableHere(l.g)) { ui.toast('tu n\'étais pas dans le jardin · partie ratée', true, 3000); net?.sendFx({ k: 'lobby', t: 'out', seed: l.seed }); return; }
+  if (state === 'watch') stopWatch();
   if (['travel', 'launch', 'faint', 'win', 'attract'].includes(state)) { net?.sendFx({ k: 'lobby', t: 'out', seed: l.seed }); return; }
   if (state === 'paused') { ui.el.resume.classList.add('hidden'); state = pausedFrom; pausedFrom = 'play'; if (state === 'play') player.enable(); }
   if (state === 'panel' || state === 'read') closePanel();
@@ -1778,7 +1840,7 @@ function updateLobby(dt) {
 function readyFromCard() {
   if (!lobby) return;
   const on = !lobby.ready.has(myId());
-  const canHere = state === 'play' && (here === 'home' || SCREEN_GAMES.has(lobby.g));
+  const canHere = state === 'play' && playableHere(lobby.g);
   if (on && canHere && !gm) openGameMenu(lobby.g, { host: false });
   setReady(on);
 }
@@ -2070,6 +2132,7 @@ function interact(it) {
       else { audio.deny(); ui.toast('il manque des pièces', true); }
       return;
     case 'lander': openPanel('lander'); return;
+    case 'deck': startWatch(); return;
     case 'marsrocket':
       if (!eco.s.moon && !EXPLORE) { audio.deny(); ui.toast('il faut d\'abord être allé sur la lune', true); return; }
       launch('mars');
@@ -2812,6 +2875,7 @@ function loop(ts) {
     updateLaunch(dt);
     if (state === 'kart' && race) { race.mod.update(dt, down); raceHud(); if (race?.screen) screenView(dt); }
     if (state === 'gamemenu') updateGameMenu(dt);
+    if (state === 'watch') { orbit.cam(dt, camera); const el = document.getElementById('mg'); el.classList.remove('hidden'); const h = orbit.hud(); if (el._h !== h) { el.innerHTML = h; el._h = h; } }
     if (state === 'drive') {
       const input = {
         throttle: (down.has('KeyW') || down.has('ArrowUp') ? 1 : 0) - (down.has('KeyS') || down.has('ArrowDown') ? 1 : 0),
@@ -2836,7 +2900,7 @@ function loop(ts) {
       camera.position.x += (Math.random() - .5) * a; camera.position.y += (Math.random() - .5) * a;
     }
     const lamp = eco.cur('lamp');
-    const eyeY = onPlanet() ? Math.min(0, camera.position.distanceTo(PLANET[here]) - T().radius) : camera.position.y;
+    const eyeY = viewNow() !== here ? 0 : onPlanet() ? Math.min(0, camera.position.distanceTo(PLANET[here]) - T().radius) : camera.position.y;
     const crystal = eco.s.perks.crystal ? 1.5 : 1;
     world.setDepth(eyeY, lamp.range * crystal, lamp.power * (eco.s.perks.crystal ? 1.2 : 1));
     if (T().waterAt(camera.position.x, camera.position.y, camera.position.z)) {
@@ -2854,7 +2918,7 @@ function loop(ts) {
     if (playing && onPlanet()) {
       // air: refills by the lander (and on mars, the dome), runs out everywhere else
       const max = eco.cur('o2').o2;
-      const air = moonP.pos.distanceTo(LANDERS[here]) < 6 || (here === 'mars' && moonP.pos.distanceTo(DOME) < 6);
+      const air = moonP.pos.distanceTo(LANDERS[here]) < 6 || (here === 'mars' && moonP.pos.distanceTo(DOME) < 6) || space.breathable(here, moonP.pos);
       if (air) eco.s.oxygen = Math.min(max, eco.s.oxygen + 40 * dt);
       else if (!EXPLORE) eco.s.oxygen = Math.max(0, eco.s.oxygen - dt * (eco.s.perks.icepack ? .5 : 1));
       if (eco.s.oxygen / max < .25) hintOnce('o2' + here, here === 'mars' ? 'oxygène bas ! retourne au module ou au dôme' : 'oxygène bas ! retourne au module lunaire', 4000);
@@ -3008,7 +3072,8 @@ function loop(ts) {
   if (onPlanet()) { const f = eco.s.oxygen / eco.cur('o2').o2; document.getElementById('o2-fill').style.width = (f * 100) + '%'; document.getElementById('o2-row').classList.toggle('low', f < .25); }
   miniEl.classList.toggle('hidden', !showMini);
   if (state !== 'attract') maps.update(dt, showMini, bigMap);
-  T().setFocus(camera.position);
+  // (a planet's chunks are kept while the eye is off in a game far away)
+  if (!onPlanet() || camera.position.distanceTo(PLANET[here]) < T().radius + 60) T().setFocus(camera.position);
   // the world you're in is rebuilt first; the other plots a little in the background,
   // the planets only when you're there (they're big)
   // a few chunks a frame, never more than ~6 ms of it (empty ones cost nothing and don't count much)
@@ -3016,7 +3081,7 @@ function loop(ts) {
   for (const [k, tr] of Object.entries(terrains)) if (k !== here && !onPlanet(k) && tr.hasDirty()) tr.flush(1);
   terrains.home.tickLava(dt); terrains.china.tickLava(dt);
   // only the world you're in is drawn (its lights too)
-  const w = state === 'attract' ? 'home' : here;
+  const w = state === 'attract' ? 'home' : viewNow();
   const inChina = w === 'china', atHome = w === 'home', onMoon = w === 'moon';
   world.china.group.visible = inChina; terrains.china.group.visible = inChina; pads.china.group.visible = inChina;
   house.group.visible = atHome; terrains.home.group.visible = atHome; pads.home.group.visible = atHome;
@@ -3025,6 +3090,8 @@ function loop(ts) {
   animals.home.group.visible = atHome; animals.china.group.visible = inChina;
   terrains.moon.group.visible = onMoon; moonDecor.visible = onMoon;
   terrains.mars.group.visible = w === 'mars'; marsDecor.visible = w === 'mars';
+  space.show(w); orbit.show(w);
+  if (onPlanet()) { space.update(dt, here, t); orbit.update(dt, here); }
   // shadows: redrawn when the eye moves, or a few times a second for the sun and the critters
   shadowT += dt;
   if (shadowT > .25 || camera.position.distanceToSquared(shadowAt) > .04) { renderer.shadowMap.needsUpdate = true; shadowT = 0; shadowAt.copy(camera.position); }
@@ -3106,7 +3173,7 @@ if (params.has('go')) {
 window.__dig = {
   world, terrains, player, eco, ui, camera, renderer, scene, heart, shovel, delivery, elevator, moles, finds, bombs, plane, animals, hologram, moonP, rocket, gainPart, launch, get landerPos() { return landerPos; }, MOON, MARS, marsRocket, MARS_PAD,
   get net() { return net; },
-  mg, kart, startKart, quitKart, RACES, get race() { return race; }, startRace, quitRace, launchGame, offerGame, stepMenu: (dt) => updateGameMenu(dt), openGameMenu, gameMenuPlay, gameMenuBack, pickMode, get gm() { return gm; }, get lobby() { return lobby; }, setReady, stepLobby: (dt) => updateLobby(dt),
+  mg, kart, startKart, quitKart, RACES, space, orbit, startWatch, stopWatch, get race() { return race; }, startRace, quitRace, launchGame, offerGame, stepMenu: (dt) => updateGameMenu(dt), openGameMenu, gameMenuPlay, gameMenuBack, pickMode, get gm() { return gm; }, get lobby() { return lobby; }, setReady, stepLobby: (dt) => updateLobby(dt),
   steal, get alarm() { return alarm; }, stepAlarm: (dt) => updateAlarm(dt),
   stepLaunch(dt) { updateLaunch(dt); },
   get state() { return state; },
@@ -3116,6 +3183,6 @@ window.__dig = {
   skipSwoop() { swoop = 1; this.test = true; },
   start, toSurface, travel, win, save, useItem, applyUpgrades, openPanel, closePanel, enterVan, exitVan, useLift, explode,
   quest, takeKey, reveal, startReveal, cave, portals, shootPortal, trapGuide, launcher, bats, organ, portalCells, gameroom: house.room, updateAim, get pad() { return pad; }, get touch() { return touch; }, get down() { return down; }, screenView: (dt) => race?.screen && screenView(dt),
-  interact: (id) => interact(id === 'van' ? VAN : id === 'lift' ? LIFT : world.interactables.find(i => i.id === id)),
+  interact: (id) => interact(id === 'van' ? VAN : id === 'lift' ? LIFT : world.interactables.find(i => i.id === id) || (onPlanet() && findNear()?.id === id ? findNear() : null)),
   swing: doDig,
 };
