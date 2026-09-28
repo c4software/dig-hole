@@ -128,6 +128,13 @@ for (const t of Object.values(THEMES)) {
 }
 for (const [n, id] of [27, 28, 29].entries()) { ORE[id] = { id, name: 'boîte en fer', value: 0, letter: n + 2, color: 0x4fb3a9 }; COLOR[id] = 0x4fb3a9; }
 export const isOre = (m) => m >= 20 && m < 100;
+// a ground of one's own (the church's, say): its layers, ores and extra colours join the others
+export function addTheme(name, def, colors = {}) {
+  THEMES[name] = def;
+  for (const l of def.layers) COLOR[l.id] = l.color;
+  for (const o of def.ores) { ORE[o.id] = o; COLOR[o.id] = o.color; }
+  Object.assign(COLOR, colors);
+}
 export const isLiquid = (m) => m === WATER || m === LAVA;
 // the lawn on top of the plots follows the seasons
 export function setGrassColors(home, china) { COLOR[GRASS] = home; COLOR[CGRASS] = china; }
@@ -305,6 +312,8 @@ export function createTerrain(scene, { theme = 'home', seed = 1337, ox = 0, oy =
         if (dx * dx + dy * dy + dz * dz < 7.5 * 7.5) vox[idx(i, j, k)] = AIR;
       }
     }
+    // a theme may shape its ground further (rooms, walls, what's hidden in them)
+    if (T.post) T.post({ vox, hardOf, idx, NX, NY, NZ, rnd });
     if (!T.chamber) return;
     // the chamber at 97 m, something waits in it
     const cx = NX / 2, cz = NZ / 2, cy = CHAMBER_J;

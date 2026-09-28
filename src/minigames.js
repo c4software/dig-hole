@@ -40,6 +40,8 @@ export const GAMES = {
   shooter: { name: 'comète furieuse',    sub: 'shoot\'em up spatial : niveaux, boss, capsules d\'armes, combos · à plusieurs', unit: 'score' },
   peinture: { name: 'peinture',           sub: '90 secondes pour couvrir le trou de ta couleur, contre les drones-peintres · clic pour tirer', unit: 'pct' },
   laser:   { name: 'laser game',         sub: '2 minutes de laser dans le jardin · touché = retour à la maison', unit: 'frags' },
+  // under the church, not at the arcade
+  worms3d: { name: 'lombrics 3D',        sub: 'artillerie en 3D au tour par tour : une île destructible, des lombrics, le vent, la sainte grenade…', unit: 'pv', secret: true },
 };
 const ARENA = new Set(['peinture', 'laser']);
 // played together: the first to finish wins (race), or everyone stops at once and the best wins (score)
@@ -56,6 +58,7 @@ export function fmtRecord(unit, v) {
   if (unit === 'pct') return `${v.toFixed(1)} % du trou`;
   if (unit === 'kcal') return `${Math.round(v).toLocaleString('fr-FR')} kcal`;
   if (unit === 'frags') return `${v} touche${v > 1 ? 's' : ''}`;
+  if (unit === 'pv') return `${v} pv`;
   return `${v}`;
 }
 const MOUNDS = Array.from({ length: 9 }, (_, n) => new THREE.Vector3(-14.5 + (n % 3) * 1.8, 0, -1.8 + Math.floor(n / 3) * 1.8));
