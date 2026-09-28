@@ -119,8 +119,10 @@ export const ITEMS = {
   // made from what the moon gives, never sold
   grav: { name: 'gélule anti-gravité', price: 0, max: 6, sub: '20 secondes de gravité lunaire, sur terre', moon: true },
   met:  { name: 'météore de poche',    price: 0, max: 4, sub: 'un cratère énorme, et les minerais avec', moon: true },
+  // from the reliquary under the church, never sold (holy.js)
+  holy: { name: 'holy bomba',          price: 0, max: 1, sub: 'compter jusqu\'à trois, pas cinq', secret: true },
 };
-export const SLOTS = ['dyn', 'sup', 'fus', 'med', 'cell', 'ladder', 'grav', 'met'];
+export const SLOTS = ['dyn', 'sup', 'fus', 'med', 'cell', 'ladder', 'grav', 'met', 'holy'];
 
 const valueOf = (id) => (ORE[id] || FIND[id] || ANIMAL[id] || { value: 0 }).value;
 const nameOf = (id) => (ORE[id] || FIND[id] || ANIMAL[id] || { name: '?' }).name;

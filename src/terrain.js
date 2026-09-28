@@ -1097,7 +1097,7 @@ export function createTerrain(scene, { theme = 'home', seed = 1337, ox = 0, oy =
       }
       generate(); active.clear(); rebuildAll();
     },
-    markAll, ensure,
+    markAll, ensure, get seed() { return seed; },
     waterAt: (x, y, z) => { const [i, j, k] = cellOf(x, y, z); return isWater(i, j, k); },
     // centre of the chamber at the bottom, in world units
     center: new THREE.Vector3(ox, oy, oz), radius: T.radius || 0, sphere: !!T.sphere,
