@@ -1,6 +1,6 @@
 // looks.js, you as others see you: your outfit (bought in the clothes shops, changed in the
 // wardrobe at home), your emotes (hold g: a wheel), your empty hands (h, or the last tool:
-// left click raises them, right click lowers them). Your own body is drawn when the camera
+// hold the left / right button: that hand goes up, let go: it comes down). Your own body is drawn when the camera
 // steps back (an emote, a fitting) and in the wardrobe's mirror; the others get it by the net.
 import * as THREE from 'three';
 import { createRig, EMOTES, EMOTE_ORDER, EYE } from './rig.js';
@@ -11,7 +11,7 @@ import { toolMat } from './tool.js';
 const SLOT_NAME = Object.fromEntries(SLOTS.map(s => [s.id, s.name]));
 const WHERE = { japon: 'au japon', europe: 'sur la place du village', lune: 'sur la lune', mars: 'sur mars' };
 const WTABS = [...SLOTS.map(s => ({ id: s.id, name: s.name })), { id: 'moi', name: 'moi', sub: 'peau, coiffure' }, { id: 'couleurs', name: 'couleurs', sub: 'cheveux, t-shirt' }];
-const HANDS_TOAST = 'mains vides · clic gauche : lever les mains · clic droit : les baisser · h : reprendre l\'outil';
+const HANDS_TOAST = 'mains vides · maintiens clic gauche : main gauche en l\'air · clic droit : main droite · relâche : elle redescend · h : reprendre l\'outil';
 
 // game: { scene, camera, eco, ui, audio, player, moonP, house, world, T, getNet, getState, getPanel, getHere, onPlanet, openPanel, renderPanel, save, armed, digging }
 export function createLooks(game) {
@@ -55,7 +55,9 @@ export function createLooks(game) {
   }
   // where the right hand is at each level (camera space); the left one mirrors it
   const POSES = [[.3, -.36, -.48, -.35, 0, .3], [.2, -.2, -.52, .1, 0, .12], [.28, .17, -.58, .05, 0, -.12]];
-  let level = 0, lv = 0;
+  // each hand on its own: 0 down, 1 forward, 2 up in the air; a held button raises it, letting go lowers it
+  const hand = { L: 0, R: 0 }, held = { L: false, R: false };
+  const RAISE = 1.4, LOWER = 1.1;   // levels per second
 
   // ---- the outfit ----
   function apply() {
@@ -78,7 +80,7 @@ export function createLooks(game) {
   const handsOut = () => eco.s.tool === 'hands';
   function toggleHands() {
     if (handsOut()) { eco.s.tool = lastTool; ui.toast('outil repris'); }
-    else { lastTool = eco.s.tool; eco.s.tool = 'hands'; level = 0; ui.toast(HANDS_TOAST, false, 3200); }
+    else { lastTool = eco.s.tool; eco.s.tool = 'hands'; hand.L = hand.R = 0; held.L = held.R = false; ui.toast(HANDS_TOAST, false, 3200); }
     audio.tick();
   }
 
@@ -250,13 +252,13 @@ export function createLooks(game) {
     for (const s of SPOTS) if (s.w === w && s.pos.distanceTo(pos) < s.reach) return { id: 'boutique', shop: s.shop, pos: s.pos };
     return null;
   }
-  // a click, empty-handed: up with the left, down with the right
-  function mouse(button) {
+  // empty-handed: the left button holds up the left hand, the right button the right one
+  function mouse(button, down = true) {
+    const k = button === 0 ? 'L' : button === 2 ? 'R' : null;
+    if (!k) return false;
+    if (!down) { held[k] = false; return handsOut(); }
     if (!handsOut() || game.getState() !== 'play' || game.armed()) return false;
-    if (button === 0) level = Math.min(2, level + 1);
-    else if (button === 2) level = Math.max(0, level - 1);
-    else return false;
-    audio.tick();
+    held[k] = true;
     return true;
   }
 
@@ -309,8 +311,9 @@ export function createLooks(game) {
     if (planet && me.emote) me.stop();
     // the hands: level, and what the others see
     const out = handsOut();
-    net?.setHands(out ? level : -1, eco.s.tool);
-    lv += (level - lv) * Math.min(1, dt * 12);
+    for (const k of ['L', 'R']) hand[k] = held[k] && out ? Math.min(2, hand[k] + RAISE * dt) : Math.max(0, hand[k] - LOWER * dt);
+    const q = (v) => Math.round(v * 10) / 10;
+    net?.setHands(out ? [q(hand.L), q(hand.R)] : -1, eco.s.tool);
     const panel = game.getPanel();
     const mode = !planet && state === 'panel' && (panel === 'wardrobe' || panel === 'boutique') ? panel : !planet && state === 'play' && me.emote ? 'emote' : null;
     blend = mode ? Math.min(1, blend + dt / .45) : Math.max(0, blend - dt / .35);
@@ -326,13 +329,13 @@ export function createLooks(game) {
       r.root.position.copy(player.pos);
       r.root.rotation.y = player.yaw + Math.PI + spin;
       r.st.speed = Math.hypot(player.vel.x, player.vel.z); r.st.ground = player.onGround; r.st.vy = player.vel.y;
-      r.st.hands = out ? level : -1; r.st.dig = !out && game.digging();
+      r.st.hands = out ? [hand.L, hand.R] : -1; r.st.dig = !out && game.digging();
       r.hold(kind === 'drill' && eco.s.lv.drill ? 'drill' : kind === 'portal' || kind === 'disc' ? 'gun' : kind ? 'shovel' : null);
       if (r === meMirror && me.emote && meMirror.emote !== me.emote) meMirror.play(me.emote);
       if (r === meMirror && !me.emote && meMirror.emote) meMirror.stop();
       r.update(dt);
     }
-    if (planet && moonP.rig) { moonP.rig.st.hands = out ? level : -1; moonP.setTool?.(out ? 'hands' : eco.s.tool === 'drill' && eco.s.lv.drill ? 'drill' : 'shovel'); }
+    if (planet && moonP.rig) { moonP.rig.st.hands = out ? [hand.L, hand.R] : -1; moonP.setTool?.(out ? 'hands' : eco.s.tool === 'drill' && eco.s.lv.drill ? 'drill' : 'shovel'); }
     if (blend > 0 && !planet) {
       fpP.copy(camera.position); fpQ.copy(camera.quaternion);
       stepBack(dt, mode || 'emote');
@@ -344,11 +347,13 @@ export function createLooks(game) {
     // the hands in front of the eye
     handsRoot.visible = out && state === 'play' && !planet && blend < .05 && !game.armed();
     if (handsRoot.visible) {
-      const a = Math.floor(Math.min(1.999, lv)), f = lv - a, P = POSES[a], Q = POSES[a + 1];
       const bob = Math.sin(t * 1.6) * .008 + (Math.hypot(player.vel.x, player.vel.z) > .5 ? Math.abs(Math.sin(t * 7)) * .018 : 0);
       hands.forEach((h, i) => {
+        // hands[0] is on the right of the screen, hands[1] on the left
+        const lv = i ? hand.L : hand.R;
+        const a = Math.floor(Math.min(1.999, lv)), f = lv - a, P = POSES[a], Q = POSES[a + 1];
         const s = i ? -1 : 1, v = (k) => P[k] + (Q[k] - P[k]) * f;
-        h.position.set(v(0) * s, v(1) + bob + (level === 2 ? Math.sin(t * 5 + i) * .01 : 0), v(2));
+        h.position.set(v(0) * s, v(1) + bob + (lv > 1.9 ? Math.sin(t * 5 + i) * .01 : 0), v(2));
         h.rotation.set(v(3), v(4) * s, v(5) * s);
       });
     }
@@ -363,7 +368,8 @@ export function createLooks(game) {
   return {
     me, update, render, click, interact, prompt, nearSpace, mouse, play, toggleHands, equip,
     get handsOut() { return handsOut(); },
-    get level() { return level; }, set level(v) { level = Math.max(0, Math.min(2, v | 0)); },
+    get level() { return Math.max(hand.L, hand.R); }, set level(v) { hand.L = hand.R = Math.max(0, Math.min(2, +v || 0)); },
+    get hands() { return { ...hand }; },
     get fit() { return fit; },
     get wheelOpen() { return !!open; },
     openWheel, closeWheel,
