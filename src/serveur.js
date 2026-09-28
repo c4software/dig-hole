@@ -51,7 +51,7 @@ function nodeConsole() {
     const backend = {
       node: true, remote: true, snap: () => client.snap,
       set: call('set'), reset: call('reset'), kick: call('kick'), raid: call('raid'), resetMap: call('resetMap'),
-      give: call('give'), say: call('say'), delNote: call('delNote'), act: call('act'), refinds: call('refinds'),
+      give: call('give'), say: call('say'), delNote: call('delNote'), act: call('act'), refinds: call('refinds'), superReset: call('superReset'),
       exportWorld: async () => { const w = await client.call('worldData'); download(`a-hole-${w.room}.json`, w); },
       importWorld: async () => { throw new Error('pas d\'import sur le serveur'); },
     };

@@ -103,6 +103,7 @@ export function createHostPanel({ backend, page = false, detachUrl = null, paren
           <button class="ghost" data-a="raid">lancer un raid</button>
           <button class="danger" data-a="resetmap">nouvelle carte</button>
           <button class="ghost" data-a="refinds" title="les trouvailles déjà déterrées retournent sous terre, pour tout le monde">remettre les trésors</button>
+          <button class="ghost" data-a="superreset" title="tous les mondes (jardin, japon, lune, mars) sont détruits puis refaits, pour tout le monde, après 15 s ; l'argent et le matériel restent">super reset</button>
           <button class="ghost" data-a="export">exporter le monde</button>
           <button class="ghost" data-a="import">importer…</button>
           <input type="file" id="hp-file" accept=".json,application/json" hidden>
@@ -278,6 +279,7 @@ export function createHostPanel({ backend, page = false, detachUrl = null, paren
         if (w === 'money' && !Number.isFinite(v)) return err('combien ?');
         await backend.act(giftTo, w, v); const t = b.textContent; b.textContent = 'fait !'; setTimeout(() => { b.textContent = t; }, 1400);
       }
+      else if (a === 'superreset') { if (confirm2('superreset', b, 'vraiment ? tous les mondes détruits')) { const ok = await backend.superReset(); b.textContent = ok === false ? 'déjà en cours' : 'compte à rebours lancé'; setTimeout(() => { b.textContent = 'super reset'; }, 4000); } }
       else if (a === 'refinds') { if (confirm2('refinds', b, 'sûr ? tous les trésors reviennent')) { await backend.refinds(); b.textContent = 'trésors revenus'; setTimeout(() => { b.textContent = 'remettre les trésors'; }, 2000); } }
       else if (a === 'say') { const t = $('hp-say').value.trim(); if (!t) return; await backend.say(t); $('hp-say').value = ''; b.textContent = 'annoncé !'; setTimeout(() => { b.textContent = 'annoncer'; }, 1500); }
       else if (a === 'delnote') { if (confirm2('note' + b.dataset.at, b, 'sûr ?')) await backend.delNote(+b.dataset.at); }
@@ -310,7 +312,7 @@ export function localBackend(host) {
   return {
     snap: () => host.snap(),
     set: (k, v) => tun.set(k, v), reset: (k) => tun.reset(k),
-    kick: (id) => host.kick(id), raid: () => host.raid(), resetMap: () => host.resetMap(), give: (id, g) => host.give(id, g), say: (t) => host.say(t), delNote: (at) => host.delNote(at), act: (id, w, v) => host.act(id, w, v), refinds: () => host.refinds(),
+    kick: (id) => host.kick(id), raid: () => host.raid(), resetMap: () => host.resetMap(), give: (id, g) => host.give(id, g), say: (t) => host.say(t), delNote: (at) => host.delNote(at), act: (id, w, v) => host.act(id, w, v), refinds: () => host.refinds(), superReset: () => host.superReset(),
     invite: () => host.invite(), accept: (c) => host.accept(c), cancel: (k) => host.cancel(k),
     exportWorld: () => host.exportWorld(), importWorld: (o) => host.importWorld(o),
   };

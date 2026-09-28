@@ -338,22 +338,7 @@ export function createHouse({ scene, colliders, interactables, label }) {
   g.add(btn);
   interactables.push({ id: 'reset', pos: new THREE.Vector3(-1.9, 1.3, zf - T - .1), reach: 2.2 });
 
-  // ---------- the super reset: a bigger button under a glass flap, on hazard stripes ----------
-  const sb = new THREE.Group();
-  const hazard = (() => { const c = document.createElement('canvas'); c.width = c.height = 128; const x = c.getContext('2d'); x.fillStyle = '#f2c230'; x.fillRect(0, 0, 128, 128); x.fillStyle = '#1a1a1a'; for (let k = -128; k < 256; k += 32) { x.beginPath(); x.moveTo(k, 0); x.lineTo(k + 16, 0); x.lineTo(k + 144, 128); x.lineTo(k + 128, 128); x.fill(); } const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t; })();
-  box(.7, .85, .05, new THREE.MeshLambertMaterial({ map: hazard }), 0, 0, 0, sb);
-  box(.5, .6, .04, std(0x1a130c), 0, -.04, .03, sb);
-  const scap = new THREE.Mesh(new THREE.CylinderGeometry(.16, .18, .1, 24), new THREE.MeshStandardMaterial({ color: 0xff2a1a, emissive: 0x8a0a04, emissiveIntensity: .8, roughness: .3 }));
-  scap.rotation.x = Math.PI / 2; scap.position.set(0, -.08, .1);
-  const flap = new THREE.Mesh(new THREE.BoxGeometry(.46, .46, .02), new THREE.MeshStandardMaterial({ color: 0xd8ecf4, transparent: true, opacity: .3, roughness: .05 }));
-  flap.position.set(0, .16, .2); flap.rotation.x = -1.1;
-  const sLabel = new THREE.Mesh(new THREE.PlaneGeometry(.56, .12), new THREE.MeshBasicMaterial({ map: label('SUPER RESET', { w: 512, h: 100, size: 64, italic: false, color: '#ff5a3a', bg: '#1a130c' }) }));
-  sLabel.position.set(0, .31, .06);
-  sb.add(scap, flap, sLabel);
-  sb.position.set(-3.4, 1.45, zf - T - .04);
-  sb.rotation.y = Math.PI;
-  g.add(sb);
-  interactables.push({ id: 'superreset', pos: new THREE.Vector3(-3.4, 1.35, zf - T - .1), reach: 2.2 });
+  // (the super reset lives in the admin console now, not on the wall)
 
   // a plant and a picture, for company
   const pot = new THREE.Mesh(new THREE.CylinderGeometry(.18, .14, .35, 10), std(0xa4452c));
@@ -388,7 +373,7 @@ export function createHouse({ scene, colliders, interactables, label }) {
     showTrophy(key) { if (trophies[key]) trophies[key].visible = true; },
     // lit windows at night, seen from the garden
     pressReset() { cap.position.z = .05; setTimeout(() => { cap.position.z = .08; }, 250); },
-    pressSuper() { scap.position.z = .06; setTimeout(() => { scap.position.z = .1; }, 300); },
+    pressSuper() {},
     setNight(n) { winMat.emissive.copy(winDay).lerp(winNight, n); winMat.opacity = .55 + n * .35; room.setNight(n); },
     setCharge(f) { cells.forEach((c, n) => c.material.color.setHex(f > n / 6 + .01 ? 0xffd75e : 0x3a3020)); },
     update(dt) {

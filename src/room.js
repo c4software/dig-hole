@@ -90,13 +90,7 @@ export function createRoom({
     } else if (m.t === 'superreset') {
       const ok = superPw != null ? String(m.pw || '').trim().toLowerCase() === superPw : !!c.link.owner;
       if (!ok) { to(c, { t: 'superreset-denied' }); return; }
-      if (superAt && now() < superAt) return;        // already counting down
-      const seed = Math.floor(Math.random() * 1e9);
-      superAt = now() + superMs;
-      all({ t: 'superreset', in: superMs, seed, by: me.name });
-      // when it goes off, the room's history is gone: late comers start from the new seed too
-      later(() => { ops.length = 0; ops.push({ k: 'reset', seed, all: true }); drops.clear(); dirty = true; superAt = 0; }, superMs);
-      log(`super reset by ${me.name}`);
+      superReset(me.name);
     } else if (m.t === 'fx' && m.fx && typeof m.fx === 'object') {
       // a laser shot, a paint blob: passed on, never kept
       others(c, { t: 'fx', id: me.id, fx: m.fx });
@@ -116,7 +110,20 @@ export function createRoom({
     others(c, { t: 'leave', id: c.me.id });
   }
 
+  // every world remade for everyone after a countdown (a player with the word, or the owner / admin)
+  function superReset(by) {
+    if (superAt && now() < superAt) return false;        // already counting down
+    const seed = Math.floor(Math.random() * 1e9);
+    superAt = now() + superMs;
+    all({ t: 'superreset', in: superMs, seed, by });
+    // when it goes off, the room's history is gone: late comers start from the new seed too
+    later(() => { ops.length = 0; ops.push({ k: 'reset', seed, all: true }); drops.clear(); dirty = true; superAt = 0; }, superMs);
+    log(`super reset by ${by}`);
+    return true;
+  }
+
   return {
+    superReset,
     name, clients, join, message, leave,
     get ops() { return ops; },
     get dirty() { return dirty; }, set dirty(v) { dirty = v; },

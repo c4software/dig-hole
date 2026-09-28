@@ -21,6 +21,7 @@ export function roomAdmin(room, { tun, saveTun = () => {}, notes = null, saveNot
     kick: (id) => room.kick(+id, 'renvoyé par le serveur'),
     act: (id, what, v) => room.act(id == null ? null : +id, what, v, by),
     refinds() { room.op({ k: 'refinds' }); return true; },
+    superReset() { return room.superReset(by); },
     raid() { room.broadcast({ t: 'admin', a: 'raid' }); return true; },
     resetMap() { room.op({ k: 'reset', seed: Math.floor(Math.random() * 1e9) }); return true; },
     say(text) {

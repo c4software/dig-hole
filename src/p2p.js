@@ -266,6 +266,7 @@ export async function startHost({ name, nick = 'hôte', hooks = {}, useSig = tru
     give(id, gift) { return room.give(id, gift, nick); },
     act(id, what, v) { return room.act(id, what, v, nick); },
     refinds() { room.op({ k: 'refinds' }); return true; },
+    superReset() { return room.superReset('l\'hôte'); },
     say(text) { text = String(text || '').replace(/\s+/g, ' ').trim().slice(0, 200); if (text) room.broadcast({ t: 'admin', a: 'say', text, by: nick }); return !!text; },
     delNote(at) { const i = room.notes.findIndex(n => n.at === +at); if (i < 0) return false; room.notes.splice(i, 1); room.dirty = true; changed(); return true; },
     resetMap() { if (hooks.resetMap) hooks.resetMap(); else room.op({ k: 'reset', seed: Math.floor(Math.random() * 1e9) }); },
@@ -300,7 +301,7 @@ function adminBridge(host) {
   host.on(() => { if (!pend) pend = setTimeout(() => { pend = 0; push(); }, 60); });
   setInterval(push, 2000);
   const calls = {
-    set: (k, v) => tun.set(k, v), reset: (k) => tun.reset(k), kick: (id) => host.kick(id), raid: () => host.raid(), resetMap: () => host.resetMap(), give: (id, g) => host.give(id, g), say: (t) => host.say(t), delNote: (at) => host.delNote(at), act: (id, w, v) => host.act(id, w, v), refinds: () => host.refinds(),
+    set: (k, v) => tun.set(k, v), reset: (k) => tun.reset(k), kick: (id) => host.kick(id), raid: () => host.raid(), resetMap: () => host.resetMap(), give: (id, g) => host.give(id, g), say: (t) => host.say(t), delNote: (at) => host.delNote(at), act: (id, w, v) => host.act(id, w, v), refinds: () => host.refinds(), superReset: () => host.superReset(),
     invite: () => host.invite(), accept: (code) => host.accept(code).then(() => true), cancel: (key) => host.cancel(key),
     worldData: () => host.worldData(), importWorld: (obj) => host.importWorld(obj),
   };
@@ -330,7 +331,7 @@ export function remoteHost(onSnap) {
     remote: true,
     get last() { return last; },
     ping: () => bc.postMessage({ t: 'ping' }),
-    set: (k, v) => call('set', k, v), reset: (k) => call('reset', k), kick: (id) => call('kick', id), raid: () => call('raid'), resetMap: () => call('resetMap'), give: (id, g) => call('give', id, g), say: (t) => call('say', t), delNote: (at) => call('delNote', at), act: (id, w, v) => call('act', id, w, v), refinds: () => call('refinds'),
+    set: (k, v) => call('set', k, v), reset: (k) => call('reset', k), kick: (id) => call('kick', id), raid: () => call('raid'), resetMap: () => call('resetMap'), give: (id, g) => call('give', id, g), say: (t) => call('say', t), delNote: (at) => call('delNote', at), act: (id, w, v) => call('act', id, w, v), refinds: () => call('refinds'), superReset: () => call('superReset'),
     invite: () => call('invite'), accept: (code) => call('accept', code), cancel: (key) => call('cancel', key),
     exportWorld: async () => { const w = await call('worldData'); download(`a-hole-${w.room}.json`, w); },
     importWorld: (obj) => call('importWorld', obj),

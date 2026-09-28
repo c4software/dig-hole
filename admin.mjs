@@ -63,10 +63,11 @@ const HELP = `commandes :
   refinds                        les trésors déterrés retournent sous terre
   raid                           un bombardier pour tout le jardin (dans 12 s)
   newmap                         une nouvelle carte (le trou est rebouché)
+  superreset                     tous les mondes détruits puis refaits, pour tout le monde (15 s)
   say <texte>                    un mot à l'écran de tout le monde
   notes                          le livre d'or ; delnote <n> efface le n-ième
   help · quit`;
-const CMDS = ['players', 'get', 'set', 'reset', 'give', 'kick', 'heal', 'money', 'tp', 'parcel', 'refinds', 'raid', 'newmap', 'say', 'notes', 'delnote', 'help', 'quit'];
+const CMDS = ['players', 'get', 'set', 'reset', 'give', 'kick', 'heal', 'money', 'tp', 'parcel', 'refinds', 'raid', 'newmap', 'superreset', 'say', 'notes', 'delnote', 'help', 'quit'];
 const KEYS = DEFS.filter(d => !d.hidden).map(d => d.k);
 
 async function run(a, line) {
@@ -140,6 +141,7 @@ async function run(a, line) {
   }
   if (c === 'refinds' || c === 'tresors') { await a.call('refinds'); return out('tous les trésors sont de retour sous terre'); }
   if (c === 'raid') { await a.call('raid'); return out('un bombardier arrive (alerte, puis 12 s)'); }
+  if (c === 'superreset') { const ok = await a.call('superReset'); return out(ok === false ? 'un super reset est déjà en cours' : 'super reset lancé : tous les mondes refaits dans 15 s'); }
   if (c === 'newmap') { await a.call('resetMap'); return out('nouvelle carte : le trou est rebouché pour tout le monde'); }
   if (c === 'say') { const t = rest.join(' '); if (!t) throw new Error('say <texte>'); await a.call('say', t); return out('annoncé'); }
   if (c === 'notes') { const ns = await a.call('notes'); ns.forEach((x, i) => out(`  ${String(i + 1).padStart(3)}  ${x.name} · ${x.text}`)); return out(ns.length ? '' : 'pas de mot'); }

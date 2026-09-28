@@ -2389,7 +2389,6 @@ function interact(it) {
       resetArmed = false;
       resetMap(Math.floor(Math.random() * 1e9), true);
       return;
-    case 'superreset': house.pressSuper(); audio.tick(); openSuperPw(); return;
     case 'letters': openReader(eco.s.letters[eco.s.letters.length - 1]); return;
     case 'van': enterVan(); return;
     case 'arcade': openPanel('arcade'); return;
