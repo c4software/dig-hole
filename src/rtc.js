@@ -46,6 +46,33 @@ function gathered(pc, ms = 4000) {
   });
 }
 
+// candidates found after the code was made (a slow stun answer) go through whatever side
+// channel there is (the node server's /sig, or the BroadcastChannel in the same browser)
+function trickle(pc) {
+  let coded = false, remote = false;
+  const seen = [], subs = [], queue = [];
+  pc.addEventListener('icecandidate', (e) => {
+    if (!e.candidate || !coded) return;
+    const c = e.candidate.toJSON ? e.candidate.toJSON() : e.candidate;
+    seen.push(c);
+    for (const f of subs) f(c);
+  });
+  const add = (c) => { try { pc.addIceCandidate(c)?.catch?.(() => {}); } catch {} };
+  return {
+    coded() { coded = true; },
+    remoteSet() { remote = true; for (const c of queue.splice(0)) add(c); },
+    on(f) { subs.push(f); for (const c of seen) f(c); },
+    add(c) { if (!c || typeof c !== 'object') return; if (remote) add(c); else queue.push(c); },
+  };
+}
+// what kinds of candidates an sdp carries: { host, srflx, relay } (a hint when it doesn't connect)
+export function candTypes(sdp) {
+  const n = { host: 0, srflx: 0, relay: 0, prflx: 0 };
+  for (const m of String(sdp || '').matchAll(/a=candidate:.* typ (\w+)/g)) n[m[1]] = (n[m[1]] || 0) + 1;
+  return n;
+}
+export const candText = (n) => `local ${n.host} · stun ${n.srflx} · turn ${n.relay}`;
+
 // ---------- the channel pair, as one pipe: chunks, back-pressure, stale positions dropped ----------
 const PART = 15000, HIGH = 1 << 20;
 export function createPipe({ rel, fast = null, isFast = () => false }) {
@@ -111,17 +138,23 @@ export async function createOffer(meta = {}) {
   const pc = new RTCPeerConnection({ iceServers: iceServers() });
   const rel = pc.createDataChannel('rel', { ordered: true });
   const fast = pc.createDataChannel('fast', { ordered: false, maxRetransmits: 0 });
+  const ice = trickle(pc);
   await pc.setLocalDescription(await pc.createOffer());
   await gathered(pc);
   const i = Math.random().toString(36).slice(2, 10);
-  const code = await encode({ k: 'o', i, s: slim(pc.localDescription.sdp), ...meta });
+  const sdp = pc.localDescription.sdp;
+  ice.coded();
+  const code = await encode({ k: 'o', i, s: slim(sdp), ...meta });
   return {
-    pc, rel, fast, id: i, code, pipe: createPipe({ rel, fast, isFast: isState }),
+    pc, rel, fast, id: i, code, ice, pipe: createPipe({ rel, fast, isFast: isState }),
+    cands: candTypes(pc.localDescription.sdp), remoteCands: null,
     async accept(answer) {
       const a = typeof answer === 'string' ? await decode(answer) : answer;
       if (a.k !== 'a') throw new Error('pas une réponse');
       if (a.i && a.i !== i) throw new Error('réponse pour une autre invitation');
       await pc.setRemoteDescription({ type: 'answer', sdp: a.s });
+      this.remoteCands = candTypes(a.s);
+      ice.remoteSet();
     },
   };
 }
@@ -135,12 +168,16 @@ export async function answerOffer(offer, meta = {}) {
   const ready = new Promise((res) => {
     pc.ondatachannel = (e) => { chans[e.channel.label] = e.channel; if (chans.rel && chans.fast) res(); };
   });
+  const ice = trickle(pc);
   await pc.setRemoteDescription({ type: 'offer', sdp: o.s });
+  ice.remoteSet();
   await pc.setLocalDescription(await pc.createAnswer());
   await gathered(pc);
-  const code = await encode({ k: 'a', i: o.i, s: slim(pc.localDescription.sdp), ...meta });
+  const sdp = pc.localDescription.sdp;
+  ice.coded();
+  const code = await encode({ k: 'a', i: o.i, s: slim(sdp), ...meta });
   return {
-    pc, offer: o, code,
+    pc, offer: o, code, ice, cands: candTypes(pc.localDescription.sdp), remoteCands: candTypes(o.s),
     // the pipe, once the host has taken the answer and both channels came up
     pipe: ready.then(() => createPipe({ rel: chans.rel, fast: chans.fast, isFast: isState })),
   };

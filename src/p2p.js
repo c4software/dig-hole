@@ -4,7 +4,7 @@
 // The host's world is kept in its IndexedDB, per room name, and goes back up on the next host.
 import { createRoom } from './room.js';
 import { tun } from './tunables.js';
-import { createOffer, answerOffer, pipeSocket, watchIce, decode } from './rtc.js';
+import { createOffer, answerOffer, pipeSocket, watchIce, decode, candText } from './rtc.js';
 import { roomKey } from './signal.js';
 
 export const P2P_BC = 'a-hole-p2p';       // same browser: a guest tab hands its answer to the host tab
@@ -111,7 +111,7 @@ export async function startHost({ name, nick = 'hôte', hooks = {}, useSig = tru
       room.message(c, m);
       if (!had && c.me) { g.id = c.me.id; g.name = c.me.name; changed(); }
     };
-    pipe.onclose = () => { room.leave(c); if (g.state !== 'kicked') g.state = 'gone'; changed(); setTimeout(() => { guests.delete(g.key); changed(); }, 8000); };
+    pipe.onclose = () => { room.leave(c); if (g.state !== 'kicked' && g.state !== 'failed') g.state = 'gone'; changed(); setTimeout(() => { guests.delete(g.key); changed(); }, 8000); };
   }
   function newGuest(via) {
     const g = { key: ++gKey, via, state: 'invite', id: null, name: null, at: Date.now() };
@@ -122,9 +122,16 @@ export async function startHost({ name, nick = 'hôte', hooks = {}, useSig = tru
     const o = await createOffer({ r: name, n: nick });
     g.pc = o.pc; g.offer = o; g.id8 = o.id;
     attach(g, o.pipe);
+    g.ice = candText(o.cands);
     watchIce(o.pc, (st) => {
-      if (st === 'connecting' || st === 'checking') { if (g.state === 'invite' || g.state === 'answered') { g.state = 'connecting'; changed(); } }
-      else if (st === 'failed') { g.state = 'failed'; changed(); }
+      if (st === 'connecting' || st === 'checking') {
+        if (g.state === 'invite' || g.state === 'answered') {
+          g.state = 'connecting'; changed();
+          // still not through after a while: it won't be
+          clearTimeout(g.slow);
+          g.slow = setTimeout(() => { if (g.state === 'connecting') { g.state = 'failed'; try { g.pc.close(); } catch {} changed(); } }, 40000);
+        }
+      } else if (st === 'failed') { g.state = 'failed'; changed(); }
     });
     return o;
   }
@@ -146,6 +153,7 @@ export async function startHost({ name, nick = 'hôte', hooks = {}, useSig = tru
     if (g.state !== 'invite') return g;
     await g.offer.accept(a);
     g.state = 'answered'; g.name = a.n || g.name;
+    if (g.offer.remoteCands) g.ice += ' ⇄ ' + candText(g.offer.remoteCands);
     changed();
     return g;
   }
@@ -153,7 +161,13 @@ export async function startHost({ name, nick = 'hôte', hooks = {}, useSig = tru
   let bc = null;
   try {
     bc = new BroadcastChannel(P2P_BC);
-    bc.onmessage = (e) => { const m = e.data; if (m?.t === 'answer' && m.r === name) accept(m.code).catch(() => {}); if (m?.t === 'who') bc.postMessage({ t: 'hosting', r: name, n: nick }); };
+    bc.onmessage = (e) => {
+      const m = e.data;
+      // and our late candidates to that tab, now that it listens
+      if (m?.t === 'answer' && m.r === name) accept(m.code).then((g) => { if (g && !g.bcIce) { g.bcIce = true; g.offer.ice.on((c) => bc.postMessage({ t: 'ice', i: g.offer.id, from: 'host', c })); } }).catch(() => {});
+      else if (m?.t === 'ice' && m.from === 'guest') [...guests.values()].find(x => x.offer?.id === m.i)?.offer.ice.add(m.c);
+      else if (m?.t === 'who') bc.postMessage({ t: 'hosting', r: name, n: nick });
+    };
   } catch {}
 
   // ---------- the node server's matchmaking ----------
@@ -171,15 +185,21 @@ export async function startHost({ name, nick = 'hôte', hooks = {}, useSig = tru
       else if (m.t === 'guest') {
         const g = newGuest('sig');
         byGid.set(m.gid, g);
-        try { const o = await offerFor(g); ws.send(JSON.stringify({ t: 'to', gid: m.gid, d: o.code })); } catch { g.state = 'failed'; }
+        try {
+          const o = await offerFor(g);
+          ws.send(JSON.stringify({ t: 'to', gid: m.gid, d: o.code }));
+          o.ice.on((c) => { if (ws.readyState === 1) ws.send(JSON.stringify({ t: 'to', gid: m.gid, d: { ice: c } })); });
+        } catch { g.state = 'failed'; }
         changed();
       } else if (m.t === 'sig') {
         const g = byGid.get(m.gid);
-        if (g?.offer && g.state === 'invite') { try { const a = await decode(m.d); await g.offer.accept(a); g.state = 'answered'; g.name = a.n || null; } catch { g.state = 'failed'; } changed(); }
+        if (m.d && typeof m.d === 'object') { g?.offer?.ice.add(m.d.ice); return; }
+        if (g?.offer && g.state === 'invite') { try { const a = await decode(m.d); await g.offer.accept(a); g.state = 'answered'; g.name = a.n || null; g.ice += ' ⇄ ' + candText(g.offer.remoteCands); } catch { g.state = 'failed'; } changed(); }
       } else if (m.t === 'gone') {
         const g = byGid.get(m.gid); byGid.delete(m.gid);
-        // the guest left the matchmaker: fine once connected, a failure before
-        if (g && g.state !== 'on') { g.state = 'failed'; try { g.pc?.close(); } catch {} changed(); }
+        // the guest left the matchmaker before answering: a failure. After, it's fine: the guest
+        // hangs up as soon as its side is open, maybe a moment before ours
+        if (g && g.state === 'invite') { g.state = 'failed'; try { g.pc?.close(); } catch {} changed(); }
       }
     };
     ws.onclose = () => { sig.ws = null; if (sig.state !== 'taken') { sig.state = 'off'; sig.code = null; changed(); setTimeout(sigConnect, 15000); } };
@@ -198,6 +218,8 @@ export async function startHost({ name, nick = 'hôte', hooks = {}, useSig = tru
     raid() { room.broadcast({ t: 'admin', a: 'raid' }); },
     // a gift (drops.js bundle) to one digger, or to everyone but the host (id null)
     give(id, gift) { return room.give(id, gift, nick); },
+    say(text) { text = String(text || '').replace(/\s+/g, ' ').trim().slice(0, 200); if (text) room.broadcast({ t: 'admin', a: 'say', text, by: nick }); return !!text; },
+    delNote(at) { const i = room.notes.findIndex(n => n.at === +at); if (i < 0) return false; room.notes.splice(i, 1); room.dirty = true; changed(); return true; },
     resetMap() { if (hooks.resetMap) hooks.resetMap(); else room.op({ k: 'reset', seed: Math.floor(Math.random() * 1e9) }); },
     players() { return room.players(); },
     exportWorld() { download(`a-hole-${name}.json`, worldFile(name, { ops: room.ops, tun: room.tun, notes: room.notes })); },
@@ -209,9 +231,9 @@ export async function startHost({ name, nick = 'hôte', hooks = {}, useSig = tru
     // what the panel shows, also sent to a second window
     snap() {
       return {
-        room: name, ops: room.ops.length, values: tun.snapshot(),
+        room: name, ops: room.ops.length, values: tun.snapshot(), notes: room.notes.slice(-40).reverse(),
         players: room.players().map(p => ({ id: p.id, name: p.name, color: p.color, owner: p.owner, w: p.w })),
-        guests: [...guests.values()].map(g => ({ key: g.key, via: g.via, state: g.state, name: g.name, id: g.id, code: g.state === 'invite' && g.via === 'code' ? g.code : null })),
+        guests: [...guests.values()].map(g => ({ key: g.key, via: g.via, state: g.state, name: g.name, id: g.id, ice: g.ice || null, code: g.state === 'invite' && g.via === 'code' ? g.code : null, link: g.state === 'invite' && g.via === 'code' && g.code ? joinUrl(g.code) : null })),
         sig: { state: sig.state, code: sig.code, link: sig.code ? joinUrl(sig.code) : null },
       };
     },
@@ -229,7 +251,7 @@ function adminBridge(host) {
   host.on(() => { if (!pend) pend = setTimeout(() => { pend = 0; push(); }, 60); });
   setInterval(push, 2000);
   const calls = {
-    set: (k, v) => tun.set(k, v), reset: (k) => tun.reset(k), kick: (id) => host.kick(id), raid: () => host.raid(), resetMap: () => host.resetMap(), give: (id, g) => host.give(id, g),
+    set: (k, v) => tun.set(k, v), reset: (k) => tun.reset(k), kick: (id) => host.kick(id), raid: () => host.raid(), resetMap: () => host.resetMap(), give: (id, g) => host.give(id, g), say: (t) => host.say(t), delNote: (at) => host.delNote(at),
     invite: () => host.invite(), accept: (code) => host.accept(code).then(() => true), cancel: (key) => host.cancel(key),
     worldData: () => host.worldData(), importWorld: (obj) => host.importWorld(obj),
   };
@@ -259,7 +281,7 @@ export function remoteHost(onSnap) {
     remote: true,
     get last() { return last; },
     ping: () => bc.postMessage({ t: 'ping' }),
-    set: (k, v) => call('set', k, v), reset: (k) => call('reset', k), kick: (id) => call('kick', id), raid: () => call('raid'), resetMap: () => call('resetMap'), give: (id, g) => call('give', id, g),
+    set: (k, v) => call('set', k, v), reset: (k) => call('reset', k), kick: (id) => call('kick', id), raid: () => call('raid'), resetMap: () => call('resetMap'), give: (id, g) => call('give', id, g), say: (t) => call('say', t), delNote: (at) => call('delNote', at),
     invite: () => call('invite'), accept: (code) => call('accept', code), cancel: (key) => call('cancel', key),
     exportWorld: async () => { const w = await call('worldData'); download(`a-hole-${w.room}.json`, w); },
     importWorld: (obj) => call('importWorld', obj),
@@ -279,32 +301,58 @@ export async function joinHost({ join, nick, onStep = () => {} }) {
     onStep('sig');
     sigWs = await probeSig();
     if (!sigWs) throw Object.assign(new Error('pas de serveur pour trouver la partie'), { hint: 'demande à l\'hôte un code d\'invitation à coller' });
+    const early = [];   // the host's late candidates, come before our answer is ready
     const offer = await new Promise((res, rej) => {
       const t = setTimeout(() => rej(new Error('l\'hôte ne répond pas')), 15000);
       sigWs.onmessage = (e) => {
         let x; try { x = JSON.parse(e.data); } catch { return; }
         if (x.t === 'err') { clearTimeout(t); rej(new Error(x.e === 'absent' ? 'aucune partie à ce nom' : x.e === 'plein' ? 'la partie est pleine' : 'l\'hôte est parti')); }
-        else if (x.t === 'sig') { clearTimeout(t); res(x.d); }
+        else if (x.t === 'sig' && typeof x.d === 'string') { clearTimeout(t); res(x.d); }
+        else if (x.t === 'sig' && x.d && typeof x.d === 'object') early.push(x.d.ice);
       };
       sigWs.onclose = () => { clearTimeout(t); rej(new Error('le serveur a coupé')); };
       sigWs.send(JSON.stringify({ t: 'join', room: join.slice(1) }));
     });
     ans = await answerOffer(offer, { n: nick });
+    for (const c of early) ans.ice.add(c);
     onStep('offer', { host: ans.offer.n, room: ans.offer.r });
     sigWs.send(JSON.stringify({ t: 'to', d: ans.code }));
-  } else {
+    // late candidates, both ways, through the server while it's still there
+    const ws = sigWs;
+    ws.onmessage = (e) => { let x; try { x = JSON.parse(e.data); } catch { return; } if (x.t === 'sig' && x.d && typeof x.d === 'object') ans.ice.add(x.d.ice); };
+    ws.onclose = null;
+    ans.ice.on((c) => { if (ws.readyState === 1) ws.send(JSON.stringify({ t: 'to', d: { ice: c } })); });
+  }
+  let bc = null;
+  if (!sigWs) {
     ans = await answerOffer(join, { n: nick });
     onStep('offer', { host: ans.offer.n, room: ans.offer.r });
     onStep('answer', { code: ans.code });
-    // the host's tab may be in this very browser: it takes the answer by itself
-    try { const bc = new BroadcastChannel(P2P_BC); bc.postMessage({ t: 'answer', r: ans.offer.r, code: ans.code }); setTimeout(() => bc.close(), 1000); } catch {}
+    // the host's tab may be in this very browser: it takes the answer by itself, and the late candidates
+    try {
+      bc = new BroadcastChannel(P2P_BC);
+      bc.postMessage({ t: 'answer', r: ans.offer.r, code: ans.code });
+      bc.onmessage = (e) => { const x = e.data; if (x?.t === 'ice' && x.from === 'host' && x.i === ans.offer.i) ans.ice.add(x.c); };
+      ans.ice.on((c) => bc?.postMessage({ t: 'ice', i: ans.offer.i, from: 'guest', c }));
+    } catch {}
   }
-  const failed = new Promise((_, rej) => watchIce(ans.pc, (st) => {
-    if (st === 'checking' || st === 'connecting') onStep('ice');
-    if (st === 'failed') rej(Object.assign(new Error('la connexion directe a échoué'), { hint: 'vos réseaux ne se voient pas : essayez un serveur turn (réglage), ou le jardin commun sur le serveur' }));
-  }));
-  const pipe = await Promise.race([ans.pipe, failed]);
-  try { sigWs?.close(); } catch {}
+  const cands = candText(ans.remoteCands) + ' ⇄ ' + candText(ans.cands);
+  const why = (text) => Object.assign(new Error(text), { hint: `vos réseaux ne se voient pas : essayez un serveur turn (réglage), ou le jardin commun sur le serveur · candidats ${cands}` });
+  let slow = 0;
+  const failed = new Promise((_, rej) => {
+    // through the server the answer is taken at once: 30 s is plenty. With a code to paste,
+    // the clock starts when the host has taken it (the checks begin)
+    const arm = () => { if (!slow) slow = setTimeout(() => rej(why('la connexion directe n\'aboutit pas')), 30000); };
+    if (sigWs) arm();
+    watchIce(ans.pc, (st) => {
+      if (st === 'checking' || st === 'connecting') { onStep('ice'); arm(); }
+      if (st === 'failed') rej(why('la connexion directe a échoué'));
+    });
+  });
+  let pipe;
+  try { pipe = await Promise.race([ans.pipe, failed]); }
+  catch (e) { try { ans.pc.close(); } catch {} throw e; }
+  finally { clearTimeout(slow); try { sigWs?.close(); } catch {} setTimeout(() => { try { bc?.close(); } catch {} }, 5000); }
   onStep('open');
   return { socket: () => pipeSocket(pipe), room: ans.offer.r, host: ans.offer.n, pc: ans.pc };
 }

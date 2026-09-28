@@ -18,7 +18,7 @@ async function go(join) {
       log('étape ' + what + (d ? ' ' + JSON.stringify(what === 'answer' ? { len: d.code.length } : d) : ''));
       if (what === 'answer') { $('ans').hidden = false; $('ans-code').value = d.code; lab.answer = d.code; }
     } });
-    lab.state = 'open'; $('ans').hidden = true; stat();
+    lab.state = 'open'; lab.pc = r.pc; $('ans').hidden = true; stat();
     const ws = r.socket();
     lab.ws = ws;
     ws.onopen = () => { ws.send(JSON.stringify({ t: 'hello', room: r.room, name })); log('hello envoyé'); };

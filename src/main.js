@@ -2895,6 +2895,7 @@ if (MULTI) {
     onAdmin(m) {
       if (m.a === 'raid') plane.raid();
       else if (m.a === 'give') drops.grant(m.gift, `${m.by || 'l\'hôte'} t'a donné`);
+      else if (m.a === 'say' && m.text) ui.toast(`${m.by || 'l\'hôte'} : ${String(m.text).slice(0, 200)}`, false, 7000);
     },
   });
   delivery.link((fx) => net.sendFx(fx));

@@ -62,7 +62,12 @@ class FakePC extends EventTarget {
   createDataChannel(label) { const c = new FakeChannel(label); this.chans.push(c); return c; }
   async createOffer() { return { type: 'offer', sdp: 'v=0\r\na=fake:offer-' + this.n + '\r\n' }; }
   async createAnswer() { return { type: 'answer', sdp: 'v=0\r\na=fake:answer-' + this.n + '\r\n' }; }
-  async setLocalDescription(d) { this.localDescription = d; PCS.set(d.sdp.trim(), this); }
+  async setLocalDescription(d) {
+    this.localDescription = d; PCS.set(d.sdp.trim(), this);
+    // a slow stun answer: one more candidate once the code is made
+    setTimeout(() => { const e = new Event('icecandidate'); e.candidate = { candidate: 'candidate:late ' + this.n + ' typ srflx', toJSON() { return { candidate: this.candidate, sdpMid: '0' }; } }; this.dispatchEvent(e); }, 3);
+  }
+  async addIceCandidate(c) { (this.added ||= []).push(c.candidate); }
   async setRemoteDescription(d) {
     this.remoteDescription = d;
     if (d.type !== 'answer') return;
@@ -258,6 +263,11 @@ test('p2p: host a room, a guest joins by code (same browser answer), tunables, k
   assert.equal(w.ops.length, 1); assert.equal(w.players[0].name, 'hôte');
   assert.equal(hgot.at(-1).t, 'join');
   assert.equal(host.snap().guests[0].state, 'on');
+  // late candidates crossed over the BroadcastChannel, both ways
+  const hpc = [...host.guests.values()][0].pc;
+  assert.ok(hpc.added?.some(c => c.includes(j.pc.n)), 'host got the guest\'s late candidate');
+  assert.ok(j.pc.added?.some(c => c.includes(hpc.n)), 'guest got the host\'s late candidate');
+  assert.match(host.snap().guests[0].ice, /local \d+ · stun \d+ · turn \d+/);
   // positions over the fast channel, ops over the reliable one
   gs.send(JSON.stringify({ t: 'state', p: [3, 0, 3], yaw: 0, w: 'home', dig: false, g: null }));
   gs.send(JSON.stringify({ t: 'op', op: { k: 'ladder', l: 2 } }));
@@ -394,6 +404,9 @@ test('p2p through /sig: a guest types @room, the host answers by itself', async 
     assert.equal(got[0].t, 'welcome');
     await tick(20);
     assert.equal(host.snap().guests[0].state, 'on');
+    const hpc = [...host.guests.values()][0].pc;
+    assert.ok(hpc.added?.some(c => c.includes(j.pc.n)), 'late candidate through /sig');
+    assert.ok(j.pc.added?.some(c => c.includes(hpc.n)), 'late candidate through /sig, back');
     await assert.rejects(p2p.joinHost({ join: '@personne', nick: 'x' }), /aucune partie/);
     // a second tab hosting the same name gets told
     const h2 = await p2p.startHost({ name: 'sigroom', nick: 'h2' });
@@ -546,6 +559,111 @@ test('server.mjs: two diggers grab the same bag at once, one gets it', async () 
     assert.equal(w.ops.filter(o => o.k === 'drop').length, 20); assert.equal(w.ops.filter(o => o.k === 'take').length, 20);
     for (const x of [a, b, c, d]) x.ws.close();
   } finally { srv.kill(); fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+
+// ---------- the node server's admin door, and admin.mjs ----------
+const { connectAdmin } = await import('../src/admin-client.js');
+const sh = (args, cwd) => new Promise((res) => {
+  const p = spawn(process.execPath, [path.join(ROOT, 'admin.mjs'), ...args], { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+  let o = '', e = '';
+  p.stdout.on('data', (d) => { o += d; }); p.stderr.on('data', (d) => { e += d; });
+  p.on('exit', (code) => res({ code, out: o, err: e }));
+});
+test('admin: token, owner powers on the garden, values kept across a restart, admin.mjs', async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ahole-adm-'));
+  const url = 'ws://127.0.0.1:9137';
+  let srv = await run(path.join(ROOT, 'server.mjs'), 9137, tmp);
+  try {
+    // a token made on the first start, kept private, never served
+    const tokFile = path.join(tmp, 'data/admin-token');
+    const token = fs.readFileSync(tokFile, 'utf8').trim();
+    assert.ok(token.length >= 24);
+    assert.equal(fs.statSync(tokFile).mode & 0o777, 0o600);
+    assert.notEqual((await fetch('http://127.0.0.1:9137/data/admin-token')).status, 200);
+    await assert.rejects(connectAdmin({ url, token: 'wrong' }), /mauvais jeton/);
+    await assert.rejects(connectAdmin({ url, token: '' }), /mauvais jeton/);
+    // two diggers in the garden
+    const open = () => new Promise((res) => { const ws = new WebSocket('ws://127.0.0.1:9137/ws'); const got = []; ws.onmessage = (e) => got.push(JSON.parse(e.data)); ws.onopen = () => res({ ws, got }); });
+    const a = await open(), b = await open();
+    a.ws.send(JSON.stringify({ t: 'hello', name: 'anne' })); b.ws.send(JSON.stringify({ t: 'hello', name: 'bob' }));
+    await tick(60);
+    a.ws.send(JSON.stringify({ t: 'state', p: [1, 2, 3], yaw: 0, w: 'china', dig: false, g: null }));
+    await tick(40);
+    const adm = await connectAdmin({ url, token });
+    const ps = await adm.call('players');
+    assert.deepEqual(ps.map(p => p.name).sort(), ['anne', 'bob']);
+    assert.equal(ps.find(p => p.name === 'anne').w, 'china');
+    const aid = ps.find(p => p.name === 'anne').id, bid = ps.find(p => p.name === 'bob').id;
+    await adm.call('set', 'gravity', .5);
+    await adm.call('set', 'timeSpeed', 4);
+    await tick(40);
+    assert.deepEqual(b.got.filter(m => m.t === 'tun').at(-1).v.gravity, .5);
+    assert.equal(b.got.filter(m => m.t === 'tun').at(-1).v.clockAnchor[2], 4);
+    await adm.call('give', aid, { coins: 30 });
+    await adm.call('give', null, { items: { dyn: 2 } });
+    await adm.call('raid'); await adm.call('say', 'bonjour le jardin');
+    await tick(40);
+    assert.deepEqual(a.got.filter(m => m.t === 'admin').map(m => m.a), ['give', 'give', 'raid', 'say']);
+    assert.deepEqual(b.got.filter(m => m.t === 'admin').map(m => m.a), ['give', 'raid', 'say']);
+    assert.equal(a.got.find(m => m.a === 'give').by, 'le serveur');
+    await adm.call('resetMap');
+    await tick(40);
+    assert.equal(b.got.filter(m => m.t === 'op').at(-1).op.k, 'reset');
+    assert.ok(adm.snap && adm.snap.node && adm.snap.players.length === 2);
+    assert.equal(await adm.call('kick', bid), true);
+    await tick(80);
+    assert.ok(b.got.some(m => m.t === 'kicked'));
+    await assert.rejects(adm.call('nope'), /inconnu/);
+    // the guest book, tidied
+    await fetch('http://127.0.0.1:9137/api/notes?room=jardin', { method: 'POST', body: JSON.stringify({ name: 'x', text: 'gros mot' }) });
+    const ns = await adm.call('notes');
+    assert.equal(ns[0].text, 'gros mot');
+    assert.equal(await adm.call('delNote', ns[0].at), true);
+    assert.equal((await (await fetch('http://127.0.0.1:9137/api/notes?room=jardin')).json()).length, 0);
+    // the command line, one shot, token read from data/admin-token in the server's folder
+    let r = await sh(['--url', url, 'players'], tmp);
+    assert.equal(r.code, 0, r.err); assert.match(r.out, /anne/); assert.match(r.out, /1 joueur/);
+    r = await sh(['--url', url, 'set', 'season', 'hiver'], tmp);
+    assert.equal(r.code, 0, r.err); assert.match(r.out, /hiver/);
+    r = await sh(['--url', url, 'get', 'season'], tmp); assert.match(r.out, /\* season\s+hiver/);
+    r = await sh(['--url', url, 'give', 'anne', 'fer', '3'], tmp); assert.equal(r.code, 0, r.err); assert.match(r.out, /anne : 3 × fer/);
+    r = await sh(['--url', url, 'give', 'all', 'pièces', '50'], tmp); assert.match(r.out, /tout le monde : 50 × pièces/);
+    r = await sh(['--url', url, 'give', 'anne', 'dynamite', '2'], tmp); assert.match(r.out, /2 × dynamite/);
+    await tick(40);
+    const gifts = a.got.filter(m => m.a === 'give').slice(-3).map(m => m.gift);
+    assert.equal(Object.values(gifts[0].sack)[0], 3); assert.equal(gifts[1].coins, 50); assert.equal(gifts[2].items.dyn, 2);
+    r = await sh(['--url', url, 'say', 'à', 'table'], tmp); assert.match(r.out, /annoncé/);
+    r = await sh(['--url', url, 'kick', 'personne'], tmp); assert.equal(r.code, 1); assert.match(r.err, /personne ne s'appelle/);
+    r = await sh(['--url', url, 'set', 'nope', '1'], tmp); assert.equal(r.code, 1);
+    r = await sh(['--url', url, '--token', 'bad', 'players'], tmp); assert.equal(r.code, 1); assert.match(r.err, /mauvais jeton/);
+    r = await sh(['--url', url, 'help'], tmp); assert.match(r.out, /newmap/);
+    adm.close(); a.ws.close(); b.ws.close();
+    await tick(50);
+    // a restart: same token, the values still there, and sent to the next digger
+    srv.kill(); await tick(200);
+    srv = await run(path.join(ROOT, 'server.mjs'), 9137, tmp);
+    assert.equal(fs.readFileSync(tokFile, 'utf8').trim(), token);
+    const c = await open(); c.ws.send(JSON.stringify({ t: 'hello', name: 'cid' })); await tick(80);
+    const w = c.got.find(m => m.t === 'welcome');
+    assert.equal(w.tun.gravity, .5); assert.equal(w.tun.season, 3);
+    c.ws.close();
+  } finally { srv.kill(); fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+
+test('admin: a token given on the command line, none written', async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ahole-adm2-'));
+  const p = spawn(process.execPath, [path.join(ROOT, 'server.mjs'), '--port', '9138', '--dir', tmp, '--admin-token', 'secret-du-jardin'], { cwd: tmp, stdio: ['ignore', 'pipe', 'pipe'] });
+  await new Promise((res) => p.stdout.on('data', (d) => { if (String(d).includes('a hole')) res(); }));
+  try {
+    assert.equal(fs.existsSync(path.join(tmp, 'data/admin-token')), false);
+    // serving the very folder the data lives in: the data stays out of reach
+    fs.writeFileSync(path.join(tmp, 'data/rooms/jardin.json'), '[]');
+    assert.equal((await fetch('http://127.0.0.1:9138/data/rooms/jardin.json')).status, 403);
+    assert.equal((await fetch('http://127.0.0.1:9138/data/../data/rooms/jardin.json')).status, 403);
+    const a = await connectAdmin({ url: 'ws://127.0.0.1:9138', token: 'secret-du-jardin' });
+    assert.deepEqual(await a.call('players'), []);
+    a.close();
+  } finally { p.kill(); fs.rmSync(tmp, { recursive: true, force: true }); }
 });
 
 test.after(() => setTimeout(() => process.exit(0), 50));

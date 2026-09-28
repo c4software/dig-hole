@@ -29,8 +29,12 @@ const CSS = `
 @keyframes p2pblink { 50% { opacity: .35; } }
 .p2p-card .err { color: #ff7a56; font-weight: 700; margin-top: 8px; } .p2p-card .hint { opacity: .6; font-size: 12.5px; margin-top: 6px; }
 .p2p-card details { margin-top: 12px; opacity: .85; } .p2p-card summary { cursor: pointer; font-size: 12.5px; }
-.p2p-more { display: flex; gap: 8px; margin-top: 8px; }
-.p2p-more button { flex: 1; cursor: pointer; border: 0; border-radius: 12px; padding: 9px 10px; font: 800 13px/1 'Rubik', system-ui, sans-serif; color: #fff; background: rgba(26,19,13,.8); box-shadow: inset 0 0 0 2px rgba(255,255,255,.12); }
+.p2p-more { display: flex; gap: 8px; margin-top: 6px; }
+/* the two extra buttons make the menu taller: it rises a little, and on short screens the
+   quality chip in the corner steps aside rather than sit on « héberger une partie » */
+.main-menu:has(#multi-form:not(.hidden)) { top: max(200px, calc(var(--u) * 15.5)); z-index: 3; }
+@media (max-height: 860px) { body:has(#multi-form:not(.hidden)) .corner--bl { display: none; } }
+.p2p-more button { flex: 1; cursor: pointer; border: 0; border-radius: 12px; padding: 8px 10px; font: 800 13px/1 'Rubik', system-ui, sans-serif; color: #fff; background: rgba(26,19,13,.8); box-shadow: inset 0 0 0 2px rgba(255,255,255,.12); }
 .p2p-more button:hover { box-shadow: inset 0 0 0 2px #ffb020; }
 `;
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -130,7 +134,10 @@ async function hostNow(net, params, hooks) {
   net.title = `ta partie · ${host.name}`;
   net.connect(host.name, nick, host.socket);
   hooks.fetchNotes?.(notesFetch(net));
-  const panel = createHostPanel({ backend: localBackend(host), detachUrl: `serveur.html?room=${encodeURIComponent(host.name)}` });
+  const backend = localBackend(host);
+  // the alert itself only sounds on the plot: the host hears it's on its way anyway
+  backend.raid = () => { host.raid(); hooks.toast?.('raid lancé : le bombardier passe sur le jardin dans 12 s', false, 4000); };
+  const panel = createHostPanel({ backend, detachUrl: `serveur.html?room=${encodeURIComponent(host.name)}` });
   let t = 0;
   host.on(() => { if (panel.open && !t) t = setTimeout(() => { t = 0; panel.render(host.snap()); }, 50); });
   addEventListener('keydown', (e) => { if (e.code === 'F2') { e.preventDefault(); panel.toggle(); } else if (e.code === 'Escape' && panel.open) panel.hide(); });

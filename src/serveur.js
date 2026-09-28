@@ -1,7 +1,8 @@
 // serveur.js, the server tab: the host's panel kept open in its own window (it talks to the
 // hosting game tab over a BroadcastChannel), or, when no tab hosts, a dedicated server: the
 // room runs here, without the game, and whoever wants to dig joins it, the host included.
-import { remoteHost, startHost } from './p2p.js';
+import { remoteHost, startHost, download } from './p2p.js';
+import { connectAdmin } from './admin-client.js';
 import { createHostPanel, localBackend } from './hostpanel.js';
 import { tun } from './tunables.js';
 import { roomKey } from './signal.js';
@@ -12,7 +13,58 @@ const DAY8 = 360 * 8;
 // the garden's clock, as the game computes it together (main.js clockNow)
 const clock = () => { const a = tun.get('clockAnchor'); return a ? ((a[1] + (Date.now() - a[0]) / 1000 * a[2]) % DAY8 + DAY8) % DAY8 : (Date.now() / 1000) % DAY8; };
 
-// a hosting tab in this browser? then this window is its panel
+const box = (html) => { const w = document.createElement('div'); w.className = 'hp page'; w.style.cssText = 'padding:18px;max-width:560px;font:500 14px/1.4 Rubik,system-ui,sans-serif;color:#fff;background:#261c14;border-radius:18px;margin:16px auto'; w.innerHTML = html; document.body.appendChild(w); return w; };
+const btnCss = 'cursor:pointer;border:0;border-radius:10px;padding:9px 12px;font:800 13px Rubik,system-ui;background:#ffb020;color:#1a130d';
+const inCss = 'background:#1a130d;color:#fff;border:0;border-radius:9px;padding:9px 11px;font:600 14px Rubik,system-ui;min-width:260px';
+
+// ---------- serveur.html?admin=ws://host:port&room=jardin: the node server's console ----------
+if (params.has('admin')) nodeConsole();
+else sameBrowser();
+
+function nodeConsole() {
+  const url = params.get('admin') || (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host;
+  const room = params.get('room') || 'jardin';
+  const KEY = 'a-hole-admin:' + url;
+  let panel = null, client = null;
+  const gate = box('');
+  function ask(msg) {
+    gate.hidden = false;
+    gate.innerHTML = `<b style="font:400 24px/1 'Titan One',system-ui">console du serveur</b>
+      <p style="margin:10px 0;opacity:.75">${esc(url)} · salle « ${esc(room)} ». le jeton est dans <code>data/admin-token</code> sur le serveur (ou --admin-token).</p>
+      <p><input id="sv-token" type="password" autocomplete="off" placeholder="jeton" style="${inCss}"> <button id="sv-in" style="${btnCss}">entrer</button></p>
+      <p style="color:#ff7a56;font-weight:700">${esc(msg || '')}</p>`;
+    const go = () => { const t = document.getElementById('sv-token').value.trim(); if (t) open(t); };
+    document.getElementById('sv-in').onclick = go;
+    document.getElementById('sv-token').onkeydown = (e) => { if (e.key === 'Enter') go(); };
+    document.getElementById('sv-token').focus();
+  }
+  async function open(token) {
+    gate.innerHTML = '<p style="opacity:.75">connexion…</p>';
+    try { client = await connectAdmin({ url, room, token }); }
+    catch (e) { if (/jeton/.test(e.message)) { try { sessionStorage.removeItem(KEY); } catch {} } ask(e.message); return; }
+    try { sessionStorage.setItem(KEY, token); } catch {}
+    gate.hidden = true;
+    const call = (fn) => (...a) => client.call(fn, ...a);
+    const backend = {
+      node: true, remote: true, snap: () => client.snap,
+      set: call('set'), reset: call('reset'), kick: call('kick'), raid: call('raid'), resetMap: call('resetMap'),
+      give: call('give'), say: call('say'), delNote: call('delNote'),
+      exportWorld: async () => { const w = await client.call('worldData'); download(`a-hole-${w.room}.json`, w); },
+      importWorld: async () => { throw new Error('pas d\'import sur le serveur'); },
+    };
+    if (!panel) panel = createHostPanel({ backend, page: true });
+    if (client.snap) panel.render(client.snap);
+    client.onSnap = (snap) => panel.render(snap);
+    client.onClose = () => { panel.el.querySelector('#hp-err').textContent = 'déconnecté du serveur · nouvel essai…'; setTimeout(() => open(token), 3000); };
+    document.title = `A Hole | console · ${room}`;
+  }
+  let saved = null;
+  try { saved = sessionStorage.getItem(KEY); } catch {}
+  if (saved) open(saved); else ask();
+}
+
+// ---------- a hosting tab in this browser? then this window is its panel ----------
+function sameBrowser() {
 let panel = null, seen = 0;
 const remote = remoteHost((snap) => {
   seen = Date.now();
@@ -50,4 +102,5 @@ async function dedicated(name) {
   host.on(() => { if (!t) t = setTimeout(() => { t = 0; panel.render(host.snap()); }, 50); });
   document.title = `A Hole | serveur dédié · ${host.name}`;
   addEventListener('beforeunload', (e) => { if (host.room.size) { e.preventDefault(); e.returnValue = ''; } });
+}
 }
