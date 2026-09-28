@@ -134,7 +134,7 @@ construit comme par `deploy.sh`. Les données (salles, livre d'or, jeton admin) 
 ```sh
 docker build -f docker/Dockerfile -t dig-hole .
 docker run -d -p 8765:8765 -v dig-hole-data:/app/data --name dig-hole dig-hole   # → http://localhost:8765
-docker exec dig-hole cat data/admin-token          # le jeton de la console admin (ou -e DIG_ADMIN_TOKEN=…)
+docker logs dig-hole                               # le jeton de la console admin, encadré au démarrage (ou -e DIG_ADMIN_TOKEN=…)
 docker exec -it dig-hole node admin.mjs            # la console en ligne de commande
 ```
 

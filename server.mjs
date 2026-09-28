@@ -173,4 +173,12 @@ server.on('upgrade', (req, socket, head) => {
   to.handleUpgrade(req, socket, head, (ws) => to.emit('connection', ws, req));
 });
 
-server.listen(PORT, '0.0.0.0', () => console.log(`a hole · http://0.0.0.0:${PORT} · serving ${ROOT}`));
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`a hole · http://0.0.0.0:${PORT} · serving ${ROOT}`);
+  // in a container (DIG_SHOW_TOKEN=1, set by the image) the logs are the only easy way to read the token
+  if (process.env.DIG_SHOW_TOKEN === '1' || process.argv.includes('--show-token')) {
+    const lines = ['console admin', '', `jeton  ${ADMIN_TOKEN}`, '', `web    http://<hôte>:${PORT}/serveur.html?admin`, 'cli    docker exec -it <conteneur> node admin.mjs'];
+    const w = Math.max(...lines.map(l => l.length)) + 4;
+    console.log('\n╔' + '═'.repeat(w) + '╗\n' + lines.map(l => '║  ' + l.padEnd(w - 2) + '║').join('\n') + '\n╚' + '═'.repeat(w) + '╝\n');
+  }
+});

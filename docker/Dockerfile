@@ -20,6 +20,8 @@ RUN set -e; V=$(date +%s); mkdir -p dist \
 # ---- run: the server, its modules (src/: room, admin, catalogue) and the built client ----
 FROM node:22-alpine
 ENV NODE_ENV=production
+# print the admin token in the logs at start (docker logs <conteneur>)
+ENV DIG_SHOW_TOKEN=1
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
