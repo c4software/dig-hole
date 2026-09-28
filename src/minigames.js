@@ -31,6 +31,8 @@ export const GAMES = {
   nes:     { name: 'super creuseur',     sub: 'plateforme rétro en 2D, façon 8 bits · à plusieurs · le premier au drapeau', unit: 'time', lower: true },
   worms:   { name: 'taupes de guerre',   sub: 'artillerie au tour par tour : équipes de taupes, terrain destructible, vent, bazooka, grenades…', unit: 'score' },
   encre:   { name: 'encre 2D',           sub: 'plateforme 2D en équipes : peins le niveau, nage dans ton encre', unit: 'pct' },
+  invaders: { name: 'envahisseurs lunaires', sub: 'la vague descend sur la lune · boucliers, soucoupe mystère · ensemble ou chacun pour soi', unit: 'score' },
+  shooter: { name: 'comète furieuse',    sub: 'shoot\'em up spatial : niveaux, boss, capsules d\'armes, combos · à plusieurs', unit: 'score' },
   peinture: { name: 'peinture',           sub: '90 secondes pour couvrir le trou de ta couleur, contre les drones-peintres · clic pour tirer', unit: 'pct' },
   laser:   { name: 'laser game',         sub: '2 minutes de laser dans le jardin · touché = retour à la maison', unit: 'frags' },
 };
