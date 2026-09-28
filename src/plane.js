@@ -84,7 +84,8 @@ export function createPlane({ scene, getTerrain, onWarn, onBomb, onEnd, onCrash,
   // shot down: black smoke from the engines, fire, a spiral to the ground
   const smoke = V.createPuffs(scene, 60, 0x2a2624), fire = V.createPuffs(scene, 30, 0xff7a1a);
   let run = null;
-  let next = 150 + Math.random() * 120;   // first raid after a few minutes
+  // raids are rare, and always announced well before: never a boom out of nowhere
+  let next = 480 + Math.random() * 240, warned = false;   // first raid after 8 to 12 minutes
 
   const solidAt = (p) => { const t = getTerrain(); const [i, j, k] = t.cellOf(p.x, p.y, p.z); return t.solidCell(i, j, k); };
 
@@ -94,7 +95,7 @@ export function createPlane({ scene, getTerrain, onWarn, onBomb, onEnd, onCrash,
     const dir = new THREE.Vector3(Math.cos(a), 0, Math.sin(a));
     const off = new THREE.Vector3(-dir.z, 0, dir.x).multiplyScalar((Math.random() - .5) * 6);
     const start = dir.clone().multiplyScalar(-190).add(off).setY(ALT);
-    run = { dir, pos: start, t: 0, drop: 0, dropped: 0, warned: false };
+    run = { dir, pos: start, t: 0, drop: 0, dropped: 0 };
     plane.position.copy(start);
     plane.rotation.set(0, -a, 0);
     plane.visible = true;
@@ -104,7 +105,8 @@ export function createPlane({ scene, getTerrain, onWarn, onBomb, onEnd, onCrash,
     if (!run) {
       if (!active) return;
       next -= dt;
-      if (next <= 0) { next = 180 + Math.random() * 180; launch(); }
+      if (!warned && next <= 12) { warned = true; onWarn?.(); }
+      if (next <= 0) { next = 600 + Math.random() * 300; warned = false; launch(); }
     }
     smoke.update(dt); fire.update(dt);
     if (run && run.down != null) {
@@ -128,7 +130,6 @@ export function createPlane({ scene, getTerrain, onWarn, onBomb, onEnd, onCrash,
       plane.userData.blink.forEach((b, i) => { b.visible = (run.t * 1.4 + i * .5) % 1 < .35; });
       plane.rotation.z = Math.sin(run.t * .45) * .02;
       const dist = Math.hypot(run.pos.x, run.pos.z);
-      if (!run.warned && dist < 150) { run.warned = true; onWarn?.(); }
       // over the plot: open the bay, a bomb every 0.3 s
       run.drop -= dt;
       if (Math.abs(run.pos.x) < 9 && Math.abs(run.pos.z) < 9 && run.drop <= 0 && run.dropped < 10) {
@@ -173,6 +174,6 @@ export function createPlane({ scene, getTerrain, onWarn, onBomb, onEnd, onCrash,
       return l.x < -4.5 && l.x > -7 && Math.abs(l.z) < 4 && l.y > -.6 && l.y < 3;
     },
     shootDown() { if (run && run.down == null) { run.down = 0; run.vy = 0; run.dropped = 99; audio?.boom?.(.5); } },
-    trigger() { if (!run) launch(); },
+    trigger() { if (!run) { onWarn?.(); launch(); } },
   };
 }

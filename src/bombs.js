@@ -45,7 +45,7 @@ function makeBomb(kind) {
   return g;
 }
 
-export function createBombs(scene, getTerrain, onExplode) {
+export function createBombs(scene, getTerrain, onExplode, onFizzle = () => {}) {
   const live = [];
   const flash = new THREE.PointLight(0xffb060, 0, 14, 1.2);
   scene.add(flash);
@@ -59,21 +59,23 @@ export function createBombs(scene, getTerrain, onExplode) {
 
   const solidAt = (x, y, z) => { const t = getTerrain(); const [i, j, k] = t.cellOf(x, y, z); return t.solidCell(i, j, k); };
 
-  function throwBomb(kind, origin, dir, inherit) {
+  // opts: fuse (a multiplier: an aliexpresso wick can be very short), power (blast scale),
+  // dud (the spark just dies)
+  function throwBomb(kind, origin, dir, inherit, { fuse = 1, power = 1, dud = false } = {}) {
     const mesh = makeBomb(kind);
     mesh.position.copy(origin);
     scene.add(mesh);
     const v = kind === 'fus'
       ? new THREE.Vector3(0, -4, 0)                                   // the drill goes straight down
       : dir.clone().multiplyScalar(8).add(new THREE.Vector3(0, 2.5, 0)).add(inherit.clone().multiplyScalar(.5));
-    live.push({ kind, mesh, v, fuse: BLAST[kind].fuse, spin: new THREE.Vector3(Math.random() * 6, Math.random() * 6, 0), pos: mesh.position, vel: v, size: 0 });
+    live.push({ kind, mesh, v, fuse: BLAST[kind].fuse * fuse, power, dud, spin: new THREE.Vector3(Math.random() * 6, Math.random() * 6, 0), pos: mesh.position, vel: v, size: 0 });
   }
 
-  function boom(kind, pos) {
-    const b = BLAST[kind];
-    flash.position.copy(pos); flash.intensity = 60 * b.r; flashT = 0.35;
-    ball.position.copy(pos); ball.visible = true; ballT = 0; ballR = b.r;
-    onExplode(kind, pos.clone());
+  function boom(kind, pos, power = 1) {
+    const r = BLAST[kind].r * power;
+    flash.position.copy(pos); flash.intensity = 60 * r; flashT = 0.35;
+    ball.position.copy(pos); ball.visible = true; ballT = 0; ballR = r;
+    onExplode(kind, pos.clone(), power);
   }
 
   function update(dt) {
@@ -94,12 +96,20 @@ export function createBombs(scene, getTerrain, onExplode) {
         }
       }
       if (b.kind !== 'fus') { b.mesh.rotation.x += b.spin.x * dt; b.mesh.rotation.y += b.spin.y * dt; }
+      if (b.dud && b.fuse <= 0) {
+        // pschitt: the spark goes out and it just lies there a while, then fades
+        if (!b.out) { b.out = true; onFizzle(b.kind, p.clone()); }
+        b.mesh.userData.spark.visible = false;
+        if (b.fuse < -3) b.mesh.scale.setScalar(Math.max(.01, 4 + b.fuse));
+        if (b.fuse < -4) { scene.remove(b.mesh); live.splice(n, 1); }
+        continue;
+      }
       b.mesh.userData.spark.visible = Math.random() > .3;
       b.mesh.userData.spark.scale.setScalar(.7 + Math.random() * .8);
       if (b.fuse <= 0) {
         scene.remove(b.mesh);
         live.splice(n, 1);
-        boom(b.kind, p);
+        boom(b.kind, p, b.power);
       }
     }
     if (flashT > 0) { flashT -= dt; flash.intensity *= Math.pow(0.001, dt); if (flashT <= 0) flash.intensity = 0; }

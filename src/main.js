@@ -852,30 +852,55 @@ const KONBINI = {
 };
 const hotSlots = () => SLOTS.filter(id => !ITEMS[id].moon || eco.s.moon || EXPLORE);
 let gravT = 0;
+// an aliexpresso unit: mostly fine, sometimes dead, sometimes it goes off as you touch it,
+// sometimes the wick is far too short, and sometimes it's way better than the real thing
+function aliRoll() {
+  const r = Math.random();
+  return r < .15 ? 'dud' : r < .25 ? 'boom' : r < .42 ? 'fast' : r < .57 ? 'strong' : 'ok';
+}
+// it went off in your hands
+function aliBoom(power) {
+  camera.getWorldPosition(eye);
+  camera.getWorldDirection(dir);
+  bombs.boom('dyn', eye.clone().addScaledVector(dir, .4).add(new THREE.Vector3(0, -.4, 0)), power);
+}
 function useItem() {
   const it = eco.s.slot;
   if (!eco.s.items[it]) { audio.deny(); ui.toast(`plus de ${ITEMS[it].name}`, true); return; }
+  const ali = ['dyn', 'sup', 'med', 'cell'].includes(it) && eco.s.items[it] && eco.shoddy(it) ? aliRoll() : null;
   if (it === 'grav') {
     if (onPlanet()) { ui.toast('ici, la gravité est déjà faible'); return; }
     eco.use(it); gravT = 20; player.stats.grav = .35; audio.charge(); ui.toast('gravité lunaire · 20 s');
     return;
   }
   if (it === 'med') {
-    if (eco.s.health >= 100) { ui.toast('déjà en pleine forme'); return; }
-    eco.use(it); eco.s.health = Math.min(100, eco.s.health + 60); audio.buy(); ui.toast('+60 vie');
+    if (eco.s.health >= 100) { if (ali) eco.s.ali.med++; ui.toast('déjà en pleine forme'); return; }
+    eco.use(it);
+    if (ali === 'dud') { audio.deny(); ui.toast('la trousse est vide… merci aliexpresso', true, 2400); return; }
+    if (ali === 'boom') { aliBoom(.5); ui.toast('la trousse de soin a explosé ?! merci aliexpresso', true, 2600); return; }
+    if (ali === 'strong') { eco.s.health = 100; audio.buy(); ui.toast('trousse miracle · vie au maximum', false, 2400); return; }
+    eco.s.health = Math.min(100, eco.s.health + 60); audio.buy(); ui.toast('+60 vie');
     return;
   }
   if (it === 'ladder') { placeLadder(); return; }
   if (it === 'cell') {
-    eco.use(it); eco.s.battery = eco.batteryMax; audio.charge(); ui.toast('batterie pleine');
+    eco.use(it);
+    if (ali === 'dud') { audio.deny(); ui.toast('pile morte · merci aliexpresso', true, 2400); return; }
+    if (ali === 'boom') { aliBoom(.6); ui.toast('la pile t\'a explosé dans les mains !', true, 2600); return; }
+    eco.s.battery = eco.batteryMax; audio.charge();
+    // too much juice: it runs through your legs too
+    if (ali === 'strong' || ali === 'fast') { speedT = Math.max(speedT, 30); ui.toast('pile survoltée · batterie pleine, et tu cours plus vite', false, 2600); }
+    else ui.toast('batterie pleine');
     return;
   }
   eco.use(it);
+  if (ali === 'boom') { aliBoom(it === 'sup' ? .8 : 1); ui.toast('ça t\'a pété dans les mains · merci aliexpresso', true, 2600); return; }
   camera.getWorldPosition(eye);
   camera.getWorldDirection(dir);
   const from = it === 'fus' ? player.pos.clone().add(new THREE.Vector3(0, .3, 0)) : eye.clone().addScaledVector(dir, .5);
-  bombs.throwBomb(it, from, dir, player.vel);
+  bombs.throwBomb(it, from, dir, player.vel, { dud: ali === 'dud', fuse: ali === 'fast' ? .25 : 1, power: ali === 'strong' ? 1.7 : 1 });
   audio.tick();
+  if (ali === 'fast') { audio.hiss(); ui.toast('mèche ultra courte !', true, 1400); }
 }
 
 // a ladder against the wall you're looking at: from the floor below, or from your feet
@@ -905,9 +930,13 @@ function placeLadder() {
   hintOnce('ladder', 'avance ou espace pour grimper, recule pour descendre · un coup de pelle la récupère', 5000);
 }
 
-const bombs = createBombs(scene, T, (kind, pos) => explode(kind, pos));
-function explode(kind, pos) {
-  const b = BLAST[kind];
+const bombs = createBombs(scene, T, (kind, pos, power) => explode(kind, pos, power), () => {
+  audio.hiss();
+  ui.toast('pschitt… pétard mouillé, merci aliexpresso', true, 2400);
+});
+function explode(kind, pos, power = 1) {
+  const b = power === 1 ? BLAST[kind] : { r: BLAST[kind].r * power, dmg: BLAST[kind].dmg * power, push: BLAST[kind].push * power };
+  if (power > 1.2) setTimeout(() => ui.toast('wow · la version aliexpresso est surpuissante', false, 2200), 300);
   const tier = kind === 'dyn' ? Math.min(7, eco.cur('shovel').tier + 2) : 7;
   if (kind === 'air') planeHits++;
   const take = kind === 'sup' || kind === 'fus' || kind === 'met';
@@ -924,7 +953,7 @@ function explode(kind, pos) {
   }
   T().flush();
   collectOres(ores, new THREE.Vector3(0, 1, 0));
-  audio.boom(kind === 'met' ? 1.8 : kind === 'sup' || kind === 'shell' ? 1.3 : 0.8);
+  audio.boom((kind === 'met' ? 1.8 : kind === 'sup' || kind === 'shell' ? 1.3 : 0.8) * Math.max(.6, power));
   debris.burst(pos, new THREE.Vector3(0, 1, 0), 0x5a4030, 40, 2.4);
   debris.burst(pos, new THREE.Vector3(0, 1, 0), 0xffb060, 14, 2.8);
   moles.blast(pos, b.r);
@@ -1807,7 +1836,7 @@ const plane = createPlane({
   onWarn() {
     planeHits = 0; raidHp = eco.s.health;
     audio.siren();
-    if (here === 'home') { ui.toast('un bombardier ! à l\'abri !', true, 3500); hintOnce('plane', 'les bombes tombent sur le potager : la maison est un bon abri', 6000); }
+    if (here === 'home') { ui.toast('alerte : un bombardier arrive dans 10 s ! à l\'abri !', true, 6000); hintOnce('plane', 'les bombes tombent sur le potager : la maison est un bon abri', 6000); }
   },
   onBomb(p) { if (here === 'home') bombs.boom('air', p); },
   onEnd() { if (here === 'home' && planeHits && state !== 'faint') unlock('plane'); },
@@ -2295,11 +2324,13 @@ function superReset(seed) {
 function openParcels() {
   const ps = delivery.open();
   if (!ps.length) return;
-  let fakes = 0;
+  let fakes = 0, shoddy = 0;
   const got = {};
   for (const p of ps) {
     if (p.fake) { fakes++; continue; }
-    eco.give(p.item);
+    const sh = !!STORES[p.store]?.shoddy && !EXPLORE;
+    eco.give(p.item, 1, sh);
+    if (sh) shoddy++;
     got[p.item] = (got[p.item] || 0) + 1;
   }
   audio.pickup(2);
@@ -2307,6 +2338,8 @@ function openParcels() {
   const txt = Object.entries(got).map(([k, n]) => `+${n} ${ITEMS[k].name}`).join(' · ');
   ui.toast(txt || 'rien de bon là-dedans', false, 2600);
   if (fakes) setTimeout(() => ui.toast(`${fakes} contrefaçon${fakes > 1 ? 's' : ''} · merci aliexpresso`, true, 2600), 1400);
+  else if (shoddy) setTimeout(() => ui.toast('made in aliexpresso · à utiliser à tes risques', true, 2600), 1400);
+  if (shoddy) hintOnce('ali', 'les produits aliexpresso sont peu fiables : parfois rien, parfois boum dans les mains, parfois trop rapides… parfois bien plus puissants', 6000);
   save();
 }
 
@@ -2385,7 +2418,8 @@ function renderPanel(quip) {
     const st = STORES[panelTab];
     const rows = ['dyn', 'sup', 'med', 'cell'].map(id => {
       const price = Math.round(ITEMS[id].price * st.mult);
-      return { id: 'order:' + id, kind: 'colis', name: ITEMS[id].name, lvl: `×${eco.s.items[id]}`, sub: ITEMS[id].sub, price, poor: eco.s.money < price };
+      const ali = Math.min(eco.s.ali[id] || 0, eco.s.items[id]);
+      return { id: 'order:' + id, kind: 'colis', name: ITEMS[id].name, lvl: `×${eco.s.items[id]}${ali ? ` (${ali} ali)` : ''}`, sub: ITEMS[id].sub, price, poor: eco.s.money < price };
     });
     const pend = delivery.state.orders.length, eta = delivery.eta;
     const note = pend ? `${pend} colis en route · prochain dans ${Math.ceil(eta)} s` : `${st.sub} · livré devant la porte en ~${st.eta} s`;

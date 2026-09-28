@@ -134,6 +134,7 @@ export function createEconomy(key = 'a-hole-save-v2', { unlimited = false } = {}
     parts: {}, moon: false, oxygen: 90,
     tool: 'shovel',
     items: { dyn: 0, sup: 1, fus: 0, med: 1, cell: 0, ladder: 3 },
+    ali: {},       // how many of each item came from aliexpresso: those are a gamble
     ladders: [],   // a first super bomb: a gift from the house
     slot: 'sup',
     battery: 50, health: 100,
@@ -195,8 +196,18 @@ export function createEconomy(key = 'a-hole-save-v2', { unlimited = false } = {}
       return 'ok';
     },
     pay(price) { if (unlimited) return true; if (s.money < price) return false; s.money -= price; return true; },
-    give(item, n = 1) { s.items[item] = Math.min(ITEMS[item].max, (s.items[item] || 0) + n); },
-    use(item) { if (unlimited) return true; if (!s.items[item]) return false; s.items[item]--; return true; },
+    give(item, n = 1, shoddy = false) {
+      s.items[item] = Math.min(ITEMS[item].max, (s.items[item] || 0) + n);
+      if (shoddy) s.ali[item] = Math.min(s.items[item], (s.ali[item] || 0) + n);
+    },
+    use(item) { if (unlimited) return true; if (!s.items[item]) return false; s.items[item]--; s.ali[item] = Math.min(s.ali[item] || 0, s.items[item]); return true; },
+    // before using one: is it an aliexpresso one? drawn at random from the stock, and taken off it
+    shoddy(item) {
+      const a = Math.min(s.ali[item] || 0, s.items[item] || 0);
+      if (unlimited || !a || Math.random() * s.items[item] >= a) return false;
+      s.ali[item] = a - 1;
+      return true;
+    },
     save(extra) {
       try { localStorage.setItem(key, JSON.stringify({ s, ...extra })); } catch {}
     },
@@ -212,6 +223,7 @@ export function createEconomy(key = 'a-hole-save-v2', { unlimited = false } = {}
         s.finds = Object.assign(fresh().finds, data.s.finds);
         s.perks = Object.assign({}, data.s.perks);
         s.parts = Object.assign({}, data.s.parts);
+        s.ali = Object.assign({}, data.s.ali);
         return data;
       } catch { return null; }
     },

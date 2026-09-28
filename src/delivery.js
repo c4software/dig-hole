@@ -4,10 +4,11 @@ import * as THREE from 'three';
 import { mergeStatic } from './merge.js';
 import * as V from './vehicles.js';
 
-// parody shops. Prices are multiplied, eta in seconds, fake = chance of a counterfeit.
+// parody shops. Prices are multiplied, eta in seconds, fake = chance of a counterfeit,
+// shoddy = what arrives is a gamble (dead, explodes in your hands, too fast, or much stronger)
 export const STORES = {
   amazone:    { name: 'amazone',     sub: 'livraison express', mult: 1,    eta: 20, fake: 0,   van: 0x1d2530, stripe: 0xffb23a, text: '#ffb23a' },
-  aliexpresso: { name: 'aliexpresso', sub: 'pas cher, pas vite', mult: 0.55, eta: 70, fake: 0.2, van: 0xc4332b, text: '#ffffff', stripe: 0xffffff },
+  aliexpresso: { name: 'aliexpresso', sub: 'pas cher, pas vite, pas fiable', mult: 0.55, eta: 70, fake: 0, shoddy: true, van: 0xc4332b, text: '#ffffff', stripe: 0xffffff },
 };
 
 const ROAD_Z = -13.1;
