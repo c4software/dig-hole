@@ -35,6 +35,8 @@ export const GAMES = {
   potato:  { name: 'patates martiennes', sub: 'seul sur mars : terre, déchets, hydrazine et patates jusqu\'au sauvetage · à plusieurs dans l\'habitat', unit: 'kcal' },
   survie:  { name: 'survie sur mars',    sub: 'du hab jusqu\'au mav en rover : batterie, oxygène, vivres, tempêtes · à plusieurs', unit: 'time', lower: true },
   tycoon:  { name: 'colonie martienne',  sub: 'une base sur mars qui produit même quand tu n\'es pas là · crédits → pièces · à plusieurs sur la colonie de l\'hôte', unit: 'coins' },
+  invaders: { name: 'envahisseurs lunaires', sub: 'la vague descend sur la lune · boucliers, soucoupe mystère · ensemble ou chacun pour soi', unit: 'score' },
+  shooter: { name: 'comète furieuse',    sub: 'shoot\'em up spatial : niveaux, boss, capsules d\'armes, combos · à plusieurs', unit: 'score' },
   peinture: { name: 'peinture',           sub: '90 secondes pour couvrir le trou de ta couleur, contre les drones-peintres · clic pour tirer', unit: 'pct' },
   laser:   { name: 'laser game',         sub: '2 minutes de laser dans le jardin · touché = retour à la maison', unit: 'frags' },
 };

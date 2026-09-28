@@ -43,6 +43,8 @@ import { createWorms } from './worms.js';
 import { createPotato } from './potato.js';
 import { createSurvie } from './survie.js';
 import { createTycoon } from './tycoon.js';
+import { createInvaders } from './invaders.js';
+import { createShooter } from './spaceshooter.js';
 import { initMenus } from './menufx.js';
 import { createGamepad } from './gamepad.js';
 import { createTouch } from './touch.js';
@@ -1426,6 +1428,8 @@ const RACES = {
   potato: { mod: createPotato({ audio, ui }), screen: true, help: 'zqsd · e pour agir · x pour lâcher · tiens jusqu\'au sauvetage', prizes: [2200, 1200, 700, 300] },
   survie: { mod: createSurvie({ audio, ui }), screen: true, help: 'zqsd · e sortir, monter, fouiller · espace panneaux · f réparer · m carte', prizes: [2500, 1300, 600, 250] },
   tycoon: { mod: createTycoon({ audio, ui, eco, pay: (v, text) => reward(v, text), save: () => save() }), screen: true, help: 'souris · la colonie tourne même sans toi', prizes: [0] },
+  invaders: { mod: createInvaders({ audio, ui }), screen: true, help: 'q d ou ← → : bouger · espace : tirer · abats la vague avant qu\'elle ne touche la lune', prizes: [1500, 700, 350, 150] },
+  shooter: { mod: createShooter({ audio, ui }), screen: true, help: 'zqsd ou flèches : voler · espace : tirer · e : bombe · ramasse les capsules', prizes: [1800, 900, 450, 200] },
 };
 let race = null;
 const raceReturn = { pos: new THREE.Vector3(), yaw: 0 };
@@ -1583,7 +1587,7 @@ function raceHud() {
 // Picking a game at the arcade offers it to everyone, wherever they are. Players press « prêt »;
 // from two ready, a 10 s countdown (time to take the teleporter home); at zero the host sends the
 // list of the ready ones and they all start together, on the same seed.
-const SCREEN_GAMES = new Set(['nes', 'encre', 'worms', 'potato', 'survie', 'tycoon']);   // played on a screen: from anywhere
+const SCREEN_GAMES = new Set(['nes', 'encre', 'worms', 'potato', 'survie', 'tycoon', 'invaders', 'shooter']);   // played on a screen: from anywhere
 const CAVE_GAMES = new Set(['bomber', 'canards', 'empile', 'ballons', 'moto', 'bagarre', 'batballons']);   // dioramas in the secret cave
 // the races (their own scenery) can be joined from a planet too; the garden's games only from the garden
 const playableHere = (g) => here === 'home' || SCREEN_GAMES.has(g) || !!RACES[g]?.screen || (onPlanet() && !!RACES[g]);
@@ -1615,6 +1619,8 @@ const GAME_KEYS = {
   rc: [['z q s d', 'piloter'], ['shift', 'frein à main'], ['espace', 'arme'], ['r', 'replacer la voiture']],
   podrace: [['z', 'gaz'], ['q d', 'piloter'], ['s', 'freiner'], ['shift', 'boost · ça chauffe'], ['r', 'revenir sur la piste']],
   nes: [['← →', 'courir'], ['espace', 'sauter'], ['shift', 'sprinter'], ['r', 'dernier drapeau']],
+  invaders: [['q d', 'bouger'], ['← →', 'bouger aussi'], ['espace', 'tirer']],
+  shooter: [['z q s d', 'voler'], ['espace', 'tirer (garder appuyé)'], ['e', 'bombe'], ['shift', 'ralentir, viser fin']],
   encre: [['q d', 'bouger'], ['espace', 'sauter'], ['clic', 'tirer'], ['shift', 'nager, grimper'], ['e', 'déluge'], ['r', 'retour à la base']],
   peinture: [['z q s d', 'marcher'], ['clic', 'tirer de la peinture']],
   laser: [['z q s d', 'marcher'], ['clic', 'tirer'], ['maison', 'zone sûre']],
