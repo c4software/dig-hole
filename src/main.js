@@ -600,7 +600,8 @@ function findNear() {
     if (it.off || it.column) continue;
     const reach = it.reach || 2.6;
     const d = Math.hypot(player.pos.x - it.pos.x, player.pos.z - it.pos.z);
-    if (d > reach || (d > bd + 0.3 && !it.aim) || player.pos.y < -1 || Math.abs(player.pos.y + 1 - it.pos.y) > 2) continue;
+    // underground, only what's down there too (the crypt's stairs, table, doors, dials)
+    if (d > reach || (d > bd + 0.3 && !it.aim) || (player.pos.y < -1 && it.pos.y > -1) || Math.abs(player.pos.y + 1 - it.pos.y) > 2) continue;
     const to = it.pos.clone().sub(camera.position).normalize();
     if (to.dot(dir) < (it.aim || 0.5)) continue;
     // something small you have to look right at (the headset) wins over what's around it
