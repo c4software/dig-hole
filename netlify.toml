@@ -1,0 +1,6 @@
+# Netlify from the repository: the static copy (no node server), built by build-static.sh.
+# (Drag-and-drop works too: run ./build-static.sh and drop dist-static/ on app.netlify.com/drop.)
+[build]
+  command = "./build-static.sh dist-static"
+  publish = "dist-static"
+# headers and redirects come from dist-static/_headers and dist-static/_redirects

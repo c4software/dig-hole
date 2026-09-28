@@ -238,7 +238,7 @@ test('pipe: big messages in parts, stale positions dropped', async () => {
 });
 
 test('p2p: host a room, a guest joins by code (same browser answer), tunables, kick, persistence', async () => {
-  const host = await p2p.startHost({ name: 'Test Room', nick: 'hôte', useSig: false, hooks: { clock: () => 100 } });
+  const host = await p2p.startHost({ name: 'Test Room', nick: 'hôte', useSig: false, rendezvous: false, hooks: { clock: () => 100 } });
   assert.equal(host.name, 'test-room');
   // the host's own game, through a socket in the same tab
   const hs = host.socket(); const hgot = [];
@@ -309,7 +309,7 @@ test('p2p: the feasts go by the host\'s date: a guest in july sees noël when th
   const { serverClock, activeEvents, tunToOverride } = await import('../src/events-calendar.js');
   const { createNet } = await import('../src/net.js');
   const XMAS = Date.UTC(2026, 11, 24, 12), JULY = Date.UTC(2026, 6, 10, 15);
-  const host = await p2p.startHost({ name: 'fete', nick: 'h', useSig: false, now: () => XMAS });
+  const host = await p2p.startHost({ name: 'fete', nick: 'h', useSig: false, rendezvous: false, now: () => XMAS });
   const inv = await host.invite();
   const j = await p2p.joinHost({ join: inv.link, nick: 'bob' });
   const realNow = Date.now;
@@ -330,7 +330,7 @@ test('p2p: the feasts go by the host\'s date: a guest in july sees noël when th
 });
 
 test('p2p: an invitation that fails (nat), a pasted answer', async () => {
-  const host = await p2p.startHost({ name: 'deux', nick: 'h', useSig: false });
+  const host = await p2p.startHost({ name: 'deux', nick: 'h', useSig: false, rendezvous: false });
   const inv = await host.invite();
   failNext = true;
   await assert.rejects(p2p.joinHost({ join: inv.code, nick: 'z' }), (e) => /directe/.test(e.message) && /turn/.test(e.hint));
@@ -522,7 +522,7 @@ test('drops.js: dropping takes it from you, the room\'s answer gives it to the f
 });
 
 test('p2p: simultaneous pickups through a hosted room, and gifts', async () => {
-  const host = await p2p.startHost({ name: 'sacs', nick: 'hh', useSig: false });
+  const host = await p2p.startHost({ name: 'sacs', nick: 'hh', useSig: false, rendezvous: false });
   const hs = host.socket(); const hgot = [];
   hs.onmessage = (e) => hgot.push(JSON.parse(e.data));
   hs.onopen = () => hs.send(JSON.stringify({ t: 'hello', name: 'hh' }));
@@ -689,6 +689,104 @@ test('admin: a token given on the command line, none written', async () => {
     assert.deepEqual(await a.call('players'), []);
     a.close();
   } finally { p.kill(); fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+
+// ---------- no server of ours: public trackers as the meeting point ----------
+// a WebTorrent tracker, in memory: swarms by info_hash, offers handed to the others, answers back
+function fakeTrackers() {
+  const swarms = new Map();   // url → info_hash → Map(peer_id → socket)
+  const seen = [];            // every message a tracker got (to check nothing readable goes through)
+  class TWS {
+    constructor(url) {
+      this.url = url; this.readyState = 0;
+      if (url.includes('dead')) { setTimeout(() => { this.readyState = 3; this.onerror?.(); this.onclose?.(); }, 2); return; }
+      setTimeout(() => { this.readyState = 1; this.onopen?.(); }, 2);
+    }
+    close() { this.readyState = 3; }
+    push(m) { if (this.readyState === 1) setTimeout(() => this.onmessage?.({ data: JSON.stringify(m) }), 1); }
+    send(str) {
+      const m = JSON.parse(str); seen.push(str);
+      if (m.action !== 'announce') return;
+      const byHash = swarms.get(this.url) || new Map(); swarms.set(this.url, byHash);
+      const swarm = byHash.get(m.info_hash) || new Map(); byHash.set(m.info_hash, swarm);
+      if (m.event === 'stopped') { swarm.delete(m.peer_id); return; }
+      if (m.answer) { swarm.get(m.to_peer_id)?.push({ action: 'announce', info_hash: m.info_hash, peer_id: m.peer_id, offer_id: m.offer_id, answer: m.answer }); return; }
+      swarm.set(m.peer_id, this);
+      this.push({ action: 'announce', info_hash: m.info_hash, interval: 120, complete: 0, incomplete: swarm.size });
+      const others = [...swarm.entries()].filter(([id]) => id !== m.peer_id).map(([, s]) => s);
+      (m.offers || []).forEach((o, i) => { const to = others[i % Math.max(1, others.length)]; to?.push({ action: 'announce', info_hash: m.info_hash, peer_id: m.peer_id, offer_id: o.offer_id, offer: o.offer }); });
+    }
+  }
+  return { TWS, seen, swarms };
+}
+
+test('rendezvous: sealed offers, only the right secret opens them', async () => {
+  const r = await import('../src/rendezvous.js');
+  const a = await r.roomKeys('ma-partie', 'k1'), b = await r.roomKeys('ma-partie', 'k2');
+  assert.match(a.hash, /^[0-9a-f]{20}$/); assert.notEqual(a.hash, b.hash);
+  const s = await r.seal(a.key, { c: 'offre', g: 'x' });
+  assert.deepEqual(await r.unseal(a.key, s), { c: 'offre', g: 'x' });
+  assert.equal(await r.unseal(b.key, s), null);
+  assert.equal(await r.unseal(a.key, 'n\'importe quoi'), null);
+});
+
+test('rendezvous: a guest finds the host through (fake) public trackers, one of them dead', async () => {
+  const { TWS, seen } = fakeTrackers();
+  const trackers = ['wss://dead.example', 'wss://t1.example', 'wss://t2.example'];
+  const host = await p2p.startHost({ name: 'sans-serveur', nick: 'hh', useSig: false, rendezvous: true, trackers, WS: TWS });
+  for (let i = 0; i < 40 && host.rdv.up < 2; i++) await tick(10);
+  const snap = host.snap();
+  assert.equal(snap.rdv.up, 2); assert.equal(snap.rdv.of, 3);
+  assert.match(snap.rdv.code, /^t:sans-serveur:[a-z0-9]{12}$/);
+  assert.match(snap.rdv.link, /\?join=t%3Asans-serveur%3A/);
+  const hs = host.socket(); const hgot = [];
+  hs.onmessage = (e) => hgot.push(JSON.parse(e.data));
+  hs.onopen = () => hs.send(JSON.stringify({ t: 'hello', name: 'hh' }));
+  // two guests at once, each announcing on both live trackers
+  const steps = [];
+  const [j1, j2] = await Promise.all(['un', 'deux'].map(n => p2p.joinHost({ join: snap.rdv.link, nick: n, trackers, WS: TWS, rdv: { roundMs: 300 }, onStep: (w) => steps.push(w) })));
+  assert.equal(j1.room, 'sans-serveur'); assert.equal(j1.host, 'hh');
+  assert.ok(steps.includes('rdv') && steps.includes('offer') && steps.includes('open'));
+  for (const [j, n] of [[j1, 'un'], [j2, 'deux']]) { const s = j.socket(); s.onopen = () => s.send(JSON.stringify({ t: 'hello', name: n })); }
+  await tick(60);
+  assert.deepEqual(host.room.players().map(p => p.name).sort(), ['deux', 'hh', 'un']);
+  // one connection per guest, however many offers they announced
+  assert.equal([...host.guests.values()].filter(g => g.state === 'on').length, 2);
+  // nothing the trackers saw holds an sdp or a name
+  const all = seen.join('\n');
+  assert.ok(!/v=0|candidate|"un"|deux|sans-serveur/.test(all), 'sealed');
+  // a wrong secret finds nobody (quickly, with short rounds)
+  await assert.rejects(p2p.joinHost({ join: 't:sans-serveur:mauvais', nick: 'x', trackers, WS: TWS, rdv: { roundMs: 50, rounds: 3 } }), /personne ne répond/);
+  // no tracker reachable at all
+  await assert.rejects(p2p.joinHost({ join: 't:sans-serveur:x', nick: 'x', trackers: ['wss://dead.a', 'wss://dead.b'], WS: TWS, rdv: { roundMs: 50, rounds: 2 } }), /aucun relais/);
+});
+
+test('build-static.sh: a self-contained folder, no server, every module versioned', async () => {
+  const out = fs.mkdtempSync(path.join(os.tmpdir(), 'ahole-static-'));
+  const { execFileSync } = await import('node:child_process');
+  try {
+    const log = execFileSync(path.join(ROOT, 'build-static.sh'), [out], { cwd: ROOT }).toString();
+    assert.match(log, /static v\d+/);
+    for (const f of ['index.html', 'serveur.html', 'style.css', 'src/main.js', 'src/rendezvous.js', 'vendor/three.module.js', '_headers', '_redirects']) assert.ok(fs.existsSync(path.join(out, f)), f);
+    assert.match(fs.readFileSync(path.join(out, 'src/config.js'), 'utf8'), /serverless: true/);
+    assert.match(fs.readFileSync(path.join(ROOT, 'src/config.js'), 'utf8'), /serverless: false/);   // the source stays as is
+    const v = /static v(\d+)/.exec(log)[1];
+    assert.match(fs.readFileSync(path.join(out, 'index.html'), 'utf8'), new RegExp(`src="\\./src/main\\.js\\?v=${v}"`));
+    for (const f of fs.readdirSync(path.join(out, 'src'))) {
+      const s = fs.readFileSync(path.join(out, 'src', f), 'utf8');
+      assert.ok(!/from '\.\/[a-z0-9-]+\.js'/.test(s), f + ' has an unversioned import');
+    }
+    assert.match(fs.readFileSync(path.join(out, '_headers'), 'utf8'), /\/src\/\*\n\s+Content-Type: text\/javascript/);
+    // and deploy.sh is the same as ever
+    assert.equal(execFileSync('git', ['diff', '--stat', 'HEAD', '--', 'deploy.sh'], { cwd: ROOT }).toString(), '');
+  } finally { fs.rmSync(out, { recursive: true, force: true }); }
+});
+
+test('mode: a static build is serverless without asking; otherwise the guest book tells', async () => {
+  const { serverless } = await import('../src/mode.js');
+  const real = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: false, headers: { get: () => 'text/html' } });
+  try { assert.equal(await serverless(), true); } finally { globalThis.fetch = real; }
 });
 
 test.after(() => setTimeout(() => process.exit(0), 50));

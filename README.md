@@ -72,6 +72,52 @@ node admin.mjs notes                    # le livre d'or ; delnote 3 efface le 3e
 Options : `--url ws://localhost:8765` (par défaut), `--room jardin`, `--token …` (ou `DIG_ADMIN_TOKEN`).
 Depuis une autre machine : `node admin.mjs --url wss://ton-domaine --token … players`.
 
+## la version sans serveur (Netlify, n'importe quel hébergement statique)
+
+Le jeu tourne aussi sans `server.mjs` : de simples fichiers, et les joueurs se connectent
+directement entre eux (WebRTC). Pas de jardin commun ni de console du serveur dans ce mode :
+on joue seul, ou l'un **héberge** une partie et les autres la **rejoignent**.
+
+### construire et déployer
+
+```sh
+./build-static.sh                 # → dist-static/ (ou ./build-static.sh mon-dossier)
+```
+
+- **glisser-déposer** : dépose le dossier `dist-static/` sur https://app.netlify.com/drop
+- **depuis le dépôt** : `netlify.toml` lance le même script et publie `dist-static/`
+- ailleurs : n'importe quel serveur de fichiers (`python3 -m http.server` dans le dossier suffit pour essayer).
+
+Le script copie le jeu, ajoute une version aux adresses des modules (comme `deploy.sh`),
+écrit `src/config.js` (`serverless: true`) et les fichiers Netlify `_headers` (types et cache)
+et `_redirects`. `./deploy.sh` ne change pas.
+Sans ce drapeau, le jeu le devine tout seul : si `/api/notes` ne répond pas, il n'y a pas de serveur.
+
+### héberger, rejoindre
+
+- l'hôte : « à plusieurs » → « héberger une partie » (ou « creuser »). **f2** ouvre le panneau serveur :
+  on y copie **le lien d'invitation** (`…/?join=t:nom:secret`), valable pour autant d'invités qu'on veut.
+- l'invité ouvre le lien (ou le colle dans « rejoindre »), choisit son nom, « se connecter », puis « creuser ! ».
+- la rencontre passe par des **trackers WebTorrent publics** (wss://tracker.openwebtorrent.com,
+  tracker.webtorrent.dev…) : l'invité y annonce quelques offres WebRTC, l'hôte en prend une et répond.
+  Ensuite tout passe en direct entre les navigateurs ; les trackers ne servent plus.
+- en secours : « nouvelle invitation par code » dans le panneau (un code par invité, la réponse à recoller).
+- le monde de l'hôte reste dans son navigateur (IndexedDB), exportable en fichier ; `serveur.html`
+  peut faire tourner une partie sans le jeu (serveur dédié dans un onglet).
+
+### ce qu'il faut savoir
+
+- **vie privée** : les offres et réponses sont chiffrées (AES-GCM, clé tirée du nom et du secret du lien) ;
+  un tracker voit qui se connecte (adresse IP) et une empreinte de la partie, jamais son nom ni le contenu.
+  Qui a le lien peut entrer : le partager comme une clé.
+- **fiabilité** : les trackers publics sont des services bénévoles ; on en essaie plusieurs à la fois,
+  il en faut un seul. S'ils sont tous injoignables (réseau filtré), il reste l'invitation par code.
+- **réseaux** : la connexion directe passe la plupart des box grâce aux serveurs STUN publics, pas tous
+  (réseaux d'entreprise, 4G stricte) : un serveur TURN peut être indiqué dans le panneau ou la carte « rejoindre ».
+- l'hôte doit garder son onglet ouvert ; s'il part, la partie s'arrête (on la reprend en réhébergeant).
+- les fêtes du calendrier suivent la date de l'hôte ; le livre d'or est celui de la partie de l'hôte
+  (en solo, sans serveur, il n'y en a pas).
+
 ## tests
 
 ```sh

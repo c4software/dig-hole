@@ -3,6 +3,7 @@
 // room runs here, without the game, and whoever wants to dig joins it, the host included.
 import { remoteHost, startHost, download } from './p2p.js';
 import { connectAdmin } from './admin-client.js';
+import { CONFIG } from './config.js';
 import { createHostPanel, localBackend } from './hostpanel.js';
 import { tun } from './tunables.js';
 import { roomKey } from './signal.js';
@@ -18,7 +19,9 @@ const btnCss = 'cursor:pointer;border:0;border-radius:10px;padding:9px 12px;font
 const inCss = 'background:#1a130d;color:#fff;border:0;border-radius:9px;padding:9px 11px;font:600 14px Rubik,system-ui;min-width:260px';
 
 // ---------- serveur.html?admin=ws://host:port&room=jardin: the node server's console ----------
-if (params.has('admin')) nodeConsole();
+// a static build has no node server to drive
+if (params.has('admin') && CONFIG.serverless) box(`<b style="font:400 24px/1 'Titan One',system-ui">pas de serveur ici</b><p style="margin:10px 0;opacity:.75">cette version du jeu tourne sans serveur node : la console du jardin commun n'existe pas. pour régler une partie, héberge-la (f2 dans le jeu) ou ouvre <a style="color:#ffb020" href="serveur.html">serveur.html</a>.</p>`);
+else if (params.has('admin')) nodeConsole();
 else sameBrowser();
 
 function nodeConsole() {
@@ -28,7 +31,7 @@ function nodeConsole() {
   let panel = null, client = null;
   const gate = box('');
   function ask(msg) {
-    gate.hidden = false;
+    gate.style.display = '';
     gate.innerHTML = `<b style="font:400 24px/1 'Titan One',system-ui">console du serveur</b>
       <p style="margin:10px 0;opacity:.75">${esc(url)} · salle « ${esc(room)} ». le jeton est dans <code>data/admin-token</code> sur le serveur (ou --admin-token).</p>
       <p><input id="sv-token" type="password" autocomplete="off" placeholder="jeton" style="${inCss}"> <button id="sv-in" style="${btnCss}">entrer</button></p>
@@ -43,7 +46,7 @@ function nodeConsole() {
     try { client = await connectAdmin({ url, room, token }); }
     catch (e) { if (/jeton/.test(e.message)) { try { sessionStorage.removeItem(KEY); } catch {} } ask(e.message); return; }
     try { sessionStorage.setItem(KEY, token); } catch {}
-    gate.hidden = true;
+    gate.style.display = 'none';   // .hp is display:flex: the hidden attribute alone won't do
     const call = (fn) => (...a) => client.call(fn, ...a);
     const backend = {
       node: true, remote: true, snap: () => client.snap,
@@ -93,7 +96,7 @@ setTimeout(() => {
 async function dedicated(name) {
   if (panel) return;
   remote.close();
-  const host = await startHost({ name: roomKey(name) || 'ma-partie', nick: 'serveur', hooks: { clock } });
+  const host = await startHost({ name: roomKey(name) || 'ma-partie', nick: 'serveur', hooks: { clock }, useSig: !CONFIG.serverless });
   window.__host = host;
   wait.remove();
   panel = createHostPanel({ backend: localBackend(host), page: true });
