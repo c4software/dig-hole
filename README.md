@@ -2,6 +2,8 @@
 
 Un jeu où l'on creuse un trou (three.js, modules ES, sans étape de build).
 
+![le menu du jeu](docs/menu.jpg)
+
 ## lancer
 
 ```sh
@@ -123,3 +125,15 @@ Sans ce drapeau, le jeu le devine tout seul : si `/api/notes` ne répond pas, il
 ```sh
 node test/net.test.mjs
 ```
+
+## l'image docker (version statique)
+
+La version sans serveur (`build-static.sh`) servie par nginx (gzip, cache, `/healthz`) :
+
+```sh
+docker build -f docker/static/Dockerfile -t dig-hole-static .
+docker run --rm -p 8080:8080 dig-hole-static      # → http://localhost:8080
+```
+
+Le CI (`.github/workflows/docker-static.yml`) lance les tests puis publie l'image (amd64 et arm64)
+sur `ghcr.io/c4software/dig-hole-static` : `latest` à chaque push sur `main`, la version sur un tag `v*`.
