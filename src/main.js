@@ -40,6 +40,8 @@ import { createOrgan, createDiscLauncher, createBats, createReliquary, SONGS } f
 import { createNes } from './nes.js';
 import { createEncre } from './encre.js';
 import { createWorms } from './worms.js';
+import { createComic } from './comic.js';
+import { createPvz } from './pvz.js';
 import { initMenus } from './menufx.js';
 import { createGamepad } from './gamepad.js';
 import { createTouch } from './touch.js';
@@ -1376,6 +1378,9 @@ const RACES = {
   nes: { mod: createNes({ audio, ui }), screen: true, help: 'flèches / zqsd · espace pour sauter · shift pour courir', prizes: [1800, 900, 450, 200] },
   worms: { mod: createWorms({ audio, ui }), screen: true, help: 'au tour par tour · chaque taupe a son tour', prizes: [1500, 700, 350, 150] },
   encre: { mod: createEncre({ audio, ui }), screen: true, help: 'zqsd · espace pour sauter · clic ou j pour tirer · shift pour nager', prizes: [1600, 600], value: (r) => r.pct },
+  // the moon arcade
+  comic: { mod: createComic({ audio, ui }), screen: true, help: 'flèches / zqsd · espace pour sauter · j pour tirer · e pour les portes · k pour la baguette', prizes: [2000, 900, 450, 200] },
+  pvz: { mod: createPvz({ audio, ui }), screen: true, help: 'souris : ramasser les étoiles, choisir une carte, planter · 1 à 9 : cartes · clic droit : annuler', prizes: [1800, 800, 400, 150] },
 };
 let race = null;
 const raceReturn = { pos: new THREE.Vector3(), yaw: 0 };
@@ -1489,7 +1494,7 @@ function raceHud() {
 // Picking a game at the arcade offers it to everyone, wherever they are. Players press « prêt »;
 // from two ready, a 10 s countdown (time to take the teleporter home); at zero the host sends the
 // list of the ready ones and they all start together, on the same seed.
-const SCREEN_GAMES = new Set(['nes', 'encre', 'worms']);   // played on a screen: from anywhere
+const SCREEN_GAMES = new Set(['nes', 'encre', 'worms', 'comic', 'pvz']);   // played on a screen: from anywhere
 const CAVE_GAMES = new Set(['bomber', 'canards', 'empile', 'ballons', 'moto', 'bagarre', 'batballons']);   // dioramas in the secret cave
 function launchGame(g, seed = Math.floor(Math.random() * 1e9), hostId = null, roster = null, opts = null) {
   const players = raceHumans(roster);
@@ -1524,6 +1529,8 @@ const GAME_KEYS = {
   taupe: [['clic', 'taper les taupes']],
   pile: [['clic', 'creuser'], ['e', 'valider la profondeur']],
   tresor: [['clic', 'creuser'], ['thermo', 'chaud / froid']],
+  comic: [['← →', 'marcher'], ['espace', 'sauter (garder : plus haut)'], ['j', 'tirer (il faut du cola)'], ['e', 'ouvrir une porte'], ['k', 'baguette : se téléporter'], ['r', 'revenir au dernier sol sûr']],
+  pvz: [['clic', 'étoiles, cartes, planter'], ['1 … 9', 'choisir une carte'], ['0', 'la pelle'], ['clic droit', 'annuler'], ['flèches espace', 'planter au clavier']],
 };
 const DEFAULT_KEYS = [['z q s d', 'marcher'], ['clic', 'creuser'], ['espace', 'sauter'], ['r', 'remonter']];
 const gmEl = document.getElementById('gamemenu'), $g = (id) => document.getElementById(id);
