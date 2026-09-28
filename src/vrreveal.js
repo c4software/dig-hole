@@ -1,7 +1,10 @@
 // vrreveal.js, the headset easter egg: take it off and the game turns out to be a model on
 // a desk, in a real room. Nothing of the game is moved: the camera, the lights and the fog are
 // swapped only for the time of each draw (scene.onBeforeRender / onAfterRender), then put back.
-// createReveal({ scene, camera, renderer, world, audio }) → { headset(), play(), update(dt), playing }
+// Cutting the world to the board gives every material a new shader: those are compiled a few per
+// frame behind the black lenses (the game holds its draws meanwhile, see `frozen`), since compiling
+// them all in one frame stalls the gpu for seconds, long enough to lose the webgl context.
+// createReveal({ scene, camera, renderer, world, audio }) → { headset(), play(), update(dt), playing, frozen }
 import * as THREE from 'three';
 import { buildHeadset, buildRoom, BOX, LAMP_HEAD, LAMP_AIM } from './vrreveal-room.js';
 
@@ -56,6 +59,8 @@ const easeOut = (x) => 1 - Math.pow(1 - x, 3);
 export function createReveal({ scene, camera, renderer, world, audio }) {
   let room = null, playing = false, t = 0, done = null, promise = null, swapped = false, ov = null, el = {};
   let mats = [], hidden = [], fired = new Set(), hudKeep = [], canvasKeep = null, localKeep = false;
+  // the board's shaders: what is left to compile, and ready once done (or given up on)
+  let ready = true, queue = [], since = 0, rtStub = null;
   const view = { p: new THREE.Vector3(), q: new THREE.Quaternion(), fov: 55 };
   const look = { x: 0, y: 0, tx: 0, ty: 0 };
   const PLANES = [
@@ -132,10 +137,40 @@ export function createReveal({ scene, camera, renderer, world, audio }) {
     prevAfter = scene.onAfterRender === THREE.Object3D.prototype.onAfterRender ? null : scene.onAfterRender;
     scene.onBeforeRender = before; scene.onAfterRender = after;
     swapped = true;
+    precompile();
+  }
+  // one object per material that will be drawn; compiled bit by bit in update()
+  function precompile() {
+    const seen = new Set();
+    queue = [];
+    scene.traverseVisible(o => {
+      if (!o.material || !(o.isMesh || o.isPoints || o.isLine || o.isSprite)) return;
+      const k = [].concat(o.material)[0];
+      if (!seen.has(k)) { seen.add(k); queue.push(o); }
+    });
+    ready = false; since = performance.now();
+  }
+  // ~40 ms of it per frame: shaders built as for the composer's pass (into a render target: no tone
+  // mapping, linear output), linked right away (getUniforms waits for it), textures sent up too
+  function compileSome() {
+    const t0 = performance.now(), rt = renderer.getRenderTarget();
+    rtStub ??= new THREE.WebGLRenderTarget(1, 1);
+    renderer.setRenderTarget(rtStub);
+    try {
+      while (queue.length && performance.now() - t0 < 40) {
+        for (const m of renderer.compile(queue.pop(), camera, scene)) {
+          renderer.properties.get(m).currentProgram?.getUniforms();
+          for (const v of Object.values(m)) if (v?.isTexture && !v.isRenderTargetTexture) renderer.initTexture(v);
+        }
+      }
+    } catch (e) { queue.length = 0; }   // drawn the slow way
+    finally { renderer.setRenderTarget(rt); }
+    // never hold the show for good
+    if (!queue.length || performance.now() - since > 10000) { queue.length = 0; ready = true; }
   }
   function swapOut() {
     if (!swapped) return;
-    swapped = false;
+    swapped = false; ready = true; queue = [];
     for (const [m, planes, cs] of mats) { m.clippingPlanes = planes; m.clipShadows = cs; }
     mats = [];
     renderer.localClippingEnabled = localKeep;
@@ -264,9 +299,10 @@ export function createReveal({ scene, camera, renderer, world, audio }) {
       const b = 1 - easeOut(ramp(t, LIFT, 6.2));
       cv.style.filter = `blur(${(b * 9).toFixed(2)}px) brightness(${(1 + b * .7).toFixed(3)})`; cv.style.transform = canvasKeep.transform;
     } else { cv.style.filter = canvasKeep.filter; cv.style.transform = canvasKeep.transform; }
-    // 2. the room
-    if (t >= SWAP && t < BACK_T) { if (!swapped) swapIn(); }
+    // 2. the room: swapped in once the lenses are black, the timeline held until its shaders are in
+    if (t >= SWAP - .15 && t < BACK_T) { if (!swapped) swapIn(); }
     else if (swapped) swapOut();
+    if (!ready) { compileSome(); t = Math.min(t, SWAP); }
     if (swapped) {
       cam();
       room.updateDust(t);
@@ -314,6 +350,8 @@ export function createReveal({ scene, camera, renderer, world, audio }) {
     },
     update,
     get playing() { return playing; },
+    // the game's draws wait while the board's shaders compile (the lenses are black then)
+    get frozen() { return playing && !ready; },
     // for tests: jump in the timeline
     seek(s) { t = s; },
     get time() { return t; },
