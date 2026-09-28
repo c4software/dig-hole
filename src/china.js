@@ -10,6 +10,9 @@ import { mergeStatic } from './merge.js';
 import * as V from './vehicles.js';
 import { createBlossoms, createPoles, createCars, createContact, createWalkers, puffGeometry, roofColliders, seeded } from './street.js';
 import { jpInteriors } from './interiors-jp.js';
+import { createRig } from './rig.js';
+import { japanBoutique } from './boutiques.js';
+import { DEFAULT } from './outfits.js';
 
 export const CHINA = new THREE.Vector3(400, 0, 0);
 const HALF = NX * S / 2;
@@ -259,11 +262,9 @@ export function createChina({ scene, colliders, interactables, label }) {
   box(.45, .6, .4, mat(0xc8282e), -4.6, 1.36, kz - 1.3, kb);
   addBox(-5.3, 0, kz - 1.65, -1.7, 1.05, kz - .8);
   const clerk = new THREE.Group(); clerk.position.set(-3.4, 0, kz - .45); clerk.rotation.y = Math.PI; clerk.userData.keep = true; kb.add(clerk);
-  const cBody = new THREE.Mesh(new THREE.CapsuleGeometry(.2, .5, 4, 10), mat(0xf4f4f2)); cBody.position.y = 1.12; clerk.add(cBody);
-  box(.36, .5, .05, mat(0x20a45a), 0, 1.05, .2, clerk); box(.36, .1, .05, mat(0x1d5aa8), 0, 1.33, .2, clerk);
-  const cHead = new THREE.Mesh(new THREE.SphereGeometry(.14, 12, 10), mat(0xf2d0b0)); cHead.position.y = 1.62; clerk.add(cHead);
-  const cHair = new THREE.Mesh(new THREE.SphereGeometry(.15, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), mat(0x1a1a1e)); cHair.position.y = 1.64; cHair.rotation.x = .3; clerk.add(cHair);
-  for (const x of [-.09, .09]) box(.1, .75, .12, mat(0x2a3448), x, .4, 0, clerk);
+  const clerkRig = createRig({ ...DEFAULT, top: 'tee', tee: 6, bottom: 'chino', skin: 0, hair: 'court', hairC: 1 });
+  clerk.add(clerkRig.root);
+  box(.3, .42, .03, mat(0x20a45a), 0, 1.08, .145, clerk); box(.3, .08, .03, mat(0x1d5aa8), 0, 1.33, .14, clerk);
   // the teleporter's corner, back right, under its own sign
   const tpSign = sign('テレポート · maison', { w: 512, h: 96, bg: '#1d5aa8', color: '#ffffff', size: 44 });
   box(2, .4, .04, new THREE.MeshLambertMaterial({ map: tpSign, emissive: 0xffffff, emissiveMap: tpSign, emissiveIntensity: .3 }), 3.6, 2.8, kz - KD + WT + .04, kb);
@@ -629,8 +630,11 @@ export function createChina({ scene, colliders, interactables, label }) {
   blossoms.finish({ scatter });
   for (const t of blossoms.trees) contact.blob(t.x, t.z, t.r * .8, .06);
 
+  // ---------- the kimono shop, north of the main street, past the last house ----------
+  japanBoutique({ parent: g, addBox, interactables, origin: CHINA, sign });
+
   // ---------- people: on the pavements, round the plaza, waiting on the platform ----------
-  const walkers = createWalkers({ parent: g, seed: 17, clothes: [0x1d2a48, 0xf4f4f2, 0xd8c8a8, 0x2a2a2e, 0x8a9ab0, 0xe8a0b8, 0x4a6a8a, 0xc8b890], paths: [
+  const walkers = createWalkers({ parent: g, seed: 17, style: 'japon', clothes: [0x1d2a48, 0xf4f4f2, 0xd8c8a8, 0x2a2a2e, 0x8a9ab0, 0xe8a0b8, 0x4a6a8a, 0xc8b890], paths: [
     [[-100, A.z1 + 1.2], [B.x0 - 1, A.z1 + 1.2]], [[B.x1 + 1, A.z1 + 1.2], [100, A.z1 + 1.2]],
     [[-100, A.z0 - .9], [B.x0 - 1, A.z0 - .9]], [[B.x1 + 1, A.z0 - .7], [100, A.z0 - .7]],
     [[B.x1 + .8, RAIL.z1 + 2], [B.x1 + .8, A.z0 - 2]], [[B.x1 + .8, A.z1 + 3], [B.x1 + .8, 100]],
@@ -759,6 +763,7 @@ export function createChina({ scene, colliders, interactables, label }) {
       for (const f of flashers) f.m.color.setHex(near && (on === f.side > 0) ? 0xff3020 : 0x401010);
       void night;
       walkers.update(dt);
+      clerkRig.update(dt);
       // the automatic door: open while someone stands near it
       const p = playerPos?.();
       const want = p && Math.abs(p.x - cx - (DX0 + DX1) / 2) < 2.2 && Math.abs(p.z - cz - kz) < 2.2 ? 1 : 0;

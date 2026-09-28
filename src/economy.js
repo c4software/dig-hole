@@ -147,6 +147,7 @@ export function createEconomy(key = 'a-hole-save-v2', { unlimited = false } = {}
     where: 'home', pos: null, yaw: Math.PI, pitch: -0.15,
     tycoon: null,   // the mars colony (tycoon.js), running while you're away
     upKey: false, mapSeed: 1337,   // the key to upstairs; the seed of the garden's current map
+    wear: { own: [], fit: null },  // the clothes bought (ids), and the outfit worn (see outfits.js)
   });
   let s = fresh();
 
@@ -225,6 +226,8 @@ export function createEconomy(key = 'a-hole-save-v2', { unlimited = false } = {}
         s.perks = Object.assign({}, data.s.perks);
         s.parts = Object.assign({}, data.s.parts);
         s.ali = Object.assign({}, data.s.ali);
+        s.wear = Object.assign(fresh().wear, data.s.wear);
+        if (!Array.isArray(s.wear.own)) s.wear.own = [];
         return data;
       } catch { return null; }
     },
