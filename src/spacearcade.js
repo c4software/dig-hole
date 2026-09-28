@@ -154,7 +154,11 @@ export function createSpaceArcade({ has = () => false, name = (id) => id } = {})
     box(DW * 2 + .12, .12, .4, neon, 0, 2.6, HD + T / 2, group);
     // a band of windows, the stripes of the trim
     for (const s of [-1, 1]) box(.02, .5, HD * 2 - 1, new THREE.MeshBasicMaterial({ color: 0x0a1020 }), s * (HW + T + .01), 2.7, 0, group);
-    box(HW * 2 + T * 2 + .02, .16, HD * 2 + T * 2 + .02, trimM, 0, .9, 0, group);
+    // the trim's stripe, a band on the outer faces (split at the door)
+    const ow = HW + T + .01, od = HD + T + .01;
+    box(ow * 2, .16, .02, trimM, 0, .9, -od, group);
+    for (const s of [-1, 1]) box(.02, .16, od * 2, trimM, s * ow, .9, 0, group);
+    for (const s of [-1, 1]) box(ow - DW, .16, .02, trimM, s * (DW + (ow - DW) / 2), .9, od, group);
     // the roof: a flat slab (solid) under a low glass vault
     box(HW * 2 + T * 2 + .2, .25, HD * 2 + T * 2 + .2, trimM, 0, HH + .12, 0, group, true);
     // a half cylinder along the width, flattened: its axis turned from y to x, its height squashed
