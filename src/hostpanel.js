@@ -5,6 +5,7 @@
 import { DEFS, tun } from './tunables.js';
 import { readWorldFile } from './p2p.js';
 import { getTurn, setTurn, parseTurn, turnText } from './rtc.js';
+import { CATALOG } from './catalog.js';
 
 const CSS = `
 .hp { position: fixed; z-index: 60; top: 16px; right: 16px; bottom: 16px; width: min(440px, calc(100vw - 32px)); display: flex; flex-direction: column;
@@ -49,6 +50,9 @@ const CSS = `
 .hp .hint { opacity: .6; font-size: 11.5px; margin: 4px 0; }
 .hp .err { color: #ff7a56; font-weight: 700; font-size: 12px; margin: 4px 0; }
 .hp .turn { display: flex; gap: 6px; margin-top: 6px; }
+.hp .gift { margin: 8px 0 4px; padding: 10px; border-radius: 12px; background: #35281c; }
+.hp .gift .g { display: grid; grid-template-columns: 1fr 64px; gap: 6px; margin: 5px 0; }
+.hp .gift select, .hp .gift input { min-width: 0; background: #1a130d; color: #fff; border: 0; border-radius: 8px; padding: 6px 8px; font: 600 12px/1.2 'Rubik', system-ui, sans-serif; }
 @media (max-width: 520px) { .hp .row { grid-template-columns: 1fr 90px 44px 20px; } }
 `;
 const hex = (c) => '#' + (c >>> 0).toString(16).padStart(6, '0');
@@ -75,7 +79,9 @@ export function createHostPanel({ backend, page = false, detachUrl = null, paren
         <div class="hint">une invitation = un invité. l'invité ouvre le lien, puis te renvoie sa réponse à coller ici (dans le même navigateur, c'est automatique).</div>
         <div id="hp-guests"></div>
       </section>
-      <section><h3>joueurs <em id="hp-n"></em></h3><div id="hp-players"></div></section>
+      <section><h3>joueurs <em id="hp-n"></em></h3><div id="hp-players"></div>
+        <div class="acts" style="margin-top:6px"><button class="ghost" data-a="giftall">donner à tout le monde</button></div>
+        <div class="gift" id="hp-gift" hidden></div></section>
       <section><h3>le monde <em id="hp-ops"></em></h3>
         <div class="acts">
           <button class="ghost" data-a="raid">lancer un raid</button>
@@ -155,9 +161,35 @@ export function createHostPanel({ backend, page = false, detachUrl = null, paren
     const gs = snap.guests.filter(g => g.state !== 'on' && !(inv && g.key === inv.key && g.state === 'invite'));
     $('hp-guests').innerHTML = gs.map(g => { const [t, c] = STATES[g.state] || [g.state, '']; return `<div class="who"><span>${esc(g.name || (g.via === 'sig' ? 'un invité (serveur)' : 'invitation #' + g.key))}</span><span class="chip ${c}">${t}</span>${g.state === 'failed' ? '<em>essayez un turn</em>' : ''}<button class="x" data-a="cancel" data-k="${g.key}" title="oublier">×</button></div>`; }).join('');
     $('hp-n').textContent = snap.players.length;
-    $('hp-players').innerHTML = snap.players.map(p => `<div class="who"><i style="background:${hex(COLORS[p.color % COLORS.length])}"></i><span>${esc(p.name)}${p.owner ? ' <em>(toi, l\'hôte)</em>' : ''}</span><em>${esc(p.w || '')}</em>${p.owner ? '' : `<button class="danger" data-a="kick" data-id="${p.id}">renvoyer</button>`}</div>`).join('') || '<div class="hint">personne pour l\'instant</div>';
+    $('hp-players').innerHTML = snap.players.map(p => `<div class="who"><i style="background:${hex(COLORS[p.color % COLORS.length])}"></i><span>${esc(p.name)}${p.owner ? ' <em>(toi, l\'hôte)</em>' : ''}</span><em>${esc(p.w || '')}</em><button class="ghost" data-a="gift" data-id="${p.id}">donner</button>${p.owner ? '' : `<button class="danger" data-a="kick" data-id="${p.id}">renvoyer</button>`}</div>`).join('') || '<div class="hint">personne pour l\'instant</div>';
     values = snap.values || {};
     showValues();
+  }
+
+  // ---------- gifts: coins, an item, something for the sack, a rocket part ----------
+  let giftTo = null;
+  const opts = (list) => '<option value="">—</option>' + list.map(([v, n]) => `<option value="${esc(v)}">${esc(n)}</option>`).join('');
+  function openGift(id) {
+    giftTo = id;
+    const who = id == null ? 'tout le monde (sauf toi)' : (lastSnap?.players.find(p => p.id === id)?.name ?? '?');
+    const box = $('hp-gift');
+    box.hidden = false;
+    box.innerHTML = `<div class="hint">donner à <b style="color:#ffdc8f">${esc(who)}</b></div>
+      <div class="g"><span>pièces ●</span><input type="number" min="0" step="10" value="0" data-g="coins"></div>
+      <div class="g"><select data-g="item">${opts(CATALOG.items)}</select><input type="number" min="1" max="99" value="1" data-g="itemn"></div>
+      <div class="g"><select data-g="sack">${opts(CATALOG.sack)}</select><input type="number" min="1" max="999" value="5" data-g="sackn"></div>
+      <div class="g"><select data-g="part">${opts(CATALOG.parts.map(([v, n]) => [v, 'pièce de fusée : ' + n]))}</select><span></span></div>
+      <div class="acts"><button data-a="giftgo">envoyer</button><button class="ghost" data-a="giftx">annuler</button></div>`;
+  }
+  async function sendGift(b) {
+    const v = (k) => $('hp-gift').querySelector(`[data-g="${k}"]`).value;
+    const gift = { coins: Math.max(0, Math.floor(+v('coins') || 0)), items: {}, sack: {}, parts: [] };
+    if (v('item')) gift.items[v('item')] = Math.max(1, Math.min(99, Math.floor(+v('itemn') || 1)));
+    if (v('sack')) gift.sack[v('sack')] = Math.max(1, Math.min(999, Math.floor(+v('sackn') || 1)));
+    if (v('part')) gift.parts.push(v('part'));
+    if (!gift.coins && !v('item') && !v('sack') && !v('part')) return err('rien à donner');
+    await backend.give(giftTo, gift);
+    b.textContent = 'envoyé !'; setTimeout(() => { b.textContent = 'envoyer'; }, 1500);
   }
 
   const err = (m) => { $('hp-err').textContent = m || ''; if (m) setTimeout(() => { if ($('hp-err').textContent === m) $('hp-err').textContent = ''; }, 5000); };
@@ -179,6 +211,9 @@ export function createHostPanel({ backend, page = false, detachUrl = null, paren
       else if (a === 'invite') { b.disabled = true; b.textContent = 'préparation…'; try { inv = await backend.invite(); } finally { b.disabled = false; b.textContent = 'nouvelle invitation par code'; } $('hp-inv').dataset.key = ''; render(lastSnap || backend.snap?.()); }
       else if (a === 'accept') { const v = el.querySelector('#hp-ans')?.value.trim(); if (!v) return; await backend.accept(v); inv = null; $('hp-inv').dataset.key = ''; }
       else if (a === 'cancel') { const k = b.dataset.k ? +b.dataset.k : inv?.key; if (k) await backend.cancel(k); if (!b.dataset.k) { inv = null; $('hp-inv').dataset.key = ''; } }
+      else if (a === 'gift' || a === 'giftall') openGift(a === 'gift' ? +b.dataset.id : null);
+      else if (a === 'giftgo') await sendGift(b);
+      else if (a === 'giftx') $('hp-gift').hidden = true;
       else if (a === 'kick') { if (confirm2('kick' + b.dataset.id, b, 'sûr ?')) await backend.kick(+b.dataset.id); }
       else if (a === 'raid') { await backend.raid(); b.textContent = 'le bombardier arrive !'; setTimeout(() => { b.textContent = 'lancer un raid'; }, 2500); }
       else if (a === 'resetmap') { if (confirm2('reset', b, 'sûr ? tout le monde repart à zéro')) await backend.resetMap(); }
@@ -208,7 +243,7 @@ export function localBackend(host) {
   return {
     snap: () => host.snap(),
     set: (k, v) => tun.set(k, v), reset: (k) => tun.reset(k),
-    kick: (id) => host.kick(id), raid: () => host.raid(), resetMap: () => host.resetMap(),
+    kick: (id) => host.kick(id), raid: () => host.raid(), resetMap: () => host.resetMap(), give: (id, g) => host.give(id, g),
     invite: () => host.invite(), accept: (c) => host.accept(c), cancel: (k) => host.cancel(k),
     exportWorld: () => host.exportWorld(), importWorld: (o) => host.importWorld(o),
   };

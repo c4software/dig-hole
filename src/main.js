@@ -17,6 +17,7 @@ import { createElevator } from './elevator.js';
 import { createNet } from './net.js';
 import { tun } from './tunables.js';
 import { initP2PMenu, p2pConnect } from './p2p-ui.js';
+import { createDrops } from './drops.js';
 import { createPlane } from './plane.js';
 import { createAnimals, ANIMAL } from './animals.js';
 import { createHologram } from './hologram.js';
@@ -368,6 +369,12 @@ heart.setPortal(eco.s.portal);
 
 const ladders = createLadders(scene);
 if (!MULTI) ladders.load(eco.s.ladders);
+// bags left on the ground for the others (v): ops of the room, picked up once (drops.js)
+const drops = createDrops({
+  scene, eco, ui, audio, ITEMS, PARTS, nameOf: (id) => eco.nameOf(id), gainPart: (id) => gainPart(id), save: () => save(),
+  emit: (op) => applyOp(op), net: () => net, myName: () => net?.list()[0]?.name || myName(),
+});
+if (!MULTI) drops.load(eco.s.drops);
 
 // ---------- ground changes: every one goes through here, and out to the room ----------
 let net = null;
@@ -382,6 +389,8 @@ function applyOp(op, local = true) {
   else if (op.k === 'ladder') ladders.add(op.l);
   else if (op.k === 'moonportal') { eco.s.moonPortal = true; }
   else if (op.k === 'unladder') ladders.remove(op.id);
+  else if (op.k === 'drop') drops.add(op);
+  else if (op.k === 'take') drops.taken(op);
   else if (op.k === 'find') {
     const f = finds[op.w].remove(op.key);
     if (!local && f && !(eco.s.finds[op.w] = eco.s.finds[op.w] || []).includes(op.key)) eco.s.finds[op.w].push(op.key);
@@ -536,7 +545,9 @@ addEventListener('keydown', (e) => {
     if (state === 'panel' || state === 'read') closePanel();
     else if (state === 'play' && mg.active === 'pile' && here === 'home') mg.validate(Math.max(0, -player.pos.y));
     else if (state === 'play' && near) interact(near);
+    else if (state === 'play') { const d = drops.nearest(here, onPlanet() ? moonP.pos : player.pos); if (d) drops.claim(d); }
   }
+  if (e.code === 'KeyV' && state === 'play' && !mg.active) { drops.resetPack(); openPanel('drop'); }
   if (e.code === 'Escape' && (state === 'panel' || state === 'read')) closePanel();
   else if (e.code === 'Escape' && bigMap) toggleMap();
   else if (e.code === 'Escape' && (state === 'play' || state === 'drive' || (state === 'kart' && race?.screen)) && !document.pointerLockElement) openPause();
@@ -2412,6 +2423,7 @@ function resetMap(seed, local) {
   terrains.home.rebuildAll(); terrains.china.rebuildAll();
   moles.clear(); guardiansUp = false;
   ladders.clear();
+  drops.clear();
   eco.s.mapSeed = seed; quest.place(seed);
   eco.s.best = 0; eco.s.bestChina = 0; eco.s.layerSeen = 0; eco.s.layerSeenChina = 0; eco.s.guardians = false;
   heart.group.visible = true;
@@ -2577,7 +2589,8 @@ function craftRow(r) {
 
 function renderPanel(quip) {
   const k = panelKind;
-  if (k === 'shop') {
+  if (k === 'drop') ui.panel(drops.panel(quip, hotSlots()));
+  else if (k === 'shop') {
     const rows = ORDER.map(id => upgradeRow(id, false));
     for (const id of ['ladder', 'med', 'cell']) rows.push({ id: 'item:' + id, kind: 'objet', name: ITEMS[id].name, lvl: `×${eco.s.items[id]}`, sub: ITEMS[id].sub, price: ITEMS[id].price, poor: eco.s.money < ITEMS[id].price });
     ui.panel({ title: 'la quincaillerie', quip, rows, close: 'retour au trou' });
@@ -2655,6 +2668,13 @@ ui.el.shopItems.addEventListener('click', (e) => {
   if (!b || b.classList.contains('static')) return;
   const id = b.dataset.id;
   const deny = () => { audio.deny(); ui.flashItem(id, 'shake'); };
+  if (panelKind === 'drop') {
+    const here_ = onPlanet() ? { w: here, p: moonP.pos.toArray() } : { w: here, p: [player.pos.x - Math.sin(player.yaw) * 1.1, player.pos.y, player.pos.z - Math.cos(player.yaw) * 1.1] };
+    const r = drops.click(id, here_);
+    if (r === 'deny') return deny();
+    if (r === 'put') { closePanel(); ui.toast('paquet posé · qui passe dessus le ramasse'); return; }
+    audio.tick(); renderPanel(); return;
+  }
   if (panelKind === 'cshop' && id.startsWith('kgood:')) {
     const k = KONBINI[id.slice(6)];
     if (!eco.pay(k.price)) return deny();
@@ -2820,6 +2840,7 @@ function save() {
   eco.s.where = here;
   eco.s.delivery = delivery.state;
   eco.s.ladders = ladders.save();
+  if (!MULTI) eco.s.drops = drops.save();
   eco.save(MULTI ? {} : { t: terrains.home.serialize(), tc: terrains.china.serialize(), tm: terrains.moon.serialize(), tmars: terrains.mars.serialize(), tch: terrains.church.serialize() });
 }
 let saveT = 0;
@@ -2871,7 +2892,10 @@ if (MULTI) {
       if (s === 'off') { ui.setNet(`<span class="t">${P2P ? 'hors ligne · l\'hôte est parti ?' : 'hors ligne'}</span>`, true); delivery.dropPeer(); }
     },
     // the host's word: a raid called in for everyone
-    onAdmin(m) { if (m.a === 'raid') plane.raid(); },
+    onAdmin(m) {
+      if (m.a === 'raid') plane.raid();
+      else if (m.a === 'give') drops.grant(m.gift, `${m.by || 'l\'hôte'} t'a donné`);
+    },
   });
   delivery.link((fx) => net.sendFx(fx));
   if (P2P) p2pConnect(net, { params, hooks: {
@@ -3086,6 +3110,7 @@ function loop(ts) {
     // stepping onto the plot while a raid is on its way: the alert, then
     if (raidAlert && inDigZone()) raidWarn();
     moles.update(dt, player);
+    if (playing) drops.update(dt, here, onPlanet() ? moonP.pos : player.pos, onPlanet());
     finds[here].update(dt, (f) => { applyOp({ k: 'find', w: here, key: f.key }); eco.s.finds[here].push(f.key); bombs.boom('shell', f.center.clone()); }, () => audio.tick());
 
     if (playing && onPlanet()) {

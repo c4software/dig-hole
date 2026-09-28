@@ -196,6 +196,8 @@ export async function startHost({ name, nick = 'hôte', hooks = {}, useSig = tru
     cancel(key) { const g = guests.get(key); if (!g) return; try { g.pipe?.close(); g.pc?.close(); } catch {} guests.delete(key); changed(); },
     kick(id) { const g = [...guests.values()].find(x => x.id === id); if (g) g.state = 'kicked'; const ok = room.kick(id); changed(); return ok; },
     raid() { room.broadcast({ t: 'admin', a: 'raid' }); },
+    // a gift (drops.js bundle) to one digger, or to everyone but the host (id null)
+    give(id, gift) { return room.give(id, gift, nick); },
     resetMap() { if (hooks.resetMap) hooks.resetMap(); else room.op({ k: 'reset', seed: Math.floor(Math.random() * 1e9) }); },
     players() { return room.players(); },
     exportWorld() { download(`a-hole-${name}.json`, worldFile(name, { ops: room.ops, tun: room.tun, notes: room.notes })); },
@@ -227,7 +229,7 @@ function adminBridge(host) {
   host.on(() => { if (!pend) pend = setTimeout(() => { pend = 0; push(); }, 60); });
   setInterval(push, 2000);
   const calls = {
-    set: (k, v) => tun.set(k, v), reset: (k) => tun.reset(k), kick: (id) => host.kick(id), raid: () => host.raid(), resetMap: () => host.resetMap(),
+    set: (k, v) => tun.set(k, v), reset: (k) => tun.reset(k), kick: (id) => host.kick(id), raid: () => host.raid(), resetMap: () => host.resetMap(), give: (id, g) => host.give(id, g),
     invite: () => host.invite(), accept: (code) => host.accept(code).then(() => true), cancel: (key) => host.cancel(key),
     worldData: () => host.worldData(), importWorld: (obj) => host.importWorld(obj),
   };
@@ -257,7 +259,7 @@ export function remoteHost(onSnap) {
     remote: true,
     get last() { return last; },
     ping: () => bc.postMessage({ t: 'ping' }),
-    set: (k, v) => call('set', k, v), reset: (k) => call('reset', k), kick: (id) => call('kick', id), raid: () => call('raid'), resetMap: () => call('resetMap'),
+    set: (k, v) => call('set', k, v), reset: (k) => call('reset', k), kick: (id) => call('kick', id), raid: () => call('raid'), resetMap: () => call('resetMap'), give: (id, g) => call('give', id, g),
     invite: () => call('invite'), accept: (code) => call('accept', code), cancel: (key) => call('cancel', key),
     exportWorld: async () => { const w = await call('worldData'); download(`a-hole-${w.room}.json`, w); },
     importWorld: (obj) => call('importWorld', obj),

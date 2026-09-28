@@ -402,4 +402,150 @@ test('p2p through /sig: a guest types @room, the host answers by itself', async 
   } finally { location.host = was; srv.kill(); fs.rmSync(tmp, { recursive: true, force: true }); }
 });
 
+// ---------- bags on the ground: exactly one digger gets each ----------
+test('room: a drop is taken once, whoever asks second gets nothing', () => {
+  const r = createRoom({ ops: [{ k: 'drop', id: 'old', c: {} }, { k: 'drop', id: 'gone', c: {} }, { k: 'take', id: 'gone', by: 9 }] });
+  assert.deepEqual([...r.drops], ['old']);
+  const A = fakeLink(), B = fakeLink(), C = fakeLink();
+  const ca = r.join(A), cb = r.join(B), cc = r.join(C);
+  for (const [c, n] of [[ca, 'a'], [cb, 'b'], [cc, 'c']]) r.message(c, { t: 'hello', name: n });
+  r.message(ca, { t: 'op', op: { k: 'drop', id: 'd1', w: 'home', p: [0, 0, 0], by: 'a', c: { coins: 5 } } });
+  assert.equal(last(B, 'op').op.id, 'd1'); assert.equal(A.got.filter(m => m.t === 'op').length, 0);
+  r.message(ca, { t: 'op', op: { k: 'drop', id: 'd1', c: {} } });   // same id again: ignored
+  assert.equal(r.ops.filter(o => o.id === 'd1').length, 1);
+  // b and c both grab it: b's take reaches the room first
+  r.message(cb, { t: 'op', op: { k: 'take', id: 'd1', tok: 'bbb' } });
+  r.message(cc, { t: 'op', op: { k: 'take', id: 'd1', tok: 'ccc' } });
+  for (const L of [A, B, C]) { const t = L.got.filter(m => m.t === 'op' && m.op.k === 'take'); assert.equal(t.length, 1); assert.deepEqual(t[0].op, { k: 'take', id: 'd1', tok: 'bbb', by: 2 }); }
+  assert.deepEqual(last(C, 'op-no'), { t: 'op-no', id: 'd1' });
+  assert.equal(r.ops.filter(o => o.k === 'take' && o.id === 'd1').length, 1);
+  // a late comer replays: drop then take
+  const L = fakeLink(); r.message(r.join(L), { t: 'hello', name: 'late' });
+  assert.deepEqual(last(L, 'welcome').ops.filter(o => o.id === 'd1').map(o => o.k), ['drop', 'take']);
+  r.message(ca, { t: 'op', op: { k: 'reset', seed: 1 } });
+  assert.equal(r.drops.size, 0);
+});
+
+test('room: gifts from the host go to one digger, or to all but the host', () => {
+  const r = createRoom();
+  const H = fakeLink(true), A = fakeLink(), B = fakeLink();
+  const ch = r.join(H), ca = r.join(A), cb = r.join(B);
+  r.message(ch, { t: 'hello', name: 'h' }); r.message(ca, { t: 'hello', name: 'a' }); r.message(cb, { t: 'hello', name: 'b' });
+  r.message(ca, { t: 'admin', a: 'give', gift: { coins: 1e6 } });   // a guest can't
+  assert.equal(B.got.filter(m => m.t === 'admin').length, 0);
+  r.give(2, { coins: 50 }, 'h');
+  assert.deepEqual(last(A, 'admin'), { t: 'admin', a: 'give', gift: { coins: 50 }, by: 'h' });
+  assert.equal(B.got.filter(m => m.t === 'admin').length, 0);
+  r.give(null, { items: { dyn: 2 } }, 'h');
+  assert.equal(last(B, 'admin').gift.items.dyn, 2); assert.equal(A.got.filter(m => m.t === 'admin').length, 2);
+  assert.equal(H.got.filter(m => m.t === 'admin').length, 0);
+});
+
+test('drops.js: dropping takes it from you, the room\'s answer gives it to the first', async () => {
+  globalThis.document.createElement ??= () => ({ getContext: () => null });
+  const THREE = await import('three');
+  const { createEconomy, ITEMS } = await import('../src/economy.js');
+  const { createDrops, cleanPack } = await import('../src/drops.js');
+  const ui = { toasts: [], setCoins() {}, setBag() {}, toast(t) { ui.toasts.push(t); } };
+  const mk = (netObj) => { const eco = createEconomy('t'); const sent = []; const scene = new THREE.Group(); const d = createDrops({ scene, eco, ui, ITEMS, PARTS: [{ id: 'p_moteur', name: 'moteur' }], nameOf: (id) => eco.nameOf(id), gainPart: () => {}, save() {}, emit: (op) => sent.push(op), net: () => netObj, myName: () => 'val' }); return { eco, d, sent, scene }; };
+  // solo: drop, walk away, walk back: it's yours again
+  const solo = mk(null);
+  solo.eco.s.money = 120; solo.eco.s.items.dyn = 3; solo.eco.add(21); solo.eco.add(21);
+  for (const id of ['coin:100', 'item:dyn', 'item:dyn', 'sack:21']) assert.equal(solo.d.click(id), 'ok');
+  assert.equal(solo.d.click('put', { w: 'home', p: [1, 0, 1] }), 'put');
+  assert.equal(solo.eco.s.money, 20); assert.equal(solo.eco.s.items.dyn, 1); assert.equal(solo.eco.s.sack[21], 1); assert.equal(solo.eco.s.sackN, 1);
+  assert.equal(solo.sent[0].k, 'drop'); assert.deepEqual(solo.sent[0].c.items, { dyn: 2 });
+  const P = (x, y, z) => new THREE.Vector3(x, y, z);
+  solo.d.update(.1, 'home', P(1, 0, 1));                  // still standing on it: not picked up
+  assert.equal(solo.d.size, 1);
+  solo.d.update(.1, 'home', P(9, 0, 9)); solo.d.update(.1, 'home', P(1.2, 0, 1));
+  assert.equal(solo.d.size, 0);
+  assert.equal(solo.eco.s.money, 120); assert.equal(solo.eco.s.items.dyn, 3); assert.equal(solo.eco.s.sack[21], 2);
+  // online: two diggers step on the same bag; the room's take says who
+  const sentA = [], sentB = [];
+  const A = mk({ sendOp: (op) => sentA.push(op) }), B = mk({ sendOp: (op) => sentB.push(op) });
+  const drop = { k: 'drop', id: 'x1', w: 'home', p: [0, 0, 0], by: 'zoé', c: { coins: 40, sack: { 21: 2 }, items: { bogus: 5 } } };
+  A.d.add(drop); B.d.add(drop);
+  A.d.update(.1, 'home', P(0, 0, 0)); B.d.update(.1, 'home', P(0, 0, 0));
+  assert.equal(sentA.length, 1); assert.equal(sentB.length, 1);
+  // what the room does with both (the first one in wins)
+  const room = createRoom({ ops: [drop] });
+  const la = fakeLink(), lb = fakeLink(); const ca = room.join(la), cb = room.join(lb);
+  room.message(ca, { t: 'hello', name: 'a' }); room.message(cb, { t: 'hello', name: 'b' });
+  room.message(cb, { t: 'op', op: sentB[0] }); room.message(ca, { t: 'op', op: sentA[0] });
+  const take = last(la, 'op').op;
+  A.d.taken(take); B.d.taken(take);
+  assert.equal(A.eco.s.money, 0); assert.equal(B.eco.s.money, 40); assert.equal(B.eco.s.sack[21], 2);
+  assert.equal(A.d.size, 0); assert.equal(B.d.size, 0);
+  // replaying the log later grants nothing
+  const C = mk({ sendOp() {} }); C.d.add(drop); C.d.taken(take); assert.equal(C.eco.s.money, 0);
+  // a gift is cleaned: unknown things out, amounts capped
+  assert.deepEqual(cleanPack({ coins: -3, items: { dyn: 500, zz: 1 }, sack: { 999: 1, 21: 2 }, parts: ['p_moteur', 'x'] }, { items: ITEMS, sackOk: (id) => id === '21', partOk: (id) => id === 'p_moteur' }), { coins: 0, items: { dyn: 99 }, ali: {}, sack: { 21: 2 }, parts: ['p_moteur'] });
+});
+
+test('p2p: simultaneous pickups through a hosted room, and gifts', async () => {
+  const host = await p2p.startHost({ name: 'sacs', nick: 'hh', useSig: false });
+  const hs = host.socket(); const hgot = [];
+  hs.onmessage = (e) => hgot.push(JSON.parse(e.data));
+  hs.onopen = () => hs.send(JSON.stringify({ t: 'hello', name: 'hh' }));
+  const guest = async (name) => {
+    const inv = await host.invite();
+    const j = await p2p.joinHost({ join: inv.code, nick: name });
+    const s = j.socket(); const got = [];
+    s.onmessage = (e) => got.push(JSON.parse(e.data));
+    await new Promise(r => { s.onopen = r; });
+    s.send(JSON.stringify({ t: 'hello', name }));
+    await tick(20);
+    return { s, got, id: got.find(m => m.t === 'welcome').id };
+  };
+  const g1 = await guest('un'), g2 = await guest('deux');
+  hs.send(JSON.stringify({ t: 'op', op: { k: 'drop', id: 'bag', w: 'home', p: [0, 0, 0], by: 'hh', c: { coins: 9 } } }));
+  await tick(20);
+  assert.ok(g1.got.some(m => m.t === 'op' && m.op.k === 'drop'));
+  g1.s.send(JSON.stringify({ t: 'op', op: { k: 'take', id: 'bag', tok: 't1' } }));
+  g2.s.send(JSON.stringify({ t: 'op', op: { k: 'take', id: 'bag', tok: 't2' } }));
+  await tick(40);
+  const takes = [hgot, g1.got, g2.got].map(l => l.filter(m => m.t === 'op' && m.op.k === 'take').map(m => m.op.tok));
+  assert.equal(takes[0].length, 1);
+  for (const t of takes) assert.deepEqual(t, takes[0]);   // everyone agrees on the one winner
+  assert.equal(host.room.ops.filter(o => o.k === 'take').length, 1);
+  host.give(g2.id, { coins: 7 });
+  host.give(null, { items: { dyn: 1 } });
+  await tick(20);
+  assert.deepEqual(g2.got.filter(m => m.t === 'admin').map(m => m.gift), [{ coins: 7 }, { items: { dyn: 1 } }]);
+  assert.deepEqual(g1.got.filter(m => m.t === 'admin').map(m => m.gift), [{ items: { dyn: 1 } }]);
+  assert.equal(hgot.filter(m => m.t === 'admin').length, 0);
+  assert.equal(g2.got.find(m => m.t === 'admin').by, 'hh');
+});
+
+test('server.mjs: two diggers grab the same bag at once, one gets it', async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ahole-bag-'));
+  const srv = await run(path.join(ROOT, 'server.mjs'), 18774, tmp);
+  try {
+    const open = () => new Promise((res) => { const ws = new WebSocket('ws://127.0.0.1:18774/ws'); const got = []; ws.onmessage = (e) => got.push(JSON.parse(e.data)); ws.onopen = () => res({ ws, got }); });
+    const [a, b, c] = [await open(), await open(), await open()];
+    for (const [x, n] of [[a, 'a'], [b, 'b'], [c, 'c']]) x.ws.send(JSON.stringify({ t: 'hello', name: n }));
+    await tick(80);
+    for (let round = 0; round < 20; round++) {
+      const id = 'bag' + round;
+      a.ws.send(JSON.stringify({ t: 'op', op: { k: 'drop', id, w: 'home', p: [0, 0, 0], by: 'a', c: { coins: 1 } } }));
+      await tick(15);
+      // sent in the same tick: the server's order decides
+      b.ws.send(JSON.stringify({ t: 'op', op: { k: 'take', id, tok: 'b' + round } }));
+      c.ws.send(JSON.stringify({ t: 'op', op: { k: 'take', id, tok: 'c' + round } }));
+    }
+    await tick(200);
+    for (let round = 0; round < 20; round++) {
+      const seen = [a, b, c].map(x => x.got.filter(m => m.t === 'op' && m.op.k === 'take' && m.op.id === 'bag' + round).map(m => m.op.tok));
+      assert.equal(seen[0].length, 1, 'one take per bag');
+      assert.deepEqual(seen[1], seen[0]); assert.deepEqual(seen[2], seen[0]);
+    }
+    // a late comer: all bags taken
+    const d = await open(); d.ws.send(JSON.stringify({ t: 'hello', name: 'd' })); await tick(80);
+    const w = d.got.find(m => m.t === 'welcome');
+    assert.equal(w.ops.filter(o => o.k === 'drop').length, 20); assert.equal(w.ops.filter(o => o.k === 'take').length, 20);
+    for (const x of [a, b, c, d]) x.ws.close();
+  } finally { srv.kill(); fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+
 test.after(() => setTimeout(() => process.exit(0), 50));

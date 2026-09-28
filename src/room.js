@@ -32,6 +32,28 @@ export function createRoom({
 
   function join(link) { return { link, me: null }; }
 
+  // things dropped on the ground and not yet picked up: the room decides who gets each one
+  const drops = new Set();
+  const scan = () => { drops.clear(); for (const o of ops) track(o); };
+  function track(o) { if (o.k === 'reset') drops.clear(); else if (o.k === 'drop') drops.add(o.id); else if (o.k === 'take') drops.delete(o.id); }
+  scan();
+  // an op into the log and out to the others (from: null → to everyone). A take is the only
+  // one echoed to its sender too: the first take of a drop wins, the later ones are dropped.
+  function record(op, from, by) {
+    if (op.k === 'take') {
+      if (typeof op.id !== 'string' || !drops.has(op.id)) { if (from) to(from, { t: 'op-no', id: op.id }); return; }
+      op = { k: 'take', id: op.id, tok: String(op.tok || '').slice(0, 16), by };
+      drops.delete(op.id); ops.push(op); dirty = true;
+      all({ t: 'op', op });
+      return;
+    }
+    if (op.k === 'drop' && (typeof op.id !== 'string' || drops.has(op.id))) return;
+    // a reset wipes the room's history: the new map starts from its seed
+    if (op.k === 'reset') { ops.length = 0; ops.push(op); dirty = true; track(op); }
+    else if (ops.length < maxOps) { ops.push(op); dirty = true; track(op); }
+    others(from, { t: 'op', op });
+  }
+
   function message(c, m) {
     if (!m || typeof m !== 'object') return;
     const me = c.me;
@@ -58,16 +80,13 @@ export function createRoom({
       superAt = now() + superMs;
       all({ t: 'superreset', in: superMs, seed, by: me.name });
       // when it goes off, the room's history is gone: late comers start from the new seed too
-      later(() => { ops.length = 0; ops.push({ k: 'reset', seed, all: true }); dirty = true; superAt = 0; }, superMs);
+      later(() => { ops.length = 0; ops.push({ k: 'reset', seed, all: true }); drops.clear(); dirty = true; superAt = 0; }, superMs);
       log(`super reset by ${me.name}`);
     } else if (m.t === 'fx' && m.fx && typeof m.fx === 'object') {
       // a laser shot, a paint blob: passed on, never kept
       others(c, { t: 'fx', id: me.id, fx: m.fx });
     } else if (m.t === 'op' && m.op && typeof m.op === 'object') {
-      // a reset wipes the room's history: the new map starts from its seed
-      if (m.op.k === 'reset') { ops.length = 0; ops.push(m.op); dirty = true; }
-      else if (ops.length < maxOps) { ops.push(m.op); dirty = true; }
-      others(c, { t: 'op', op: m.op });
+      record(m.op, c, me.id);
     } else if (m.t === 'notes' && notes) {
       // the guest book, asked through the room: { t:'notes', rid, text?, name? }
       const r = m.text != null ? notePost(notes, m, { key: me.id, now: now() }) : { code: 200, body: noteList(notes) };
@@ -93,7 +112,17 @@ export function createRoom({
     setTun(v) { tun = v && Object.keys(v).length ? v : null; dirty = true; all({ t: 'tun', v: tun || {} }); },
     broadcast(msg) { all(msg); },
     // a change to the ground made by the host's own hand (a dedicated server tab has no game to send it)
-    op(op) { if (op.k === 'reset') { ops.length = 0; ops.push(op); } else if (ops.length < maxOps) ops.push(op); dirty = true; all({ t: 'op', op }); },
+    op(op) { record(op, null, 0); },
+    // gifts from the host: to one digger (id) or to everyone but the host (id null)
+    give(id, gift, by = 'l\'hôte') {
+      const msg = { t: 'admin', a: 'give', gift, by };
+      if (id == null) { for (const c of clients.values()) if (!c.link.owner) to(c, msg); return true; }
+      const c = clients.get(id);
+      if (!c) return false;
+      to(c, msg);
+      return true;
+    },
+    get drops() { return drops; },
     kick(id, why = 'renvoyé par l\'hôte') {
       const c = clients.get(id);
       if (!c || c.link.owner) return false;
