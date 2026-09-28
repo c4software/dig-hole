@@ -2,6 +2,7 @@
 // figures with their name over their head, and every change to the ground shared.
 import * as THREE from 'three';
 import { tun } from './tunables.js';
+import { serverClock } from './events-calendar.js';
 
 const COLORS = [0xd9a125, 0x39c07a, 0x4a8fe0, 0xe4183a, 0xb05ae0, 0xf08a2a, 0x2ac0c0, 0xf2a7c3];
 
@@ -66,6 +67,7 @@ export function createNet({ scene, onOp, onJoin, onLeave, onWelcome, onStatus, o
       if (m.t === 'welcome') {
         id = m.id; color = COLORS[m.color % COLORS.length]; hostId = m.host ?? null;
         if (m.tun) tun.load(m.tun);
+        if (m.date) serverClock.set(m.date);   // the feasts go by the room's date, not ours
         for (const p of m.players) addPeer(p);
         onWelcome?.(m);
       } else if (m.t === 'join') { addPeer(m); onJoin?.(m.name); }
@@ -83,6 +85,7 @@ export function createNet({ scene, onOp, onJoin, onLeave, onWelcome, onStatus, o
       else if (m.t === 'fx') { const p = peers.get(m.id); if (p) onFx?.(m.id, p, m.fx); }
       // from a host's tab: its live values, its word (a raid, a kick), the guest book
       else if (m.t === 'tun') tun.load(m.v);
+      else if (m.t === 'date') serverClock.set(m.date);
       else if (m.t === 'admin') onAdmin?.(m);
       else if (m.t === 'kicked') { onStatus?.('kicked', m.why); ws.close(); }
       else if (m.t === 'notes') { asks.get(m.rid)?.(m); asks.delete(m.rid); }

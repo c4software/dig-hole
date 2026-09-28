@@ -106,7 +106,7 @@ test('room: welcome, join, state, op log, fx, leave', () => {
   const w = last(a, 'welcome');
   assert.equal(w.id, 1); assert.equal(w.room, 'jardin'); assert.equal(w.ops.length, 1); assert.deepEqual(w.players, []);
   assert.equal(w.tun, undefined); assert.equal(w.host, undefined);   // the node server's welcome is unchanged
-  assert.deepEqual(Object.keys(w), ['t', 'id', 'color', 'room', 'ops', 'players']);
+  assert.deepEqual(Object.keys(w), ['t', 'id', 'color', 'room', 'ops', 'players', 'date']);   // + the room's date (feasts)
   r.message(cb, { t: 'hello', name: 'bob' });
   assert.equal(last(a, 'join').name, 'bob');
   assert.equal(last(b, 'welcome').players[0].name, 'anne');
@@ -305,6 +305,30 @@ test('p2p: host a room, a guest joins by code (same browser answer), tunables, k
   await tick(150);
 });
 
+test('p2p: the feasts go by the host\'s date: a guest in july sees noël when the host is on christmas eve', async () => {
+  const { serverClock, activeEvents, tunToOverride } = await import('../src/events-calendar.js');
+  const { createNet } = await import('../src/net.js');
+  const XMAS = Date.UTC(2026, 11, 24, 12), JULY = Date.UTC(2026, 6, 10, 15);
+  const host = await p2p.startHost({ name: 'fete', nick: 'h', useSig: false, now: () => XMAS });
+  const inv = await host.invite();
+  const j = await p2p.joinHost({ join: inv.link, nick: 'bob' });
+  const realNow = Date.now;
+  serverClock.clear();
+  Date.now = () => JULY;          // the guest's own clock
+  try {
+    assert.deepEqual(activeEvents(serverClock.parts()).map(e => e.id), []);
+    const net = createNet({ scene: { add() {}, remove() {} } });
+    net.connect('fete', 'bob', () => j.socket());
+    await tick(40);
+    assert.equal(serverClock.remote, true);
+    assert.deepEqual(activeEvents(serverClock.parts()).map(e => e.id), ['noel']);
+    // the host's (or the admin's) override still wins: `event` none for everyone
+    tun.set('event', 0);
+    await tick(150);
+    assert.deepEqual(activeEvents(serverClock.parts(), tunToOverride(tun.get('event'))), []);
+  } finally { Date.now = realNow; serverClock.clear(); tun.reset(); await tick(150); }
+});
+
 test('p2p: an invitation that fails (nat), a pasted answer', async () => {
   const host = await p2p.startHost({ name: 'deux', nick: 'h', useSig: false });
   const inv = await host.invite();
@@ -348,7 +372,8 @@ async function script(port) {
   a.ws.send(JSON.stringify({ t: 'tun', v: { gravity: 3 } })); await tick(40);   // unknown to the node server: ignored
   b.ws.close(); await tick(80);
   a.ws.close();
-  const norm = (m) => (m.t === 'welcome' ? { ...m, id: 'ID', players: m.players.map(p => ({ ...p, id: 'ID' })), ops: m.ops.length } : m.id ? { ...m, id: 'ID' } : m);
+  // (the room's date is new: the feasts of the calendar go by it)
+  const norm = (m) => (m.t === 'welcome' ? { ...m, date: undefined, id: 'ID', players: m.players.map(p => ({ ...p, id: 'ID' })), ops: m.ops.length } : m.id ? { ...m, id: 'ID' } : m);
   return { a: a.got.map(norm), b: b.got.map(norm) };
 }
 test('server.mjs: same messages as the old server, and /sig', async () => {

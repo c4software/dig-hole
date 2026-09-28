@@ -69,11 +69,12 @@ function localSocket(room, owner) {
 
 // ---------- hosting ----------
 // hooks from the game: clock() the garden's clock now, raid(), resetMap()
-export async function startHost({ name, nick = 'hôte', hooks = {}, useSig = true } = {}) {
+// now: the host's clock (its date decides the feasts for the guests); tests give another
+export async function startHost({ name, nick = 'hôte', hooks = {}, useSig = true, now } = {}) {
   name = roomKey(name) || 'partie';
   const saved = await loadWorld(name) || {};
   tun.load(saved.tun || {});
-  const room = createRoom({ name, ops: saved.ops || [], tun: saved.tun && Object.keys(saved.tun).length ? saved.tun : null, notes: saved.notes || [], superPw: null });
+  const room = createRoom({ name, ops: saved.ops || [], tun: saved.tun && Object.keys(saved.tun).length ? saved.tun : null, notes: saved.notes || [], superPw: null, ...(now ? { now } : {}) });
   const subs = new Set();
   const changed = () => { for (const f of subs) { try { f(); } catch (e) { console.error(e); } } };
   const guests = new Map();   // key → { key, via, state, id, name, pc, pipe, offer }
