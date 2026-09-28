@@ -7,7 +7,7 @@ import { DEFAULT } from './outfits.js';
 
 const G = 3.2;            // weaker than home: long, floaty jumps
 const HALF = 0.34;        // the body is a small box, the world's voxels don't rotate
-const tmp = new THREE.Vector3(), tmp2 = new THREE.Vector3();
+const tmp = new THREE.Vector3(), tmp2 = new THREE.Vector3(), flatV = new THREE.Vector3();
 
 // the walker up there: the same body as everyone's, in your outfit, under a glass bubble
 function astronaut() {
@@ -24,7 +24,7 @@ export function createMoonPlayer(scene, camera, getTerrain) {
   const vel = new THREE.Vector3();
   const heading = new THREE.Vector3(1, 0, 0);   // where the astronaut faces
   const view = new THREE.Vector3(1, 0, 0);      // where the camera looks, turned by the mouse
-  let camPitch = .3, camDist = 2.8, onGround = false, t = 0, swing = 0, active = false;
+  let camPitch = .3, camDist = 2.8, onGround = false, t = 0, swing = 0, active = false, groundT = 0;
   let toolKind = 'drill', aimAt = null, aimT = 0, armX = -.9;
   const up = new THREE.Vector3(0, 1, 0);
   const model = astronaut();
@@ -65,16 +65,57 @@ export function createMoonPlayer(scene, camera, getTerrain) {
     body.copy(p).addScaledVector(up, HALF + .02 + HEAD);
     return solidBox(body);
   };
-  const probeP = new THREE.Vector3();
-  function moveAxis(a, d) {
-    if (!d) return false;
-    probeP.copy(pos); probeP[a] += d;
-    if (solidBody(probeP)) return true;
-    pos[a] += d;
+  const probeP = new THREE.Vector3(), step = new THREE.Vector3();
+  const CLIMB = [.12, .24, .36, .48, .6, .68];   // ledge heights tried, a voxel is .4 and the slopes are stairs
+  const SLIDES = [['x'], ['y'], ['z'], ['x', 'y'], ['y', 'z'], ['x', 'z']];
+  const tryMove = (d) => { probeP.copy(pos).add(d); if (solidBody(probeP)) return false; pos.copy(probeP); return true; };
+  // drop along -up by at most `most`, stopping on whatever is below; true if something was
+  function sink(most) {
+    let dropped = 0;
+    for (const s of [.16, .08, .04, .02, .01]) while (dropped + s <= most + 1e-6) {
+      probeP.copy(pos).addScaledVector(up, -s);
+      if (solidBody(probeP)) break;
+      pos.copy(probeP); dropped += s;
+    }
+    return most - dropped > .011;
+  }
+  // a ledge ahead: rise a little, step over, then settle back onto it
+  function climb(d) {
+    for (const h of CLIMB) {
+      probeP.copy(pos).addScaledVector(up, h);
+      if (solidBody(probeP)) continue;   // a corner in the way (up is slanted against the voxels), try higher
+      probeP.add(d);
+      if (!solidBody(probeP)) { pos.copy(probeP); sink(h); return true; }
+    }
+    return false;
+  }
+  // a flat move: straight on, up a ledge, else sliding along the voxel face that stopped it
+  function walk(d, canClimb) {
+    if (tryMove(d) || (canClimb && climb(d))) return true;
+    // drop one world axis (or two) of the move, flatten again, longest first
+    const l2 = d.lengthSq(), tries = [];
+    for (const [a, b] of SLIDES) {
+      const v = d.clone(); v[a] = 0; if (b) v[b] = 0;
+      v.addScaledVector(up, -v.dot(up));
+      if (v.lengthSq() > l2 * .04) tries.push(v);
+    }
+    // the halls' walls sit at any angle: glance off them too
+    for (const a of [.35, -.35, .7, -.7, 1.05, -1.05, 1.4, -1.4]) tries.push(d.clone().applyAxisAngle(up, a).multiplyScalar(Math.cos(a)));
+    tries.sort((p, q) => q.lengthSq() - p.lengthSq());
+    for (const v of tries) if (tryMove(v) || (canClimb && climb(v))) return true;
     return false;
   }
   // stuck in the rock (a dug wall caved in, a step taken too high): climb out along `up`
+  // first the smallest nudge any way round (as `up` turns, the body brushing a wall tips into it:
+  // it must not be lifted onto the hall's roof)
+  const nudge = new THREE.Vector3();
   function unstick() {
+    if (!solidBody(pos)) return;
+    for (const r of [.03, .08, .16, .3]) for (let a = -1; a < 8; a++) {
+      if (a < 0) nudge.copy(up); else nudge.copy(heading).applyAxisAngle(up, a * Math.PI / 4);
+      probeP.copy(pos).addScaledVector(nudge, r);
+      if (!solidBody(probeP)) { pos.copy(probeP); return; }
+    }
     for (let n = 0; n < 30 && solidBody(pos); n++) pos.addScaledVector(up, .1);
   }
 
@@ -92,7 +133,8 @@ export function createMoonPlayer(scene, camera, getTerrain) {
     const speed = keys.has('ShiftLeft') ? 5 : 3.4;
     // split velocity into along-up and flat parts
     const vUp = vel.dot(up);
-    const flat = tmp2.copy(vel).addScaledVector(up, -vUp);
+    // (its own vector: tmp2 is reused just below for the facing, which used to shrink the walk to ~1.4 m/s)
+    const flat = flatV.copy(vel).addScaledVector(up, -vUp);
     // moves are relative to the camera; the body turns to face where it goes
     const want = new THREE.Vector3().addScaledVector(view, f * speed).addScaledVector(right, s * speed);
     // while digging, face the spot you dig; otherwise face where you walk
@@ -110,17 +152,29 @@ export function createMoonPlayer(scene, camera, getTerrain) {
     if (keys.has('Space') && !onGround && stats.fuelMax && stats.fuel > 0) { vu += 7 * dt; stats.fuel -= dt; stats.jetting = true; }
     if (onGround) stats.fuel = Math.min(stats.fuelMax, stats.fuel + dt * .8);
     vu = Math.max(vu, -12);
-    vel.copy(flat).addScaledVector(up, vu);
-    // move in small steps; a blocked axis loses its speed
-    const steps = Math.max(1, Math.ceil(vel.length() * dt / .12));
-    for (let n = 0; n < steps; n++) for (const a of ['x', 'y', 'z']) if (moveAxis(a, vel[a] * dt / steps)) {
-      // walking into a low step: hop up it
-      if (onGround && Math.abs(up[a]) < .7) { probeP.copy(pos).addScaledVector(up, .42); if (!solidBody(probeP)) { pos.copy(probeP); continue; } }
-      vel[a] = 0;
+    // move in small steps, along `up` then along the ground (the voxels are world-aligned, the ground isn't)
+    const wasGround = onGround;
+    groundT = onGround ? .15 : Math.max(0, groundT - dt);
+    const steps = Math.max(1, Math.ceil((flat.length() + Math.abs(vu)) * dt / .1));
+    let blocked = false;
+    for (let n = 0; n < steps; n++) {
+      step.copy(up).multiplyScalar(vu * dt / steps);
+      if (vu && !tryMove(step)) {
+        // landed or bumped the head: come right up against it
+        if (vu < 0) sink(-vu * dt / steps); else vu = 0;
+        if (vu < 0) vu = 0;
+      }
+      step.copy(flat).multiplyScalar(dt / steps);
+      if (step.lengthSq() > 1e-10 && !walk(step, groundT > 0 && vu <= .5)) blocked = true;
     }
-    body.copy(pos).addScaledVector(up, HALF - .06);
-    onGround = solidBox(body) && vel.dot(up) <= .5;
-    if (onGround && vel.dot(up) < 0) vel.addScaledVector(up, -vel.dot(up));
+    // a wall all round: stop pushing into it
+    if (blocked) flat.multiplyScalar(.5);
+    // walking downhill: keep the feet on the ground instead of skipping off every step
+    if (wasGround && vu <= 0 && !stats.jetting) { step.copy(pos); if (!sink(.5)) pos.copy(step); }
+    probeP.copy(pos).addScaledVector(up, -.06);
+    onGround = solidBody(probeP) && vu <= .5;
+    if (onGround && vu < 0) vu = 0;
+    vel.copy(flat).addScaledVector(up, vu);
 
     // the little astronaut: stand on `up`, face `heading`
     const m = new THREE.Matrix4().makeBasis(tmp.crossVectors(up, heading).normalize(), up, heading);
