@@ -31,6 +31,9 @@ export const GAMES = {
   nes:     { name: 'super creuseur',     sub: 'plateforme rétro en 2D, façon 8 bits · à plusieurs · le premier au drapeau', unit: 'time', lower: true },
   worms:   { name: 'taupes de guerre',   sub: 'artillerie au tour par tour : équipes de taupes, terrain destructible, vent, bazooka, grenades…', unit: 'score' },
   encre:   { name: 'encre 2D',           sub: 'plateforme 2D en équipes : peins le niveau, nage dans ton encre', unit: 'pct' },
+  potato:  { name: 'patates martiennes', sub: 'seul sur mars : terre, déchets, hydrazine et patates jusqu\'au sauvetage · à plusieurs dans l\'habitat', unit: 'kcal' },
+  survie:  { name: 'survie sur mars',    sub: 'du hab jusqu\'au mav en rover : batterie, oxygène, vivres, tempêtes · à plusieurs', unit: 'time', lower: true },
+  tycoon:  { name: 'colonie martienne',  sub: 'une base sur mars qui produit même quand tu n\'es pas là · crédits → pièces · à plusieurs sur la colonie de l\'hôte', unit: 'coins' },
   peinture: { name: 'peinture',           sub: '90 secondes pour couvrir le trou de ta couleur, contre les drones-peintres · clic pour tirer', unit: 'pct' },
   laser:   { name: 'laser game',         sub: '2 minutes de laser dans le jardin · touché = retour à la maison', unit: 'frags' },
 };
@@ -47,6 +50,7 @@ export function fmtRecord(unit, v) {
   if (unit === 'err') return `${Math.round(v * 100)} cm d'écart`;
   if (unit === 'coins') return `${Math.round(v).toLocaleString('fr-FR')} ●`;
   if (unit === 'pct') return `${v.toFixed(1)} % du trou`;
+  if (unit === 'kcal') return `${Math.round(v).toLocaleString('fr-FR')} kcal`;
   if (unit === 'frags') return `${v} touche${v > 1 ? 's' : ''}`;
   return `${v}`;
 }
