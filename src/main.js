@@ -88,6 +88,8 @@ const ui = createUI();
 try { await Promise.race([document.fonts.load('700 40px "Noto Sans JP"', '桜ひ'), new Promise(r => setTimeout(r, 3000))]); } catch {}
 const world = createWorld(document.getElementById('app'));
 const { renderer, scene, camera } = world;
+// three checks every new shader's log, which waits for the driver to finish compiling: only when debugging
+renderer.debug.checkShaderErrors = new URLSearchParams(location.search).has('debug');
 // the graphics context lost and given back (a driver reset, a heavy frame): three rebuilds its
 // programs, but the painted textures must be sent again or they come back black
 renderer.domElement.addEventListener('webglcontextrestored', () => {
@@ -1053,6 +1055,7 @@ function explode(kind, pos, power = 1) {
   // a huge blast: only the nearest chunks now, the loop rebuilds the rest over the next frames
   if (kind === 'holy') T().flush(10, 14); else T().flush();
   collectOres(ores, new THREE.Vector3(0, 1, 0));
+  if (kind === 'holy' || kind === 'met' || kind === 'sup') quietFrames(kind === 'holy' ? 8 : 4);
   if (kind === 'holy') { holy.blast(pos); unlock('holy'); net?.sendFx({ k: 'holyfx', w: here, p: pos.toArray().map(v => +v.toFixed(2)) }); }
   audio.boom((kind === 'holy' ? 2 : kind === 'met' ? 1.8 : kind === 'sup' || kind === 'shell' ? 1.3 : 0.8) * Math.max(.6, power));
   debris.burst(pos, new THREE.Vector3(0, 1, 0), 0x5a4030, 40, 2.4);
@@ -2132,6 +2135,7 @@ function claimHeart() {
 }
 
 async function travel(to, how, arrive) {
+  quietFrames(8);   // a new world builds its ground for a few seconds
   if (state === 'travel') return;
   const from = here;
   state = 'travel';
@@ -3072,8 +3076,12 @@ qBtns.forEach(b => b.addEventListener('click', (e) => {
 }));
 applyQuality();
 let slowMs = 0, slowN = 0;
+// a big known hitch (a huge blast, a trip) isn't a slow machine: the watcher looks away for a while
+let framesQuietUntil = 0;
+const quietFrames = (sec = 6) => { framesQuietUntil = Math.max(framesQuietUntil, performance.now() + sec * 1000); slowMs = 0; slowN = 0; };
 function watchFrames(ms) {
   if (qualityPref !== 'auto' || state !== 'play' || ms > 250) return;
+  if (performance.now() < framesQuietUntil) { slowMs = 0; slowN = 0; return; }
   slowMs += ms; slowN++;
   if (slowN < 180) return;
   const avg = slowMs / slowN;
