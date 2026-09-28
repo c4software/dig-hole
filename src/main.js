@@ -3212,7 +3212,7 @@ function loop(ts) {
   // shadows: redrawn when the eye moves, or a few times a second for the sun and the critters
   shadowT += dt;
   if (shadowT > .25 || camera.position.distanceToSquared(shadowAt) > .04) { renderer.shadowMap.needsUpdate = true; shadowT = 0; shadowAt.copy(camera.position); }
-  if (!race?.screen || race.onScreen) { portals.render(myId()); world.render(); }
+  if ((!race?.screen || race.onScreen) && !reveal.frozen) { portals.render(myId()); world.render(); }
 }
 renderer.setAnimationLoop(loop);
 
