@@ -54,6 +54,7 @@ const CSS = `
 .hp .hint { opacity: .6; font-size: 11.5px; margin: 4px 0; }
 .hp .err { color: #ff7a56; font-weight: 700; font-size: 12px; margin: 4px 0; }
 .hp .turn { display: flex; gap: 6px; margin-top: 6px; }
+.hp [hidden], .hp.page[hidden] { display: none !important; }
 .hp .gift { margin: 8px 0 4px; padding: 10px; border-radius: 12px; background: #35281c; }
 .hp .gift .g { display: grid; grid-template-columns: 1fr 64px; gap: 6px; margin: 5px 0; }
 .hp .gift select, .hp .gift input { min-width: 0; background: #1a130d; color: #fff; border: 0; border-radius: 8px; padding: 6px 8px; font: 600 12px/1.2 'Rubik', system-ui, sans-serif; }

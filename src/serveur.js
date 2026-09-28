@@ -28,7 +28,7 @@ function nodeConsole() {
   let panel = null, client = null;
   const gate = box('');
   function ask(msg) {
-    gate.hidden = false;
+    gate.style.display = '';
     gate.innerHTML = `<b style="font:400 24px/1 'Titan One',system-ui">console du serveur</b>
       <p style="margin:10px 0;opacity:.75">${esc(url)} · salle « ${esc(room)} ». le jeton est dans <code>data/admin-token</code> sur le serveur (ou --admin-token).</p>
       <p><input id="sv-token" type="password" autocomplete="off" placeholder="jeton" style="${inCss}"> <button id="sv-in" style="${btnCss}">entrer</button></p>
@@ -43,7 +43,7 @@ function nodeConsole() {
     try { client = await connectAdmin({ url, room, token }); }
     catch (e) { if (/jeton/.test(e.message)) { try { sessionStorage.removeItem(KEY); } catch {} } ask(e.message); return; }
     try { sessionStorage.setItem(KEY, token); } catch {}
-    gate.hidden = true;
+    gate.style.display = 'none';   // .hp is display:flex: the hidden attribute alone won't do
     const call = (fn) => (...a) => client.call(fn, ...a);
     const backend = {
       node: true, remote: true, snap: () => client.snap,

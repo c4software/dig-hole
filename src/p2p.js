@@ -338,21 +338,24 @@ export async function joinHost({ join, nick, onStep = () => {} }) {
   }
   const cands = candText(ans.remoteCands) + ' ⇄ ' + candText(ans.cands);
   const why = (text) => Object.assign(new Error(text), { hint: `vos réseaux ne se voient pas : essayez un serveur turn (réglage), ou le jardin commun sur le serveur · candidats ${cands}` });
-  let slow = 0;
+  let slow = 0, cap = 0;
   const failed = new Promise((_, rej) => {
     // through the server the answer is taken at once: 30 s is plenty. With a code to paste,
     // the clock starts when the host has taken it (the checks begin)
     const arm = () => { if (!slow) slow = setTimeout(() => rej(why('la connexion directe n\'aboutit pas')), 30000); };
     if (sigWs) arm();
+    // a code to paste: the host may never take it; after 3 minutes, give up anyway
+    else cap = setTimeout(() => rej(why('l\'hôte n\'a pas pris la réponse (ou la connexion n\'aboutit pas)')), 180000);
     watchIce(ans.pc, (st) => {
       if (st === 'checking' || st === 'connecting') { onStep('ice'); arm(); }
       if (st === 'failed') rej(why('la connexion directe a échoué'));
     });
   });
+  failed.catch(() => {});   // a line lost later isn't this promise's business
   let pipe;
   try { pipe = await Promise.race([ans.pipe, failed]); }
   catch (e) { try { ans.pc.close(); } catch {} throw e; }
-  finally { clearTimeout(slow); try { sigWs?.close(); } catch {} setTimeout(() => { try { bc?.close(); } catch {} }, 5000); }
+  finally { clearTimeout(slow); clearTimeout(cap); try { sigWs?.close(); } catch {} setTimeout(() => { try { bc?.close(); } catch {} }, 5000); }
   onStep('open');
   return { socket: () => pipeSocket(pipe), room: ans.offer.r, host: ans.offer.n, pc: ans.pc };
 }
