@@ -130,7 +130,7 @@ export function createMoonPlayer(scene, camera, getTerrain) {
     const right = tmp.crossVectors(view, up).normalize();
     const f = (keys.has('KeyW') || keys.has('ArrowUp') ? 1 : 0) - (keys.has('KeyS') || keys.has('ArrowDown') ? 1 : 0);
     const s = (keys.has('KeyD') || keys.has('ArrowRight') ? 1 : 0) - (keys.has('KeyA') || keys.has('ArrowLeft') ? 1 : 0);
-    const speed = keys.has('ShiftLeft') ? 5 : 3.4;
+    const speed = (keys.has('ShiftLeft') ? 5 : 3.4) * tun.get('planetWalk');
     // split velocity into along-up and flat parts
     const vUp = vel.dot(up);
     // (its own vector: tmp2 is reused just below for the facing, which used to shrink the walk to ~1.4 m/s)
@@ -145,9 +145,9 @@ export function createMoonPlayer(scene, camera, getTerrain) {
       if (to.lengthSq() > .01) heading.lerp(to.normalize(), Math.min(1, dt * 14)).normalize();
     } else if (want.lengthSq() > .01) heading.lerp(tmp2.copy(want).normalize(), Math.min(1, dt * 10)).normalize();
     flat.lerp(want, Math.min(1, dt * (onGround ? 10 : 2.5)));
-    const g = (stats.g || G) * tun.get('moonGravity');   // mars pulls harder than the moon
+    const g = (stats.g || G) * tun.get(stats.g > G ? 'marsGravity' : 'moonGravity');   // mars pulls harder than the moon
     let vu = vUp - g * dt;
-    if (keys.has('Space') && onGround) vu = Math.sqrt(2 * g * stats.jump);
+    if (keys.has('Space') && onGround) vu = Math.sqrt(2 * g * stats.jump * tun.get('planetJump'));
     stats.jetting = false;
     if (keys.has('Space') && !onGround && stats.fuelMax && stats.fuel > 0) { vu += 7 * dt; stats.fuel -= dt; stats.jetting = true; }
     if (onGround) stats.fuel = Math.min(stats.fuelMax, stats.fuel + dt * .8);

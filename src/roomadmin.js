@@ -19,6 +19,8 @@ export function roomAdmin(room, { tun, saveTun = () => {}, notes = null, saveNot
     players: () => room.players().map(p => ({ id: p.id, name: p.name, color: p.color, p: p.p, w: p.w, g: p.g || null })),
     give(id, gift) { return room.give(id == null ? null : +id, gift, by); },
     kick: (id) => room.kick(+id, 'renvoyé par le serveur'),
+    act: (id, what, v) => room.act(id == null ? null : +id, what, v, by),
+    refinds() { room.op({ k: 'refinds' }); return true; },
     raid() { room.broadcast({ t: 'admin', a: 'raid' }); return true; },
     resetMap() { room.op({ k: 'reset', seed: Math.floor(Math.random() * 1e9) }); return true; },
     say(text) {

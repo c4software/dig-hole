@@ -2,7 +2,7 @@
 // window). Invitations, who's in (and out), the live values that drive everyone's game, and a
 // few big buttons: a raid, a new map, the world saved to a file and back.
 // backend: the host itself (p2p.js startHost) or remoteHost() from another window.
-import { DEFS, tun } from './tunables.js';
+import { DEFS, GROUPS, tun } from './tunables.js';
 import { readWorldFile } from './p2p.js';
 import { getTurn, setTurn, parseTurn, turnText } from './rtc.js';
 import { CATALOG } from './catalog.js';
@@ -56,6 +56,18 @@ const CSS = `
 .hp .err { color: #ff7a56; font-weight: 700; font-size: 12px; margin: 4px 0; }
 .hp .turn { display: flex; gap: 6px; margin-top: 6px; }
 .hp [hidden], .hp.page[hidden] { display: none !important; }
+.hp details.grp { border-radius: 10px; margin: 4px 0; background: rgba(0,0,0,.14); }
+.hp details.grp > summary { display: flex; align-items: center; gap: 8px; padding: 8px 10px; cursor: pointer; list-style: none; }
+.hp details.grp > summary::-webkit-details-marker { display: none; }
+.hp details.grp > summary::before { content: '▸'; opacity: .6; transition: transform .15s; }
+.hp details.grp[open] > summary::before { transform: rotate(90deg); }
+.hp details.grp > summary b { font: 900 11px/1 'Rubik', system-ui, sans-serif; letter-spacing: .14em; text-transform: uppercase; color: #ffdc8f; }
+.hp details.grp > summary .nm { flex: 1; font-style: normal; font-size: 11px; color: #ffb020; font-weight: 800; }
+.hp details.grp > summary .rs { opacity: 0; font-size: 11px; }
+.hp details.grp.on > summary .rs { opacity: 1; }
+.hp details.grp > .row { padding: 3px 10px; }
+.hp .row .mod { display: none; margin-left: 6px; padding: 1px 6px; border-radius: 99px; background: #ffb020; color: #1a130d; font-size: 9.5px; font-weight: 900; vertical-align: 1px; }
+.hp .row.on .mod { display: inline-block; }
 .hp .gift { margin: 8px 0 4px; padding: 10px; border-radius: 12px; background: #35281c; }
 .hp .gift .g { display: grid; grid-template-columns: 1fr 64px; gap: 6px; margin: 5px 0; }
 .hp .gift select, .hp .gift input { min-width: 0; background: #1a130d; color: #fff; border: 0; border-radius: 8px; padding: 6px 8px; font: 600 12px/1.2 'Rubik', system-ui, sans-serif; }
@@ -90,6 +102,7 @@ export function createHostPanel({ backend, page = false, detachUrl = null, paren
         <div class="acts">
           <button class="ghost" data-a="raid">lancer un raid</button>
           <button class="danger" data-a="resetmap">nouvelle carte</button>
+          <button class="ghost" data-a="refinds" title="les trouvailles déjà déterrées retournent sous terre, pour tout le monde">remettre les trésors</button>
           <button class="ghost" data-a="export">exporter le monde</button>
           <button class="ghost" data-a="import">importer…</button>
           <input type="file" id="hp-file" accept=".json,application/json" hidden>
@@ -99,7 +112,8 @@ export function createHostPanel({ backend, page = false, detachUrl = null, paren
         <div class="turn" id="hp-turnrow"><input id="hp-turn" placeholder="serveur turn (optionnel) : turn:hôte:3478 nom motdepasse" spellcheck="false"><button class="ghost" data-a="turn">ok</button></div>
       </section>
       <section id="hp-notesec" hidden><h3>livre d'or <em>les derniers mots</em></h3><div id="hp-notes"></div></section>
-      <section id="hp-tun"><h3>réglages en direct <em>suivis par tout le monde</em></h3><div class="acts" style="margin-bottom:8px"><button class="ghost" data-a="resetall">tout remettre</button></div></section>
+      <section id="hp-tun"><h3>réglages en direct <em>suivis par tout le monde</em> <em id="hp-nmod"></em></h3>
+        <div class="turn" style="margin:0 0 8px"><input id="hp-find" placeholder="chercher un réglage (gravité, dynamite, prix…)" spellcheck="false"><button class="ghost" data-a="resetall">tout remettre</button></div></section>
     </div>`;
   parent.appendChild(el);
   const $ = (id) => el.querySelector('#' + id);
@@ -110,17 +124,19 @@ export function createHostPanel({ backend, page = false, detachUrl = null, paren
   if (backend.node) { $('hp-invsec').hidden = true; $('hp-turnrow').hidden = true; el.querySelector('[data-a="import"]').hidden = true; }
   $('hp-say').addEventListener('keydown', (e) => { if (e.code === 'Enter') el.querySelector('[data-a="say"]').click(); });
 
-  // ---------- the live values ----------
-  const rows = new Map();
-  const groups = [...new Set(DEFS.filter(d => !d.hidden).map(d => d.g))];
+  // ---------- the live values: one fold per group, a search, what's changed marked ----------
+  const rows = new Map(), folds = new Map();
   let values = {};
-  for (const g of groups) {
-    const box = document.createElement('div');
-    box.innerHTML = `<h3 style="margin-top:12px">${esc(g)}</h3>`;
+  const fold = (t) => String(t).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  for (const g of GROUPS) {
+    const box = document.createElement('details');
+    box.className = 'grp';
+    box.innerHTML = `<summary><b>${esc(g)}</b><em class="nm"></em><button class="rs" data-g="${esc(g)}" title="remettre ce groupe">↺ groupe</button></summary>`;
+    box.querySelector('summary .rs').addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); for (const d of DEFS) if (d.g === g && d.k in values) backend.reset(d.k); });
     for (const d of DEFS.filter(x => x.g === g && !x.hidden)) {
       const r = document.createElement('div');
       r.className = 'row';
-      r.innerHTML = `<label>${esc(d.label)}${d.note ? `<small>${esc(d.note)}</small>` : ''}</label>` +
+      r.innerHTML = `<label>${esc(d.label)}<span class="mod">modifié</span>${d.note ? `<small>${esc(d.note)}</small>` : ''}</label>` +
         (d.options ? `<div class="seg">${d.options.map(([v, n]) => `<button data-v="${v}">${esc(n)}</button>`).join('')}</div>`
           : `<input type="range" min="${d.min}" max="${d.max}" step="${d.step}"><output></output>`) +
         `<button class="rs" title="valeur d'origine">↺</button>`;
@@ -129,18 +145,34 @@ export function createHostPanel({ backend, page = false, detachUrl = null, paren
       if (inp) inp.addEventListener('input', () => { fill(); out.textContent = fmt(d, +inp.value); backend.set(d.k, +inp.value); });
       r.querySelector('.seg')?.addEventListener('click', (e) => { const b = e.target.closest('[data-v]'); if (b) backend.set(d.k, +b.dataset.v); });
       r.querySelector('.rs').addEventListener('click', () => backend.reset(d.k));
-      rows.set(d.k, { d, r, inp, out, fill });
+      rows.set(d.k, { d, r, inp, out, fill, text: fold(`${d.label} ${d.k} ${g}`) });
       box.appendChild(r);
     }
+    folds.set(g, box);
     $('hp-tun').appendChild(box);
   }
+  // the search: only the matching rows, their groups open
+  $('hp-find').addEventListener('input', () => {
+    const q = fold($('hp-find').value.trim());
+    for (const [g, box] of folds) {
+      let n = 0;
+      for (const x of rows.values()) if (x.d.g === g) { const hit = !q || x.text.includes(q); x.r.hidden = !hit; n += hit; }
+      box.hidden = !n;
+      if (q) box.open = true;
+    }
+  });
   function showValues() {
+    const nMod = {};
     for (const { d, r, inp, out, fill } of rows.values()) {
-      const v = d.k in values ? values[d.k] : d.def;
-      r.classList.toggle('on', d.k in values);
+      const on = d.k in values, v = on ? values[d.k] : d.def;
+      if (on) nMod[d.g] = (nMod[d.g] || 0) + 1;
+      r.classList.toggle('on', on);
       if (inp) { if (document.activeElement !== inp && +inp.value !== v) inp.value = v; fill(); out.textContent = fmt(d, v); }
       else r.querySelectorAll('[data-v]').forEach(b => b.classList.toggle('on', +b.dataset.v === v));
     }
+    for (const [g, box] of folds) { box.querySelector('.nm').textContent = nMod[g] ? `${nMod[g]} modifié${nMod[g] > 1 ? 's' : ''}` : ''; box.classList.toggle('on', !!nMod[g]); }
+    const all = Object.values(nMod).reduce((a, b) => a + b, 0);
+    $('hp-nmod').textContent = all ? `· ${all} modifié${all > 1 ? 's' : ''}` : '';
   }
 
   // ---------- invitations, guests, players ----------
@@ -198,7 +230,11 @@ export function createHostPanel({ backend, page = false, detachUrl = null, paren
       <div class="g"><select data-g="item">${opts(CATALOG.items)}</select><input type="number" min="1" max="99" value="1" data-g="itemn"></div>
       <div class="g"><select data-g="sack">${opts(CATALOG.sack)}</select><input type="number" min="1" max="999" value="5" data-g="sackn"></div>
       <div class="g"><select data-g="part">${opts(CATALOG.parts.map(([v, n]) => [v, 'pièce de fusée : ' + n]))}</select><span></span></div>
-      <div class="acts"><button data-a="giftgo">envoyer</button><button class="ghost" data-a="giftx">annuler</button></div>`;
+      <div class="acts"><button data-a="giftgo">envoyer</button><button class="ghost" data-a="giftx">annuler</button></div>
+      ${backend.act ? `<div class="hint" style="margin-top:10px">ou bien, pour ${esc(who)} :</div>
+      <div class="acts"><button class="ghost" data-a="act" data-w="heal">soigner (vie, batterie, oxygène)</button><button class="ghost" data-a="act" data-w="parcel">envoyer un colis</button></div>
+      <div class="acts" style="margin-top:6px"><span class="hint">téléporter :</span>${[['home', 'maison'], ['china', 'japon'], ['moon', 'lune'], ['mars', 'mars']].map(([w, n]) => `<button class="ghost" data-a="act" data-w="tp" data-v="${w}">${n}</button>`).join('')}</div>
+      <div class="g" style="margin-top:6px"><input type="number" min="0" step="100" placeholder="fixer sa bourse à…" data-g="money"><button class="ghost" data-a="act" data-w="money">fixer ●</button></div>` : ''}`;
   }
   async function sendGift(b) {
     const v = (k) => $('hp-gift').querySelector(`[data-g="${k}"]`).value;
@@ -237,6 +273,12 @@ export function createHostPanel({ backend, page = false, detachUrl = null, paren
       else if (a === 'gift' || a === 'giftall') openGift(a === 'gift' ? +b.dataset.id : null);
       else if (a === 'giftgo') await sendGift(b);
       else if (a === 'giftx') $('hp-gift').hidden = true;
+      else if (a === 'act') {
+        const w = b.dataset.w, v = w === 'money' ? +$('hp-gift').querySelector('[data-g="money"]').value : w === 'parcel' ? ($('hp-gift').querySelector('[data-g="item"]').value || 'dyn') : b.dataset.v;
+        if (w === 'money' && !Number.isFinite(v)) return err('combien ?');
+        await backend.act(giftTo, w, v); const t = b.textContent; b.textContent = 'fait !'; setTimeout(() => { b.textContent = t; }, 1400);
+      }
+      else if (a === 'refinds') { if (confirm2('refinds', b, 'sûr ? tous les trésors reviennent')) { await backend.refinds(); b.textContent = 'trésors revenus'; setTimeout(() => { b.textContent = 'remettre les trésors'; }, 2000); } }
       else if (a === 'say') { const t = $('hp-say').value.trim(); if (!t) return; await backend.say(t); $('hp-say').value = ''; b.textContent = 'annoncé !'; setTimeout(() => { b.textContent = 'annoncer'; }, 1500); }
       else if (a === 'delnote') { if (confirm2('note' + b.dataset.at, b, 'sûr ?')) await backend.delNote(+b.dataset.at); }
       else if (a === 'kick') { if (confirm2('kick' + b.dataset.id, b, 'sûr ?')) await backend.kick(+b.dataset.id); }
@@ -268,7 +310,7 @@ export function localBackend(host) {
   return {
     snap: () => host.snap(),
     set: (k, v) => tun.set(k, v), reset: (k) => tun.reset(k),
-    kick: (id) => host.kick(id), raid: () => host.raid(), resetMap: () => host.resetMap(), give: (id, g) => host.give(id, g), say: (t) => host.say(t), delNote: (at) => host.delNote(at),
+    kick: (id) => host.kick(id), raid: () => host.raid(), resetMap: () => host.resetMap(), give: (id, g) => host.give(id, g), say: (t) => host.say(t), delNote: (at) => host.delNote(at), act: (id, w, v) => host.act(id, w, v), refinds: () => host.refinds(),
     invite: () => host.invite(), accept: (c) => host.accept(c), cancel: (k) => host.cancel(k),
     exportWorld: () => host.exportWorld(), importWorld: (o) => host.importWorld(o),
   };

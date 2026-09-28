@@ -6,6 +6,7 @@ import { dateNow } from './events-calendar.js';
 
 export const clean = (s, n) => String(s || '').replace(/[^\p{L}\p{N} _-]/gu, '').trim().slice(0, n);
 export const MAX_OPS = 80000;
+export const ACTS = ['heal', 'money', 'tp', 'parcel'];
 
 // ids shared by every room of a process (the server numbers diggers across rooms)
 export function idCounter(start = 1) { let n = start; return () => n++; }
@@ -130,6 +131,16 @@ export function createRoom({
     // gifts from the host: to one digger (id) or to everyone but the host (id null)
     give(id, gift, by = 'l\'hôte') {
       const msg = { t: 'admin', a: 'give', gift, by };
+      if (id == null) { for (const c of clients.values()) if (!c.link.owner) to(c, msg); return true; }
+      const c = clients.get(id);
+      if (!c) return false;
+      to(c, msg);
+      return true;
+    },
+    // an order for one digger (or all but the host): heal, money, tp, parcel (main.js adminAct)
+    act(id, act, v, by = 'l\'hôte') {
+      if (!ACTS.includes(act)) return false;
+      const msg = { t: 'admin', a: 'act', act, v, by };
       if (id == null) { for (const c of clients.values()) if (!c.link.owner) to(c, msg); return true; }
       const c = clients.get(id);
       if (!c) return false;

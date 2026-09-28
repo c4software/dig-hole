@@ -5,7 +5,7 @@ import { createTerrain, ORE, isOre, isLetter, S, setGrassColors, WATER, LAVA } f
 import { createPlayer } from './player.js';
 import { createShovel, createDebris, createHeart, createDrill } from './tool.js';
 import { createAudio } from './audio.js';
-import { createEconomy, UPGRADES, ORDER, CHINA_ORDER, ITEMS, SLOTS } from './economy.js';
+import { createEconomy, UPGRADES, ORDER, CHINA_ORDER, ITEMS, SLOTS, priceOf } from './economy.js';
 import { createUI } from './ui.js';
 import { CHINA } from './china.js';
 import { ACH_LIST } from './house.js';
@@ -233,7 +233,7 @@ const delivery = createDelivery({ scene: homeRoot, label: world.label, interacta
 delivery.load(eco.s.delivery);
 const elevator = createElevator({ scene: homeRoot, terrain: terrains.home, colliders: world.colliders, interactables: world.interactables, label: world.label });
 player.onStep = () => audio.step();
-player.onLand = (v) => { audio.land(v); if (v > 18) hurt((v - 18) * 2.5); };
+player.onLand = (v) => { audio.land(v); if (v > 18) hurt((v - 18) * 2.5 * tun.get('fallDamage')); };
 
 const HOME_SPAWN = new THREE.Vector3(0, 0.05, -11.5);
 const BED_SPOT = new THREE.Vector3(-3.3, 0.05, -19.6);
@@ -392,6 +392,8 @@ function applyOp(op, local = true) {
   else if (op.k === 'drop') drops.add(op);
   else if (op.k === 'holy') holy.opened(op, local);
   else if (op.k === 'take') drops.taken(op);
+  // the host put every treasure back in the ground (its console)
+  else if (op.k === 'refinds') for (const w of ['home', 'china']) { finds[w].reset(); eco.s.finds[w] = []; }
   else if (op.k === 'ev') events?.onOp(op, local);
   else if (op.k === 'find') {
     const f = finds[op.w].remove(op.key);
@@ -1021,7 +1023,9 @@ const bombs = createBombs(scene, T, (kind, pos, power) => explode(kind, pos, pow
   ui.toast('pschitt… pétard mouillé, merci aliexpresso', true, 2400);
 });
 function explode(kind, pos, power = 1) {
-  const b = power === 1 ? BLAST[kind] : { r: BLAST[kind].r * power, dmg: BLAST[kind].dmg * power, push: BLAST[kind].push * power };
+  const b0 = power === 1 ? BLAST[kind] : { r: BLAST[kind].r * power, dmg: BLAST[kind].dmg * power, push: BLAST[kind].push * power };
+  // the host's hand on each explosive: its size, its bite, the blast (tunables.js)
+  const b = { r: b0.r * (tun.get(kind + 'Radius') ?? 1), dmg: b0.dmg * (tun.get(kind + 'Damage') ?? 1), push: b0.push * tun.get('blastPush') };
   if (power > 1.2) setTimeout(() => ui.toast('wow · la version aliexpresso est surpuissante', false, 2200), 300);
   const tier = kind === 'dyn' ? Math.min(7, eco.cur('shovel').tier + 2) : 7;
   if (kind === 'air') planeHits++;
@@ -1030,7 +1034,7 @@ function explode(kind, pos, power = 1) {
   if (kind === 'fus') {
     // the drill: a straight shaft, 14 m down
     for (let n = 0; n < 18; n++) {
-      const out = applyOp({ k: 'carve', w: W(pos), c: [+pos.x.toFixed(3), +(pos.y - n * .8).toFixed(3), +pos.z.toFixed(3)], r: .85, tier, space: eco.space, destroy: false });
+      const out = applyOp({ k: 'carve', w: W(pos), c: [+pos.x.toFixed(3), +(pos.y - n * .8).toFixed(3), +pos.z.toFixed(3)], r: .85 * tun.get('fusRadius'), tier, space: eco.space, destroy: false });
       ores.push(...out.ores);
     }
   } else {
@@ -1040,7 +1044,7 @@ function explode(kind, pos, power = 1) {
     // one ring every few frames (the ground is remeshed a little each frame, not all at once)
     if (kind === 'holy') {
       const w = W(pos), at = pos.clone();
-      for (let n = 1; n <= 8; n++) setTimeout(() => {
+      for (let n = 1, deep = tun.get('holyShaft'); n <= deep; n++) setTimeout(() => {
         const o2 = applyOp({ k: 'carve', w, c: [+at.x.toFixed(3), +(at.y - b.r * .6 - n * 2.4).toFixed(3), +at.z.toFixed(3)], r: Math.max(2.2, 5.5 - n * .45), tier, space: eco.space, destroy: false });
         collectOres(o2.ores, new THREE.Vector3(0, 1, 0));
       }, n * 110);
@@ -1067,7 +1071,8 @@ function explode(kind, pos, power = 1) {
     player.vel.addScaledVector(away, b.push * k);
     player.vel.y += b.push * k * 0.6;
     if (kind !== 'air' || inDigZone()) shakeT = Math.max(shakeT, 0.5 * k + 0.2);
-    if (d < b.r + .5) hurt(b.dmg * (1 - d / (b.r + .5)));
+    // (thrown ones may be set harmless to their thrower; the bomber's and the shells' never)
+    if (d < b.r + .5 && (tun.get('selfHurt') || kind === 'air' || kind === 'shell')) hurt(b.dmg * (1 - d / (b.r + .5)));
   } else if (d < 25 && (kind !== 'air' || inDigZone())) shakeT = Math.max(shakeT, 0.15);
   // the holy one shakes the whole village
   if (kind === 'holy' && d < 60) shakeT = Math.max(shakeT, 1.1 * (1 - d / 60) + .3);
@@ -1077,7 +1082,7 @@ function explode(kind, pos, power = 1) {
 const moles = createMoles(scene, T, {
   onEmerge(m) { audio.squeak(); debris.burst(m.from, new THREE.Vector3(0, 1, 0), 0x6a4a30, 10); hintOnce('mole', 'une taupe ! frappe-la avant qu\'elle ne te vole', 5000); },
   onBite(m) {
-    hurt(m.guardian ? 14 : 9);
+    hurt((m.guardian ? 14 : 9) * tun.get('moleDamage'));
     audio.squeak();
     if (m.guardian || EXPLORE) return null;
     const stolen = eco.steal();
@@ -1485,6 +1490,31 @@ function record(id, value, lowerIsBetter) {
   if (better) eco.s.records[id] = value;
   return better;
 }
+// the host's hand on one digger (its console): heal, money, a trip, a parcel
+function adminAct(m) {
+  const by = m.by || 'l\'hôte';
+  if (m.act === 'heal') {
+    eco.s.health = 100; eco.s.battery = eco.batteryMax; eco.s.oxygen = eco.cur('o2').o2;
+    ui.setBars(eco.s.health, eco.s.battery, eco.batteryMax); audio.charge();
+    ui.toast(`${by} te soigne : vie, batterie et oxygène au plein`, false, 3500);
+  } else if (m.act === 'money' && Number.isFinite(+m.v)) {
+    eco.s.money = Math.max(0, Math.min(1e9, Math.floor(+m.v))); ui.setCoins(eco.s.money, true);
+    ui.toast(`${by} règle ta bourse : ${ui.fmt(eco.s.money)} ●`, false, 3500);
+  } else if (m.act === 'tp' && ['home', 'china', 'moon', 'mars'].includes(m.v)) {
+    if (m.v === here) { if (!onPlanet()) { player.pos.copy(m.v === 'china' ? world.china.spawn : HOME_SPAWN); player.vel.set(0, 0, 0); } return; }
+    if (state !== 'play' && state !== 'paused') { ui.toast(`${by} voulait te téléporter : reviens en jeu`, true, 3000); return; }
+    if (state === 'paused') { ui.el.resume.classList.add('hidden'); state = 'play'; }
+    ui.toast(`${by} te téléporte`, false, 2000);
+    travel(m.v, 'tele');
+  } else if (m.act === 'parcel') {
+    const it = ITEMS[m.v] && !ITEMS[m.v].secret ? m.v : 'dyn';
+    delivery.order('amazone', it, 1);
+    ui.toast(`${by} t'envoie un colis : ${ITEMS[it].name}, livré devant la porte`, false, 3500);
+  }
+  save();
+}
+// what a game or a race pays, times the host's multiplier
+const prize = (v) => { const k = tun.get('gameReward'); return k === 1 ? v : Math.round(v * k); };
 function reward(v, text) {
   if (EXPLORE) { ui.hint(text, 5000); return; }
   eco.earn(v); ui.plus('+' + ui.fmt(v)); ui.setCoins(eco.s.money, true); ui.wash();
@@ -1495,7 +1525,7 @@ mg.onEnd = (id, r) => {
   if (r.lost) { audio.full(); ui.hint(r.text, 4000); return; }
   audio.win();
   const best = record(id, r.value, GAMES[id].lower);
-  reward(r.reward, r.text + (best ? ' · nouveau record !' : ''));
+  reward(prize(r.reward), r.text + (best ? ' · nouveau record !' : ''));
   save();
 };
 
@@ -1526,7 +1556,7 @@ const RACES = {
   // mars: potatoes in the hab
   potato: { make: (create) => create({ audio, ui }), screen: true, help: 'zqsd · e pour agir · x pour lâcher · tiens jusqu\'au sauvetage', prizes: [2200, 1200, 700, 300] },
   survie: { make: (create) => create({ audio, ui }), screen: true, help: 'zqsd · e sortir, monter, fouiller · espace panneaux · f réparer · m carte', prizes: [2500, 1300, 600, 250] },
-  tycoon: { make: (create) => create({ audio, ui, eco, pay: (v, text) => reward(v, text), save: () => save() }), screen: true, help: 'souris · la colonie tourne même sans toi', prizes: [0] },
+  tycoon: { make: (create) => create({ audio, ui, eco, pay: (v, text) => reward(prize(v), text), save: () => save() }), screen: true, help: 'souris · la colonie tourne même sans toi', prizes: [0] },
   invaders: { make: (create) => create({ audio, ui }), screen: true, help: 'q d ou ← → : bouger · espace : tirer · abats la vague avant qu\'elle ne touche la lune', prizes: [1500, 700, 350, 150] },
   shooter: { make: (create) => create({ audio, ui }), screen: true, help: 'zqsd ou flèches : voler · espace : tirer · e : bombe · ramasse les capsules', prizes: [1800, 900, 450, 200] },
   // the church organ's rhythm game, at the console
@@ -1542,7 +1572,7 @@ let race = null, raceQueue = null;
 const raceReturn = { pos: new THREE.Vector3(), yaw: 0 };
 // ---------- the moon and mars: a game hall, a grandstand, the orbital grand prix ----------
 const space = createSpaceArcade({ has: (id) => !!RACES[id] && !!GAMES[id], name: (id) => GAMES[id]?.name || id });
-const orbit = createSpaceRace({ ui, audio, pay: (n) => { if (!EXPLORE && !eco.pay(n)) return false; ui.setCoins(eco.s.money, true); return true; }, earn: (v, text) => { reward(v, text); save(); }, me: () => onPlanet() ? moonP.pos : null });
+const orbit = createSpaceRace({ ui, audio, pay: (n) => { if (!EXPLORE && !eco.pay(n)) return false; ui.setCoins(eco.s.money, true); return true; }, earn: (v, text) => { reward(prize(v), text); save(); }, me: () => onPlanet() ? moonP.pos : null });
 moonP.setSolid((p, r) => onPlanet() && (space.solid(here, p, r) || orbit.solid(here, p, r)));
 // where a game's world is: its scenery and its sky (null: a 2D game, played on any screen)
 const gameView = (id) => RACES[id]?.world ?? spaceWorld(id) ?? (RACES[id]?.screen ? null : 'home');
@@ -1642,7 +1672,7 @@ function quitRace(result, silent = false) {
   const lower = mode && 'lower' in mode ? mode.lower : GAMES[r.id].lower;
   const best = result.place === 1 && value != null && record(first ? r.id : r.id + ':' + mode.id, value, lower);
   const text = result.text ?? `${result.place === 1 ? '1re' : result.place + 'e'} place sur ${result.of} en ${mg.fmt(result.time)}`;
-  reward(r.prizes[Math.min(result.place, r.prizes.length) - 1], text + (best ? ' · nouveau record !' : ''));
+  reward(prize(r.prizes[Math.min(result.place, r.prizes.length) - 1]), text + (best ? ' · nouveau record !' : ''));
   if (result.place === 1 && r.id === 'kart') unlock('kart');
   if (result.place === 1 && r.id === 'worms3d') unlock('lombrics');
   save();
@@ -2660,7 +2690,7 @@ function upgradeRow(id, inChina) {
   if (!n) return { ...row, owned: true };
   if (n.china && !inChina) return { ...row, lock: 'au japon…' };
   if (!n.china && inChina) return { ...row, name: c.name, lock: 'à la quincaillerie' };
-  return { ...row, price: n.price, poor: eco.s.money < n.price };
+  return { ...row, price: priceOf(n.price), poor: eco.s.money < priceOf(n.price) };
 }
 const needText = (need) => Object.entries(need).map(([id, n]) => `${eco.s.sack[id] || 0}/${n} ${ORE[id].name}`).join(' · ');
 const canCraft = (need) => Object.entries(need).every(([id, n]) => (eco.s.sack[id] || 0) >= n);
@@ -2677,7 +2707,7 @@ function renderPanel(quip) {
   else if (k === 'ev') ui.panel(events.panel(quip));
   else if (k === 'shop') {
     const rows = ORDER.map(id => upgradeRow(id, false));
-    for (const id of ['ladder', 'med', 'cell']) rows.push({ id: 'item:' + id, kind: 'objet', name: ITEMS[id].name, lvl: `×${eco.s.items[id]}`, sub: ITEMS[id].sub, price: ITEMS[id].price, poor: eco.s.money < ITEMS[id].price });
+    for (const id of ['ladder', 'med', 'cell']) rows.push({ id: 'item:' + id, kind: 'objet', name: ITEMS[id].name, lvl: `×${eco.s.items[id]}`, sub: ITEMS[id].sub, price: priceOf(ITEMS[id].price), poor: eco.s.money < priceOf(ITEMS[id].price) });
     ui.panel({ title: 'la quincaillerie', quip, rows, close: 'retour au trou' });
   } else if (k === 'cshop') {
     const rows = CHINA_ORDER.map(id => {
@@ -2687,8 +2717,8 @@ function renderPanel(quip) {
       return r;
     });
     // the konbini's own shelves: eaten or drunk on the spot
-    for (const [id, g] of Object.entries(KONBINI)) rows.push({ id: 'kgood:' + id, kind: 'konbini', name: g.name, sub: g.sub, price: g.price, poor: eco.s.money < g.price });
-    for (const id of ['fus', 'med', 'cell']) rows.push({ id: 'item:' + id, kind: 'objet', name: ITEMS[id].name, lvl: `×${eco.s.items[id]}`, sub: ITEMS[id].sub, price: ITEMS[id].price, poor: eco.s.money < ITEMS[id].price });
+    for (const [id, g] of Object.entries(KONBINI)) rows.push({ id: 'kgood:' + id, kind: 'konbini', name: g.name, sub: g.sub, price: priceOf(g.price), poor: eco.s.money < priceOf(g.price) });
+    for (const id of ['fus', 'med', 'cell']) rows.push({ id: 'item:' + id, kind: 'objet', name: ITEMS[id].name, lvl: `×${eco.s.items[id]}`, sub: ITEMS[id].sub, price: priceOf(ITEMS[id].price), poor: eco.s.money < priceOf(ITEMS[id].price) });
     ui.panel({ title: 'le konbini · いらっしゃいませ', quip, rows, note: 'les produits du konbini se consomment tout de suite', close: 'sortir' });
   } else if (k === 'computer') {
     const st = STORES[panelTab];
@@ -2769,7 +2799,7 @@ ui.el.shopItems.addEventListener('click', (e) => {
   }
   if (panelKind === 'cshop' && id.startsWith('kgood:')) {
     const k = KONBINI[id.slice(6)];
-    if (!eco.pay(k.price)) return deny();
+    if (!eco.pay(priceOf(k.price))) return deny();
     k.use();
     audio.buy();
     ui.setCoins(eco.s.money, true);
@@ -2781,7 +2811,7 @@ ui.el.shopItems.addEventListener('click', (e) => {
   if (panelKind === 'shop' || panelKind === 'cshop') {
     if (id.startsWith('item:')) {
       const it = id.slice(5);
-      if (!eco.pay(ITEMS[it].price)) return deny();
+      if (!eco.pay(priceOf(ITEMS[it].price))) return deny();
       eco.give(it);
     } else {
       if (b.classList.contains('locked')) return deny();
@@ -2994,6 +3024,7 @@ if (MULTI) {
       if (m.a === 'raid') plane.raid();
       else if (m.a === 'give') drops.grant(m.gift, `${m.by || 'l\'hôte'} t'a donné`);
       else if (m.a === 'say' && m.text) ui.toast(`${m.by || 'l\'hôte'} : ${String(m.text).slice(0, 200)}`, false, 7000);
+      else if (m.a === 'act') adminAct(m);
     },
   });
   delivery.link((fx) => net.sendFx(fx));
@@ -3241,7 +3272,7 @@ function loop(ts) {
         if (eco.s.battery / eco.batteryMax < 0.9) hintOnce('rest', 'immobile, la batterie se recharge toute seule', 4000);
       }
       regenT += dt;
-      if (regenT > 1) { regenT = 0; eco.s.health = Math.min(100, eco.s.health + (player.pos.y > -1 && seasonNow !== 3 ? 3 : 0.5)); }
+      if (regenT > 1) { regenT = 0; eco.s.health = Math.min(100, eco.s.health + (player.pos.y > -1 && seasonNow !== 3 ? 3 : 0.5) * tun.get('hpRegen')); }
       const tool = activeTool();
       // the arena games put a blaster in your hands: the button shoots instead of digging
       if (mg.armed) {
@@ -3249,12 +3280,12 @@ function loop(ts) {
       } else if (tool.kind === 'drill') {
         drillT -= dt;
         if (digging && drillT <= 0 && !overheated) {
-          drillT = tool.rate;
+          drillT = tool.rate / tun.get('drillSpeed');
           doDig();
           drillHeat = Math.min(EXPLORE ? .9 : 1, drillHeat + tool.heat);
           if (drillHeat >= 1) { overheated = true; audio.hiss(); ui.toast('surchauffe ! la foreuse refroidit…', true, 2000); hintOnce('heat', 'relâche un peu la foreuse entre deux perçages : elle chauffe', 5000); }
         }
-      } else if (digging && !shovel.busy && !looks.handsOut) shovel.start(tool.cd * (eco.s.perks.titan ? .85 : 1));
+      } else if (digging && !shovel.busy && !looks.handsOut) shovel.start(tool.cd * (eco.s.perks.titan ? .85 : 1) / tun.get('shovelSpeed'));
       updateAim();
       updateMoles(dt);
       updateDeep(dt);

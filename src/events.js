@@ -214,11 +214,12 @@ export function createEvents({ world, terrains, eco, ui, audio, tun, moles, orga
     const H = P.hunt;
     hooks.sendOp({ k: 'ev', key: e.key, i: s.id, by: hooks.myName() });
     if (H.cur) st.cur = (st.cur || 0) + H.cur;
-    eco.earn(H.coins); ui.setCoins(eco.s.money, true);
-    ui.plus(`+${H.coins}` + (H.cur ? ` · +${H.cur} ${P.cur?.[1] || ''}` : ''));
+    const hc = Math.round(H.coins * tun.get('huntReward'));
+    eco.earn(hc); ui.setCoins(eco.s.money, true);
+    ui.plus(`+${hc}` + (H.cur ? ` · +${H.cur} ${P.cur?.[1] || ''}` : ''));
     ui.toast(`${H.one} trouvé${H.one.endsWith('e') && !H.one.endsWith('é') ? 'e' : ''} · ${set.size}/${spotsN(e)}`, false, 1800);
     audio.pickup(3);
-    if (s.gold && H.gold) { h.coins(H.gold.coins); ui.toast(H.gold.text, false, 3200); h.unlock(H.gold.ach); audio.win(); }
+    if (s.gold && H.gold) { h.coins(Math.round(H.gold.coins * tun.get('huntReward'))); ui.toast(H.gold.text, false, 3200); h.unlock(H.gold.ach); audio.win(); }
     cardPop();
     checkDone(e);
     hooks.save();
@@ -228,9 +229,10 @@ export function createEvents({ world, terrains, eco, ui, audio, tun, moles, orga
     const P = PLAY[e.id], st = stOf(e.key);
     if (!P?.hunt || st.done || tk(e.key).size < spotsN(e) || !spotsN(e)) return;
     st.done = true;
-    eco.earn(P.hunt.done); ui.setCoins(eco.s.money, true); ui.plus('+' + ui.fmt(P.hunt.done));
+    const done = Math.round(P.hunt.done * tun.get('huntReward'));
+    eco.earn(done); ui.setCoins(eco.s.money, true); ui.plus('+' + ui.fmt(done));
     hooks.unlock(P.hunt.ach);
-    ui.layer(`${P.hunt.many} : tous trouvés !`, hooks.multi ? `le jardin a tout trouvé · +${P.hunt.done} ● pour chacun` : `+${P.hunt.done} ●`);
+    ui.layer(`${P.hunt.many} : tous trouvés !`, hooks.multi ? `le jardin a tout trouvé · +${done} ● pour chacun` : `+${done} ●`);
     audio.win();
   }
   let visT = 0;
@@ -502,7 +504,7 @@ export function createEvents({ world, terrains, eco, ui, audio, tun, moles, orga
       if (id === 'ev:swap1' || id === 'ev:swapall') {
         const n = id === 'ev:swap1' ? 1 : st.cur || 0;
         if (!n || (st.cur || 0) < n) return 'deny';
-        st.cur -= n; h.coins(n * S.rate); hooks.save();
+        st.cur -= n; h.coins(Math.round(n * S.rate * tun.get('candyValue'))); hooks.save();
         return 'merci !';
       }
       return 'deny';

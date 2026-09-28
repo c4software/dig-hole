@@ -1,6 +1,7 @@
 // bombs.js, things you throw: they bounce on the voxels, fizz, and go off.
 // The caller decides what an explosion does to the ground; this only flies and flashes.
 import * as THREE from 'three';
+import { tun } from './tunables.js';
 
 export const BLAST = {
   dyn:  { r: 1.7, fuse: 2.0, dmg: 25, push: 9 },
@@ -89,7 +90,7 @@ export function createBombs(scene, getTerrain, onExplode, onFizzle = () => {}) {
     const v = kind === 'fus'
       ? new THREE.Vector3(0, -4, 0)                                   // the drill goes straight down
       : dir.clone().multiplyScalar(8).add(new THREE.Vector3(0, 2.5, 0)).add(inherit.clone().multiplyScalar(.5));
-    live.push({ kind, mesh, v, fuse: BLAST[kind].fuse * fuse, power, dud, spin: new THREE.Vector3(Math.random() * 6, Math.random() * 6, 0), pos: mesh.position, vel: v, size: 0 });
+    live.push({ kind, mesh, v, fuse: BLAST[kind].fuse * fuse * tun.get('fuseTime'), power, dud, spin: new THREE.Vector3(Math.random() * 6, Math.random() * 6, 0), pos: mesh.position, vel: v, size: 0 });
   }
 
   function boom(kind, pos, power = 1) {

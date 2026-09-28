@@ -136,7 +136,7 @@ export function createPlane({ scene, getTerrain, onWarn, onBomb, onEnd, onCrash,
       const dist = Math.hypot(run.pos.x, run.pos.z);
       // over the plot: open the bay, a bomb every 0.3 s
       run.drop -= dt;
-      if (Math.abs(run.pos.x) < 9 && Math.abs(run.pos.z) < 9 && run.drop <= 0 && run.dropped < 10) {
+      if (Math.abs(run.pos.x) < 9 && Math.abs(run.pos.z) < 9 && run.drop <= 0 && run.dropped < tun.get('raidBombs')) {
         run.drop = .3;
         run.dropped++;
         const b = makeBomb();
