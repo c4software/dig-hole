@@ -455,6 +455,11 @@ export function createWorld(container) {
   const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(innerWidth, innerHeight, { type: THREE.HalfFloatType, samples: 4 }));
   composer.addPass(new RenderPass(scene, camera));
   const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), .3, .5, .93);
+  // one NaN or infinite pixel (a broken normal somewhere) is blurred by the bloom over the whole
+  // view, which then comes out black: such a pixel doesn't glow (max() drops a NaN on GPUs)
+  bloom.materialHighPassFilter.fragmentShader = bloom.materialHighPassFilter.fragmentShader.replace(
+    'vec4 texel = texture2D( tDiffuse, vUv );',
+    'vec4 texel = min( max( texture2D( tDiffuse, vUv ), vec4( 0.0 ) ), vec4( 6e4 ) );');
   composer.addPass(bloom);
   composer.addPass(new OutputPass());
   // the grade, in display space: a touch more colour, blue-violet lifted into the
@@ -669,6 +674,60 @@ export function createWorld(container) {
     }
   }
 
+  // shadows on or off change every material's program. Linking them all in one frame froze the
+  // game for 1.5-2.5 s: the new ones are linked off the frame (KHR_parallel_shader_compile) while
+  // the old ones keep drawing, and swapped in once ready. three keeps both per material, so
+  // switching back is free. The other setting is also built and drawn once while the title is up
+  // (warmQuality): a driver finishes a program on its first draw, which is its own half second
+  let shadowJob = 0, shadowPending = false;
+  const warmed = { true: false, false: false };
+  function setShadows(want) {
+    renderer.shadowMap.enabled = want;
+    scene.traverse(o => { if (o.material) [].concat(o.material).forEach(m => { m.needsUpdate = true; }); });
+    renderer.shadowMap.needsUpdate = true;
+  }
+  // every program of the scene with shadows on or off, made as the composer draws: into a target
+  // (tone mapping and colour space come later, so a program made for the screen isn't the one
+  // drawn). Resolves once they're linked; the frame's own setting is left as it was
+  function compileWith(want) {
+    const was = renderer.shadowMap.enabled, rt = renderer.getRenderTarget(), n0 = renderer.info.programs.length;
+    renderer.shadowMap.enabled = want;
+    renderer.setRenderTarget(composer.renderTarget1);
+    try { renderer.compile(scene, camera); } catch { /* drawn as it comes */ }
+    renderer.setRenderTarget(rt);
+    if (want !== was) setShadows(was);
+    const progs = renderer.info.programs.slice(n0), t0 = performance.now();
+    return new Promise((done) => {
+      // a driver without the extension says ready at once; a stuck one is given 8 s
+      const check = () => progs.every(p => p.isReady()) || performance.now() - t0 > 8000 ? done() : setTimeout(check, 16);
+      check();
+    });
+  }
+  // one image of the whole visible world drawn with the other setting, into the composer's target
+  // (the next frame draws over it), nothing culled, so every program gets its first draw now
+  function rehearse(want) {
+    const was = renderer.shadowMap.enabled, rt = renderer.getRenderTarget(), culled = [];
+    setShadows(want);
+    scene.traverseVisible(o => { if (o.frustumCulled) { o.frustumCulled = false; culled.push(o); } });
+    renderer.setRenderTarget(composer.renderTarget1);
+    try { renderer.render(scene, camera); } catch { /* the real frame will do */ }
+    renderer.setRenderTarget(rt);
+    for (const o of culled) o.frustumCulled = true;
+    setShadows(was);
+  }
+  function switchShadows(want) {
+    const job = shadowJob;
+    warmed[renderer.shadowMap.enabled] = true;   // what's on screen has been drawn
+    if (warmed[want]) { setShadows(want); return Promise.resolve(true); }
+    shadowPending = true;
+    return compileWith(want).then(() => {
+      if (job !== shadowJob) return false;
+      shadowPending = false; warmed[want] = true;
+      setShadows(want);
+      return true;
+    });
+  }
+
   return {
     renderer, scene, camera, sun, hemi, lamp, colliders, interactables, grassTime,
     setDepth, setTime, setSeason, updateFall, env, label, FENCE: F, house, china, shadows, homeDecor, setSpace, neighbours, fountain: europe.fountain, church: europe.church,
@@ -690,11 +749,21 @@ export function createWorld(container) {
       const size = q === 'haute' ? 2048 : 1024;
       if (sun.shadow.mapSize.x !== size) { sun.shadow.mapSize.set(size, size); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; } }
       const wantShadows = q !== 'basse';
+      shadowJob++; shadowPending = false;   // a switch still compiling is called off
       if (renderer.shadowMap.enabled !== wantShadows) {
-        renderer.shadowMap.enabled = wantShadows;
-        scene.traverse(o => { if (o.material) [].concat(o.material).forEach(m => { m.needsUpdate = true; }); });
+        // before the first image nothing is compiled yet: switch at once
+        if (renderer.info.render.frame === 0) { setShadows(wantShadows); warmed[wantShadows] = true; }
+        else return switchShadows(wantShadows);
       }
       renderer.shadowMap.needsUpdate = true;
+      return Promise.resolve();
+    },
+    get qualityPending() { return shadowPending; },
+    // the other shadow setting built ahead, off the frame, so a later switch has nothing to compile
+    warmQuality() {
+      const want = !renderer.shadowMap.enabled;
+      if (shadowPending || warmed[want]) return Promise.resolve();
+      return compileWith(want).then(() => { if (!shadowPending && renderer.shadowMap.enabled !== want) { rehearse(want); warmed[want] = true; } });
     },
     get quality() { return quality; },
     // a disabled bloom pass is simply skipped by the composer

@@ -618,9 +618,11 @@ export function createTerrain(scene, { theme = 'home', seed = 1337, ox = 0, oy =
           const d = B1[si(a + cc[0], b + cc[1], c + cc[2])];
           gx += cc[0] ? d : -d; gy += cc[1] ? d : -d; gz += cc[2] ? d : -d;
         }
-        const nl = Math.hypot(gx, gy, gz) || 1;
+        // a flat spot in the blur (a fresh pool in a crater) has no slope: straight up. A zero
+        // normal made the lit shader NaN, and the bloom spread that pixel over the whole view (black)
+        const nl = Math.hypot(gx, gy, gz), flat = nl < 1e-3;
         pos.push(X0 + (ib + px + .5) * S, Y0 + (jb + py + .5) * S - S * .12, Z0 + (kb + pz + .5) * S);
-        nor.push(-gx / nl, nl > 1e-3 ? -gy / nl : 1, -gz / nl);
+        nor.push(flat ? 0 : -gx / nl, flat ? 1 : -gy / nl, flat ? 0 : -gz / nl);
         tmpC.setHex(COLOR[m] ?? COLOR[WATER]);
         col.push(tmpC.r, tmpC.g, tmpC.b);
         refs.push(-1); shades.push(1);

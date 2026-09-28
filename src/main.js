@@ -425,7 +425,6 @@ addEventListener('blur', () => down.clear());
 
 const resetBtn = document.getElementById('reset');
 if (eco.hasSave()) resetBtn.classList.remove('hidden');
-setTimeout(() => ui.el.load.classList.add('gone'), 200);
 
 function lockPointer() {
   try { const p = renderer.domElement.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch {}
@@ -3075,19 +3074,21 @@ qBtns.forEach(b => b.addEventListener('click', (e) => {
   applyQuality();
 }));
 applyQuality();
-let slowMs = 0, slowN = 0;
+let slowMs = 0, slowN = 0, playMs = 0;
 // a big known hitch (a huge blast, a trip) isn't a slow machine: the watcher looks away for a while
 let framesQuietUntil = 0;
 const quietFrames = (sec = 6) => { framesQuietUntil = Math.max(framesQuietUntil, performance.now() + sec * 1000); slowMs = 0; slowN = 0; };
 function watchFrames(ms) {
   if (qualityPref !== 'auto' || state !== 'play' || ms > 250) return;
-  if (performance.now() < framesQuietUntil) { slowMs = 0; slowN = 0; return; }
+  // the first seconds of play are the world settling in (shaders, textures, ground): not judged
+  playMs += ms;
+  if (playMs < 10000 || world.qualityPending || performance.now() < framesQuietUntil) { slowMs = 0; slowN = 0; return; }
   slowMs += ms; slowN++;
   if (slowN < 180) return;
   const avg = slowMs / slowN;
   slowMs = 0; slowN = 0;
-  // below ~40 images/s while aiming for 60: one notch down
-  if (avg > 25 && autoLevel !== 'basse') {
+  // below ~30 images/s: one notch down (a small laptop chip at 30-40 is fine as it is)
+  if (avg > 33 && autoLevel !== 'basse') {
     autoLevel = autoLevel === 'haute' ? 'moyenne' : 'basse';
     applyQuality();
     ui.toast(`qualité réduite : ${autoLevel}`, false, 2000);
@@ -3453,6 +3454,14 @@ events = createEvents({ world, terrains, eco, ui, audio, tun, moles, organ, song
   cardOk: () => ['play', 'panel', 'paused', 'read', 'drive'].includes(state) && !mg.active && !race,
 } });
 renderer.setAnimationLoop(loop);
+// the first images build every shader of the world; on auto quality the step down's are then built
+// and drawn once too (world.warmQuality, ~2 s): all behind the loading screen, so the automatic
+// switch later has nothing to freeze on (it froze 1.5-2.5 s mid-game)
+{
+  const gone = () => ui.el.load.classList.add('gone');
+  const safety = setTimeout(gone, 9000);
+  frame().then(frame).then(() => qualityPref === 'auto' && world.warmQuality()).then(frame).finally(() => { clearTimeout(safety); gone(); });
+}
 
 // a change of mode on the title screen reloads the page: the new mode then starts straight away
 // the title screen's profile card, and the menus' feel
