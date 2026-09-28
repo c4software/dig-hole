@@ -180,6 +180,8 @@ export function createMoonPlayer(scene, camera, getTerrain) {
     // never leave the eye inside the rock: slide it in towards the astronaut until it's clear
     const inRock = (p) => { const [i, j, k] = t0.cellOf(p.x, p.y, p.z); return t0.solidCell(i, j, k) || (extra && extra(p, .12)); };
     for (let n = 0; n < 12 && dist > .25 && inRock(camera.position); n++) { dist -= .15; camera.position.copy(target).addScaledVector(back, dist); }
+    // a wall of a hall between the astronaut and the eye: come in front of it
+    if (extra) for (let s = .3; s < dist; s += .2) if (extra(tmp2.copy(target).addScaledVector(back, s), .15)) { dist = Math.max(.25, s - .3); camera.position.copy(target).addScaledVector(back, dist); break; }
     camera.up.copy(up);
     // the crosshair lands on the ground a few metres ahead; the mouse slides it nearer or further
     camera.lookAt(tmp.copy(target).addScaledVector(view, 2.4).addScaledVector(up, -2.5 + (.3 - camPitch) * 2.6));
@@ -190,14 +192,17 @@ export function createMoonPlayer(scene, camera, getTerrain) {
     get up() { return up; },
     get onGround() { return onGround; },
     // arrive standing on the surface above `at`, facing along the ground
-    place(at) {
+    place(at, face = null) {
       const t0 = T();
       pos.copy(at);
       up.copy(pos).sub(t0.center).normalize();
       // climb out if we landed inside rock
       for (let n = 0; n < 200 && solidBody(pos); n++) pos.addScaledVector(up, .2);
       vel.set(0, 0, 0);
-      heading.set(1, 0, 0).addScaledVector(up, -up.x).normalize();
+      // facing a point (a terminal, a door) when asked, otherwise along the ground
+      if (face) heading.copy(face).sub(pos).addScaledVector(up, -face.clone().sub(pos).dot(up));
+      if (!face || heading.lengthSq() < .01) heading.set(1, 0, 0).addScaledVector(up, -up.x);
+      heading.normalize();
       if (heading.lengthSq() < .01) heading.set(0, 0, 1);
       view.copy(heading);
     },

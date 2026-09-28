@@ -323,7 +323,7 @@ export function createPodrace({ scene, camera, audio, ui }) {
   function hurt(c, n, x, z) {
     if (c.wreck > 0) return;
     c.dmg = Math.min(100, c.dmg + n);
-    burst(x, c.y, z, Math.min(30, 4 + Math.round(n)), 0xffc060, 14, .25);
+    burst(x, c.y, z, Math.min(16, 3 + Math.round(n * .5)), 0xffc060, 14, .12);
     if (c === me) { shake = Math.max(shake, Math.min(1, n * .05)); if (c.bonkT <= 0) { audio.bonk(); c.bonkT = .25; } }
     if (c.dmg >= 100) wreck(c);
   }
@@ -541,14 +541,14 @@ export function createPodrace({ scene, camera, audio, ui }) {
         p.setXYZ(1, c.m.cock.position.x + cb.s * .45, c.m.cock.position.y + .2, c.m.cock.position.z + 1.1);
         p.needsUpdate = true;
       }
-      if (c.tag) { c.tag.position.set(c.x, c.y + 4, c.z); const d = me ? Math.hypot(c.x - me.x, c.z - me.z) : 0; c.tag.visible = g.visible && d > 8 && d < 160; }
+      if (c.tag) { c.tag.position.set(c.x, c.y + 4, c.z); const d = me ? Math.hypot(c.x - me.x, c.z - me.z) : 0; c.tag.visible = g.visible && d > 30 && d < 160; }
       // dust off the floor, smoke from a hot engine
       c.dustT -= dt;
       if (c.dustT <= 0 && sp > 20 && g.visible) {
         c.dustT = .03;
         const fx = Math.sin(c.yaw), fz = Math.cos(c.yaw);
-        emit(c.x - fx * 3 + (Math.random() - .5) * 3, c.y - HOVER + .2, c.z - fz * 3 + (Math.random() - .5) * 3, -fx * 6 + (Math.random() - .5) * 4, 1 + Math.random() * 2, -fz * 6 + (Math.random() - .5) * 4, .5 + Math.random() * .5, .8, 0xc8845a);
-        if (c.dmg > 55 || c.hot > 0) emit(c.x + fx * 5, c.y + .5, c.z + fz * 5, (Math.random() - .5) * 3, 3, (Math.random() - .5) * 3, .6, 1, 0x2a2a2a);
+        emit(c.x - fx * 3 + (Math.random() - .5) * 3, c.y - HOVER + .2, c.z - fz * 3 + (Math.random() - .5) * 3, -fx * 6 + (Math.random() - .5) * 4, 1 + Math.random() * 2, -fz * 6 + (Math.random() - .5) * 4, .15 + Math.random() * .15, .6, 0xc8845a);
+        if (c.dmg > 55 || c.hot > 0) emit(c.x + fx * 5, c.y + .5, c.z + fz * 5, (Math.random() - .5) * 3, 3, (Math.random() - .5) * 3, .3, .8, 0x2a2a2a);
       }
     }
     stepParts(dt);
@@ -571,6 +571,8 @@ export function createPodrace({ scene, camera, audio, ui }) {
     camYaw += wrap(me.yaw - camYaw) * Math.min(1, dt * 6);
     const fx = Math.sin(camYaw), fz = Math.cos(camYaw), sp = Math.abs(me.speed);
     camPos.set(me.x - fx * (11 + sp * .02), me.y + 3.4, me.z - fz * (11 + sp * .02));
+    // never behind the canyon's wall
+    { const j = nearest(camPos.x, camPos.z, me.idx, 20), lat = latOf(j, camPos.x, camPos.z), lim = hw[j] - 1.5; if (Math.abs(lat) > lim) { const k = Math.abs(lat) - lim; camPos.x -= side[j].x * Math.sign(lat) * k; camPos.z -= side[j].y * Math.sign(lat) * k; } }
     camLook.set(me.x + fx * 22, me.y + 1, me.z + fz * 22);
     if (state === 'count') {
       // a sweep over the grid down to the cockpit
