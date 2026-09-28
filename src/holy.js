@@ -278,6 +278,10 @@ export function createHoly({ scene, fxScene, interactables, colliders, church, e
   }
   // the blast's own light: a column from the sky, a ring on the ground, a white flash
   const beams = [];
+  // one light kept in the scene at zero, reused by every blast: adding a light would change the
+  // light count and recompile every material in the scene (a frozen second or two)
+  const blastLight = new THREE.PointLight(0xffe0a0, 0, 40, 1.4);
+  fxScene.add(blastLight);
   function blast(pos, remote = false) {
     const col = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 3.2, 90, 20, 1, true), new THREE.MeshBasicMaterial({ ...add(0xfff0b0), opacity: .7 }));
     col.position.copy(pos).add(new THREE.Vector3(0, 44, 0));
@@ -285,8 +289,8 @@ export function createHoly({ scene, fxScene, interactables, colliders, church, e
     ring.rotation.x = -Math.PI / 2; ring.position.copy(pos).add(new THREE.Vector3(0, .2, 0));
     const ball = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), new THREE.MeshBasicMaterial({ ...add(0xffffff), opacity: 1 }));
     ball.position.copy(pos);
-    const light = new THREE.PointLight(0xffe0a0, 400, 40, 1.4); light.position.copy(pos).add(new THREE.Vector3(0, 2, 0));
-    for (const o of [col, ring, ball, light]) fxScene.add(o);
+    const light = blastLight; light.intensity = 400; light.position.copy(pos).add(new THREE.Vector3(0, 2, 0));
+    for (const o of [col, ring, ball]) fxScene.add(o);
     beams.push({ col, ring, ball, light, t: 0 });
     sfx.init(); sfx.boom(1.6);
     if (remote) sfx.choir();
@@ -321,7 +325,7 @@ export function createHoly({ scene, fxScene, interactables, colliders, church, e
       b.ring.scale.setScalar(1 + b.t * 14); b.ring.material.opacity = Math.max(0, .9 - b.t * .7);
       b.ball.scale.setScalar(2 + b.t * 16); b.ball.material.opacity = Math.max(0, 1 - b.t * 2.2);
       b.light.intensity = 400 * Math.max(0, 1 - b.t * 1.2);
-      if (k >= 1) { for (const o of [b.col, b.ring, b.ball, b.light]) { fxScene.remove(o); o.geometry?.dispose(); o.material?.dispose(); } beams.splice(n, 1); }
+      if (k >= 1) { for (const o of [b.col, b.ring, b.ball]) { fxScene.remove(o); o.geometry?.dispose(); o.material?.dispose(); } b.light.intensity = 0; beams.splice(n, 1); }
     }
   }
 
