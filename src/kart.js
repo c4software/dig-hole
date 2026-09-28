@@ -9,12 +9,15 @@
 // banners, stands). Drift for mini-turbos, boost pads, slipstream, item boxes, checkpoints, 3 laps.
 // Online: each client drives its own kart, the host drives the bots; ~15 Hz states.
 import * as THREE from 'three';
+import { tun } from './tunables.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import * as V from './vehicles.js';
 import { netTrack, netNow, netStamp } from './netlerp.js';
 
 export const KART_ORIGIN = new THREE.Vector3(0, 0, 0);
-const N = 1300, CP = 13, SEG = N / CP, LAPS = 4, KR = .78;
+const N = 1300, CP = 13, SEG = N / CP, KR = .78;
+// laps: the host's number (tunables.js), read when a race starts, never during one
+let LAPS = 4;
 const TOP = 27, ACC = 21, GRID = 4, COUNT = 4;
 // the route: the corners, each a circle [x, z, radius, +1 left / -1 right], joined by
 // straight lines tangent to them, starting from the line on the back lane, eastbound
@@ -834,6 +837,7 @@ export function createKart({ scene, camera, audio, ui }) {
   }
 
   function start({ seed = 1, humans: hs = null, hostId: host = null, meId: mine = 'me', send: snd = null } = {}) {
+    LAPS = tun.get('kartLaps');
     if (!built) build();
     stopRace(true);
     const R = mulberry(seed | 0);

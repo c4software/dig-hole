@@ -2,6 +2,7 @@
 import { ORE } from './terrain.js';
 import { FIND } from './finds.js';
 import { ANIMAL } from './animals.js';
+import { tun } from './tunables.js';
 
 // permanent upgrades. `china: true` levels are only sold at the stall in China.
 export const UPGRADES = {
@@ -124,7 +125,12 @@ export const ITEMS = {
 };
 export const SLOTS = ['dyn', 'sup', 'fus', 'med', 'cell', 'ladder', 'grav', 'met', 'holy'];
 
-const valueOf = (id) => (ORE[id] || FIND[id] || ANIMAL[id] || { value: 0 }).value;
+// what a thing sells for: the host may make ores or treasures worth more (tunables.js)
+const valueOf = (id) => (ORE[id] || FIND[id] || ANIMAL[id] || { value: 0 }).value * (ORE[id] ? tun.get('oreValue') : FIND[id] ? tun.get('findValue') : 1);
+// a shop's price, times the host's multiplier (tools, konbini, clothes)
+export const priceOf = (p) => { const k = tun.get('shopPrice'); return k === 1 ? p : Math.round(p * k); };
+// how many of an item one carries: the everyday ones follow the host's cap
+export const capOf = (item) => ITEMS[item].max === 99 ? tun.get('stackCap') : ITEMS[item].max;
 const nameOf = (id) => (ORE[id] || FIND[id] || ANIMAL[id] || { name: '?' }).name;
 
 // unlimited: the exploration mode, where nothing runs out
@@ -161,7 +167,7 @@ export function createEconomy(key = 'a-hole-save-v2', { unlimited = false } = {}
     cur, next, nameOf,
     get cap() { return unlimited ? 9999 : cur('bag').cap; },
     get space() { return unlimited ? 9999 : cur('bag').cap - s.sackN; },
-    get batteryMax() { return cur('battery').cap; },
+    get batteryMax() { return cur('battery').cap * tun.get('batteryCap'); },
     // sack keys are ore ids (numbers) or find ids (strings)
     add(id, force = false) {
       if (!force && !unlimited && s.sackN >= cur('bag').cap) return false;
@@ -194,14 +200,14 @@ export function createEconomy(key = 'a-hole-save-v2', { unlimited = false } = {}
       const n = next(id);
       if (!n) return 'max';
       if (n.china && !inChina) return 'china';
-      if (s.money < n.price) return 'poor';
-      s.money -= n.price;
+      if (s.money < priceOf(n.price)) return 'poor';
+      s.money -= priceOf(n.price);
       s.lv[id]++;
       return 'ok';
     },
     pay(price) { if (unlimited) return true; if (s.money < price) return false; s.money -= price; return true; },
     give(item, n = 1, shoddy = false) {
-      s.items[item] = Math.min(ITEMS[item].max, (s.items[item] || 0) + n);
+      s.items[item] = Math.min(capOf(item), (s.items[item] || 0) + n);
       if (shoddy) s.ali[item] = Math.min(s.items[item], (s.ali[item] || 0) + n);
     },
     use(item) { if (unlimited) return true; if (!s.items[item]) return false; s.items[item]--; s.ali[item] = Math.min(s.ali[item] || 0, s.items[item]); return true; },

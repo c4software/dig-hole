@@ -89,6 +89,7 @@ class FakePC extends EventTarget {
 globalThis.RTCPeerConnection = FakePC;
 
 const { createRoom, notePost } = await import('../src/room.js');
+const roomAdminMod = await import('../src/roomadmin.js');
 const { createSignal } = await import('../src/signal.js');
 const { encode, decode, createPipe } = await import('../src/rtc.js');
 const { tun, createTunables } = await import('../src/tunables.js');
@@ -776,6 +777,74 @@ test('rendezvous: a tracker that never answers is left alone after 3 tries', asy
   await assert.rejects(r.guestRendezvous({ room: 'x', secret: 'y', trackers: ['wss://dead.never'], WS: Counting, makeOffer: async () => ({ data: {}, accept() {} }), rounds: 1, roundMs: 30 }), /aucun relais|personne/);
   assert.equal(made, before);
   h.close();
+});
+
+// ---------- the live values: many of them, all harmless by default ----------
+test('tunables: every key sane, defaults are today\'s game, values clamped', async () => {
+  const { DEFS, GROUPS, createTunables } = await import('../src/tunables.js');
+  const vis = DEFS.filter(d => !d.hidden);
+  assert.ok(vis.length >= 55, 'many values: ' + vis.length);
+  assert.equal(new Set(DEFS.map(d => d.k)).size, DEFS.length);
+  assert.deepEqual(GROUPS, ['corps', 'creuser', 'explosifs', 'temps', 'dangers', 'boutique', 'aliexpresso', 'fêtes', 'mini-jeux', 'planètes']);
+  for (const d of vis) {
+    assert.ok(d.label && d.g, d.k);
+    if (d.options) assert.ok(d.options.some(o => o[0] === d.def), d.k);
+    else { assert.ok(d.min <= d.def && d.def <= d.max && d.step > 0, d.k); if (d.unit === '×') assert.equal(d.def, 1, d.k); }
+  }
+  for (const k of ['dyn', 'sup', 'fus', 'met', 'holy', 'air', 'shell']) assert.ok(DEFS.some(d => d.k === k + 'Radius') && DEFS.some(d => d.k === k + 'Damage'), k);
+  const t = createTunables();
+  assert.equal(t.get('holyShaft'), 8); assert.equal(t.get('raidBombs'), 10); assert.equal(t.get('stackCap'), 99); assert.equal(t.get('kartLaps'), 4);
+  t.set('dynRadius', 99); assert.equal(t.get('dynRadius'), 4);
+  t.set('holyShaft', -3); assert.equal(t.get('holyShaft'), 0);
+  t.set('selfHurt', 5); assert.equal(t.get('selfHurt'), 1);            // not an option: back to the default
+  t.set('selfHurt', 0); assert.equal(t.get('selfHurt'), 0);
+  t.set('shopPrice', 'abc'); assert.equal(t.get('shopPrice'), 1);
+  assert.deepEqual(t.snapshot(), { dynRadius: 4, holyShaft: 0, selfHurt: 0 });
+});
+
+test('tunables in the game: prices, caps, battery, ore and treasure values', async () => {
+  globalThis.document.createElement ??= () => ({ getContext: () => null });
+  const { tun } = await import('../src/tunables.js');
+  const { createEconomy, priceOf, capOf, UPGRADES } = await import('../src/economy.js');
+  const eco = createEconomy('t2');
+  tun.reset();
+  const bat = eco.batteryMax;
+  assert.equal(priceOf(123), 123); assert.equal(capOf('dyn'), 99); assert.equal(capOf('holy'), 1);
+  eco.add(20); eco.add(20);
+  const v0 = eco.sackValue();
+  tun.set('shopPrice', 2); tun.set('stackCap', 10); tun.set('batteryCap', 1.5); tun.set('oreValue', 3);
+  assert.equal(priceOf(123), 246);
+  eco.give('dyn', 50); assert.equal(eco.s.items.dyn, 10);
+  assert.equal(eco.batteryMax, bat * 1.5);
+  assert.equal(eco.sackValue(), v0 * 3);
+  // an upgrade costs the doubled price
+  const n = UPGRADES.shovel.levels[1];
+  eco.s.money = n.price * 2 - 1; assert.equal(eco.buy('shovel'), 'poor');
+  eco.s.money = n.price * 2; assert.equal(eco.buy('shovel'), 'ok'); assert.equal(eco.s.money, 0);
+  tun.reset();
+  await tick(150);
+});
+
+test('admin actions: heal / money / tp / parcel to one or all, treasures back in the log, values saved', () => {
+  const r = createRoom();
+  const H = fakeLink(true), A = fakeLink(), B = fakeLink();
+  for (const [l, n] of [[H, 'h'], [A, 'a'], [B, 'b']]) r.message(r.join(l), { t: 'hello', name: n });
+  const saved = [];
+  const t = createTunables();
+  const adm = roomAdminMod.roomAdmin(r, { tun: t, saveTun: (v) => saved.push(v) });
+  assert.equal(adm.calls.act(2, 'money', 500), true);
+  assert.deepEqual(last(A, 'admin'), { t: 'admin', a: 'act', act: 'money', v: 500, by: 'le serveur' });
+  assert.equal(B.got.filter(m => m.t === 'admin').length, 0);
+  adm.calls.act(null, 'heal');
+  assert.equal(last(B, 'admin').act, 'heal'); assert.equal(H.got.filter(m => m.t === 'admin').length, 0);
+  assert.equal(adm.calls.act(2, 'nuke'), false);   // only the known ones
+  adm.calls.refinds();
+  assert.equal(r.ops.at(-1).k, 'refinds'); assert.equal(last(A, 'op').op.k, 'refinds');
+  adm.calls.set('holyShaft', 20); adm.calls.set('dynRadius', 2);
+  assert.deepEqual(saved.at(-1), { holyShaft: 20, dynRadius: 2 });
+  assert.deepEqual(last(A, 'tun').v, { holyShaft: 20, dynRadius: 2 });
+  adm.calls.reset('holyShaft');
+  assert.deepEqual(saved.at(-1), { dynRadius: 2 });
 });
 
 test('build-static.sh: a self-contained folder, no server, every module versioned', async () => {

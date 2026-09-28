@@ -7,7 +7,7 @@ import path from 'node:path';
 import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { connectAdmin } from './src/admin-client.js';
-import { DEFS } from './src/tunables.js';
+import { DEFS, GROUPS } from './src/tunables.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const argv = process.argv.slice(2);
@@ -51,17 +51,22 @@ async function playerOf(a, word) {
 }
 const HELP = `commandes :
   players                        qui est là (id, nom, monde, position)
-  get [clé]                      les réglages en direct (ou un seul)
+  get [clé|groupe|modifiés]      les réglages en direct, par groupe (${GROUPS.join(', ')})
   set <clé> <valeur>             change un réglage, pour tout le monde
   reset [clé|all]                remet un réglage (ou tous) à l'origine
   give <joueur|all> <quoi> [n]   donne : pièces, un objet (dynamite, échelle…), un minerai (fer, 21…), une pièce de fusée
   kick <joueur>                  renvoie quelqu'un
+  heal <joueur|all>              vie, batterie et oxygène au plein
+  money <joueur|all> <n>         fixe la bourse
+  tp <joueur|all> <lieu>         maison, japon, lune ou mars
+  parcel <joueur|all> [objet]    un colis livré devant la porte
+  refinds                        les trésors déterrés retournent sous terre
   raid                           un bombardier pour tout le jardin (dans 12 s)
   newmap                         une nouvelle carte (le trou est rebouché)
   say <texte>                    un mot à l'écran de tout le monde
   notes                          le livre d'or ; delnote <n> efface le n-ième
   help · quit`;
-const CMDS = ['players', 'get', 'set', 'reset', 'give', 'kick', 'raid', 'newmap', 'say', 'notes', 'delnote', 'help', 'quit'];
+const CMDS = ['players', 'get', 'set', 'reset', 'give', 'kick', 'heal', 'money', 'tp', 'parcel', 'refinds', 'raid', 'newmap', 'say', 'notes', 'delnote', 'help', 'quit'];
 const KEYS = DEFS.filter(d => !d.hidden).map(d => d.k);
 
 async function run(a, line) {
@@ -76,8 +81,16 @@ async function run(a, line) {
     return out(`${ps.length} joueur${ps.length > 1 ? 's' : ''}`);
   }
   if (c === 'get') {
+    // get · get <clé> · get <groupe> (explosifs, boutique…) · get modifiés
     const v = await a.call('values');
-    for (const d of DEFS.filter(d => !d.hidden && (!rest[0] || d.k === rest[0]))) out(`  ${(d.k in v ? '*' : ' ')} ${d.k.padEnd(12)} ${String(val(d, d.k in v ? v[d.k] : d.def)).padEnd(10)} ${d.label}`);
+    const q = rest.join(' ');
+    const mod = /^modifi/.test(fold(q));
+    for (const g of GROUPS) {
+      const ds = DEFS.filter(d => d.g === g && !d.hidden && (!q || mod ? (!mod || d.k in v) : d.k === q || fold(g) === fold(q)));
+      if (!ds.length) continue;
+      out(`${g}${ds.some(d => d.k in v) ? ` (${ds.filter(d => d.k in v).length} modifié${ds.filter(d => d.k in v).length > 1 ? 's' : ''})` : ''}`);
+      for (const d of ds) out(`  ${(d.k in v ? '*' : ' ')} ${d.k.padEnd(14)} ${String(val(d, d.k in v ? v[d.k] : d.def)).padEnd(10)} ${d.label}`);
+    }
     return;
   }
   if (c === 'set') {
@@ -108,6 +121,24 @@ async function run(a, line) {
     return out(`donné à ${p ? p.name : 'tout le monde'} : ${t.kind === 'parts' ? t.name : n + ' × ' + t.name}`);
   }
   if (c === 'kick') { const p = await playerOf(a, rest[0] || '?'); if (!p) throw new Error('kick <joueur>'); const ok = await a.call('kick', p.id); return out(ok ? `${p.name} renvoyé` : 'pas pu'); }
+  if (c === 'heal' || c === 'soigner') { const p = await playerOf(a, rest[0] || 'all'); await a.call('act', p ? p.id : null, 'heal'); return out(`${p ? p.name : 'tout le monde'} : vie, batterie et oxygène au plein`); }
+  if (c === 'money' || c === 'argent') {
+    const p = await playerOf(a, rest[0] || '?'); const n = Math.floor(+rest[1]);
+    if (!Number.isFinite(n) || n < 0) throw new Error('money <joueur|all> <pièces>');
+    await a.call('act', p ? p.id : null, 'money', n); return out(`bourse de ${p ? p.name : 'tout le monde'} : ${n} ●`);
+  }
+  if (c === 'tp') {
+    const p = await playerOf(a, rest[0] || '?');
+    const to = { maison: 'home', home: 'home', japon: 'china', china: 'china', lune: 'moon', moon: 'moon', mars: 'mars' }[fold(rest[1] || '')];
+    if (!to) throw new Error('tp <joueur|all> <maison|japon|lune|mars>');
+    await a.call('act', p ? p.id : null, 'tp', to); return out(`${p ? p.name : 'tout le monde'} → ${rest[1]}`);
+  }
+  if (c === 'parcel' || c === 'colis') {
+    const p = await playerOf(a, rest[0] || 'all'); const t = rest[1] ? thing(rest.slice(1).join(' ')) : { kind: 'items', id: 'dyn', name: 'dynamite' };
+    if (!t || t.kind !== 'items') throw new Error('parcel <joueur|all> [objet]');
+    await a.call('act', p ? p.id : null, 'parcel', t.id); return out(`colis en route pour ${p ? p.name : 'tout le monde'} : ${t.name}`);
+  }
+  if (c === 'refinds' || c === 'tresors') { await a.call('refinds'); return out('tous les trésors sont de retour sous terre'); }
   if (c === 'raid') { await a.call('raid'); return out('un bombardier arrive (alerte, puis 12 s)'); }
   if (c === 'newmap') { await a.call('resetMap'); return out('nouvelle carte : le trou est rebouché pour tout le monde'); }
   if (c === 'say') { const t = rest.join(' '); if (!t) throw new Error('say <texte>'); await a.call('say', t); return out('annoncé'); }
@@ -130,7 +161,13 @@ out(`connecté à ${url} · salle « ${room} » · help pour les commandes`);
 const words = () => [...CMDS, ...KEYS, 'all', ...(a.snap?.players || []).map(p => p.name), ...CAT.items.map(i => i[1]), 'pièces'];
 const rl = readline.createInterface({
   input: process.stdin, output: process.stdout, prompt: 'jardin> ',
-  completer: (line) => { const last = line.split(/\s+/).pop(); const hits = words().filter(w => w.startsWith(last)); return [hits.length ? hits : [], last]; },
+  // after « set », « reset » or « get »: the keys (and for get, the groups); else everything
+  completer: (line) => {
+    const parts = line.split(/\s+/), last = parts.pop(), first = parts[0];
+    const pool = parts.length === 1 && ['set', 'reset'].includes(first) ? KEYS : parts.length === 1 && first === 'get' ? [...KEYS, ...GROUPS, 'modifiés'] : words();
+    const hits = pool.filter(w => w.startsWith(last));
+    return [hits, last];
+  },
 });
 a.onClose = () => { console.error('\ndéconnecté'); process.exit(1); };
 rl.prompt();

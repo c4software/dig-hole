@@ -7,6 +7,7 @@ import { createRig, EMOTES, EMOTE_ORDER, EYE } from './rig.js';
 import { ITEMS, SLOTS, SHOPS, SKINS, HAIR_COLORS, HAIR_STYLES, TEES, DEFAULT, clean, shopItems } from './outfits.js';
 import { PEOPLE, SPOTS } from './boutiques.js';
 import { toolMat } from './tool.js';
+import { priceOf } from './economy.js';
 
 const SLOT_NAME = Object.fromEntries(SLOTS.map(s => [s.id, s.name]));
 const WHERE = { japon: 'au japon', europe: 'sur la place du village', lune: 'sur la lune', mars: 'sur mars' };
@@ -180,7 +181,7 @@ export function createLooks(game) {
     if (kind === 'boutique') {
       const rows = shopItems(shop).map(it => {
         const own = owns(it.id), worn = fit[it.slot] === it.id;
-        return { id: 'wear:' + it.id, kind: SLOT_NAME[it.slot], name: it.name, sub: it.sub, price: it.price, poor: !own && eco.s.money < it.price, owned: own, ownedText: worn ? 'porté' : 'à toi · porter', done: worn };
+        return { id: 'wear:' + it.id, kind: SLOT_NAME[it.slot], name: it.name, sub: it.sub, price: priceOf(it.price), poor: !own && eco.s.money < priceOf(it.price), owned: own, ownedText: worn ? 'porté' : 'à toi · porter', done: worn };
       });
       ui.panel({ title: SHOPS[shop].name, quip: quip ?? SHOPS[shop].quip, rows, note: 'acheté, c\'est porté tout de suite · le vestiaire de la maison garde tout', close: 'sortir' });
       return true;
@@ -212,7 +213,7 @@ export function createLooks(game) {
       const it = ITEMS[v];
       if (!it) return true;
       if (!owns(v)) {
-        if (kind !== 'boutique' || !eco.pay(it.price)) return deny(), true;
+        if (kind !== 'boutique' || !eco.pay(priceOf(it.price))) return deny(), true;
         W.own.push(v);
         ui.setCoins(eco.s.money, true);
         audio.buy();
