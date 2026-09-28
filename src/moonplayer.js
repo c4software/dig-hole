@@ -2,44 +2,20 @@
 // centre, "up" is wherever you stand, the camera orbits behind a little astronaut.
 import * as THREE from 'three';
 import { tun } from './tunables.js';
+import { createRig } from './rig.js';
+import { DEFAULT } from './outfits.js';
 
 const G = 3.2;            // weaker than home: long, floaty jumps
 const HALF = 0.34;        // the body is a small box, the world's voxels don't rotate
 const tmp = new THREE.Vector3(), tmp2 = new THREE.Vector3();
 
+// the walker up there: the same body as everyone's, in your outfit, under a glass bubble
 function astronaut() {
+  const rig = createRig(DEFAULT, { planet: true });
   const g = new THREE.Group();
-  const suit = new THREE.MeshStandardMaterial({ color: 0xf2efe8, roughness: .7 });
-  const dark = new THREE.MeshStandardMaterial({ color: 0x3a3d44, roughness: .6 });
-  const gold = new THREE.MeshStandardMaterial({ color: 0xd9a125, metalness: .9, roughness: .15, emissive: 0x3a2a08 });
-  const body = new THREE.Mesh(new THREE.CapsuleGeometry(.26, .45, 6, 14), suit); body.position.y = .82;
-  const head = new THREE.Mesh(new THREE.SphereGeometry(.24, 18, 14), suit); head.position.y = 1.42;
-  const visor = new THREE.Mesh(new THREE.SphereGeometry(.2, 18, 12, -1.1, 2.2, .9, 1.1), gold); visor.position.set(0, 1.43, .06);
-  const pack = new THREE.Mesh(new THREE.BoxGeometry(.4, .5, .2), dark); pack.position.set(0, .95, -.3);
-  const tanks = [-.1, .1].map(x => { const t = new THREE.Mesh(new THREE.CylinderGeometry(.07, .07, .46, 10), gold); t.position.set(x, .97, -.42); return t; });
-  const legs = [-.12, .12].map(x => { const p = new THREE.Group(); p.position.set(x, .52, 0); const l = new THREE.Mesh(new THREE.CapsuleGeometry(.1, .32, 4, 8), suit); l.position.y = -.26; p.add(l); const b = new THREE.Mesh(new THREE.BoxGeometry(.16, .1, .24), dark); b.position.set(0, -.5, .04); p.add(b); return p; });
-  const arms = [-.34, .34].map(x => { const p = new THREE.Group(); p.position.set(x, 1.08, 0); const a = new THREE.Mesh(new THREE.CapsuleGeometry(.08, .34, 4, 8), suit); a.position.y = -.24; p.add(a); return p; });
-  // the tool in the right hand, held along the arm, working end past the glove:
-  // a short drill, or a little shovel, whichever you dig with
-  const steel = new THREE.MeshStandardMaterial({ color: 0xc9ced4, metalness: .9, roughness: .2 });
-  const drill = new THREE.Group();
-  const tb = new THREE.Mesh(new THREE.CylinderGeometry(.05, .05, .26, 10), new THREE.MeshStandardMaterial({ color: 0xe8762a }));
-  tb.position.y = -.1; drill.add(tb);
-  // the bit spins on its own axis: its own group, turned about y
-  const bit = new THREE.Group();
-  const cone = new THREE.Mesh(new THREE.ConeGeometry(.035, .24, 8), steel);
-  cone.rotation.x = Math.PI; bit.add(cone);
-  bit.position.y = -.35; drill.add(bit);
-  const shovel = new THREE.Group();
-  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(.02, .02, .5, 8), new THREE.MeshStandardMaterial({ color: 0x8a5f38 }));
-  shaft.position.y = -.2; shovel.add(shaft);
-  const blade = new THREE.Mesh(new THREE.BoxGeometry(.18, .22, .025), steel);
-  blade.position.set(0, -.52, .02); blade.rotation.x = -.25; shovel.add(blade);
-  for (const t of [drill, shovel]) { t.position.set(0, -.5, 0); arms[1].add(t); }
-  shovel.visible = false;
-  g.add(body, head, visor, pack, ...tanks, ...legs, ...arms);
-  g.traverse(o => { if (o.isMesh) o.castShadow = true; });
-  return { g, legs, arms, bit, drill, shovel };
+  g.add(rig.root);
+  rig.hold('drill');
+  return { g, rig };
 }
 
 export function createMoonPlayer(scene, camera, getTerrain) {
@@ -52,15 +28,18 @@ export function createMoonPlayer(scene, camera, getTerrain) {
   let toolKind = 'drill', aimAt = null, aimT = 0, armX = -.9;
   const up = new THREE.Vector3(0, 1, 0);
   const model = astronaut();
+  const SHOULDER = new THREE.Vector3(-.185, 1.425, -.01);
+  const me = { frozen: false };
   model.g.visible = false;
   scene.add(model.g);
   const stats = { fuelMax: 0, fuel: 0, jetting: false, jump: 1.6, g: G };
 
   addEventListener('mousemove', (e) => {
-    if (!active || !document.pointerLockElement) return;
+    if (!active || !document.pointerLockElement || me.frozen) return;
     look(e.movementX, e.movementY);
   });
   function look(dx, dy, sens = 1) {
+    if (me.frozen) return;
     view.applyAxisAngle(up, -dx * .0024 * sens);
     camPitch = THREE.MathUtils.clamp(camPitch + dy * .0024 * sens, -1.1, 1.45);
   }
@@ -147,16 +126,16 @@ export function createMoonPlayer(scene, camera, getTerrain) {
     const m = new THREE.Matrix4().makeBasis(tmp.crossVectors(up, heading).normalize(), up, heading);
     model.g.quaternion.setFromRotationMatrix(m);
     model.g.position.copy(pos);
-    const moving = flat.length() > .5 && onGround;
-    const w = moving ? Math.sin(t * 8) * .6 : 0;
-    model.legs[0].rotation.x = w; model.legs[1].rotation.x = -w;
-    model.arms[0].rotation.x = -w * .6;
+    const R = model.rig;
+    R.st.speed = onGround ? flat.length() : 0; R.st.ground = onGround; R.st.vy = vel.dot(up);
+    R.st.dig = false;
+    R.update(dt);
     // the digging arm: points at the spot, draws back, then drives the tool into it
     let aim = -.9;
     if (aimT > 0 && aimAt) {
       model.g.updateMatrixWorld();
       const local = model.g.worldToLocal(tmp2.copy(aimAt));
-      local.sub(model.arms[1].position);
+      local.sub(SHOULDER);
       // the arm hangs along -y; a turn of a about x swings its end to (0, -cos a, -sin a)
       aim = THREE.MathUtils.clamp(-Math.atan2(local.z, -local.y), -2.4, -.2);
     }
@@ -164,10 +143,8 @@ export function createMoonPlayer(scene, camera, getTerrain) {
     const k = 1 - swing;   // 0 → 1 through one stroke
     const stroke = swing > 0 ? (k < .35 ? -Math.sin(k / .35 * Math.PI / 2) * .7 : -Math.cos((k - .35) / .65 * Math.PI / 2) * .7 + Math.sin((k - .35) / .65 * Math.PI) * .25) : 0;
     armX += (aim + stroke - armX) * Math.min(1, dt * 18);
-    model.arms[1].rotation.x = armX;
-    model.arms[1].rotation.z = aimT > 0 ? -.15 : 0;
-    model.drill.visible = toolKind === 'drill'; model.shovel.visible = toolKind !== 'drill';
-    if (toolKind === 'drill' && aimT > 0) model.bit.rotation.y += dt * 40;
+    if (aimT > 0 && !R.emote) { const sh = R.bone('shR'); sh.rotation.x = armX; sh.rotation.y = 0; sh.rotation.z = .12; R.bone('elbR').rotation.x = -.2; }
+    R.hold(toolKind === 'hands' ? null : toolKind === 'drill' ? 'drill' : 'shovel');
 
     // camera: behind and above, pulled in if the ground is in the way
     // over the right shoulder, so the crosshair sits beside the astronaut, on the ground ahead
@@ -218,5 +195,8 @@ export function createMoonPlayer(scene, camera, getTerrain) {
     // what else is solid on the ground: fn(point, radius) → true
     setSolid(fn) { extra = fn; },
     setActive(v) { active = v; model.g.visible = v; },
+    get rig() { return model.rig; },
+    // no turning while the emote wheel is out
+    get frozen() { return me.frozen; }, set frozen(v) { me.frozen = v; },
   };
 }

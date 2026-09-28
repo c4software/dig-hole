@@ -8,6 +8,7 @@ import * as THREE from 'three';
 import { createBlossoms, createCars, createContact, createLamps, createWalkers, puffGeometry, roofColliders, seeded } from './street.js';
 import * as V from './vehicles.js';
 import { createInteriors } from './interiors.js';
+import { europeBoutique } from './boutiques.js';
 
 const ROAD_Z = -13.1;
 const NORTH_FRONT = -16.2;          // house fronts on our side of the street
@@ -172,6 +173,7 @@ export function createEurope({ scene, addBox }) {
       I.home(h, room, [d0, d1], { wins, sides: [['left', -D / 2], ['right', -D / 2]] });
     } else if (inside === 'cafe') I.cafe(h, room, [d0, d1]);
     else if (inside === 'bakery') I.bakery(h, room, [d0, d1]);
+    else if (inside === 'mode') boutiques.push(europeBoutique(I, h, room, [d0, d1]));
     else I.shop(h, room, inside, [d0, d1]);
     roofColliders(addBox, { x0: -W / 2, x1: W / 2, z0: -D - .4, z1: .4, y: H, h: ridge, kind: 'x', matrix: h.matrix });
     contact.rect((bb.min.x + bb.max.x) / 2, (bb.min.z + bb.max.z) / 2, bb.max.x - bb.min.x, bb.max.z - bb.min.z, 0, .125);
@@ -211,6 +213,7 @@ export function createEurope({ scene, addBox }) {
     }
   }
   const glows = [];
+  const boutiques = [];     // the clothes shop's counter (see boutiques.js)
 
   // a terrace of houses along a stretch of street, skipping what's reserved
   function terrace(x0, x1, zFront, rot, shops = {}) {
@@ -302,7 +305,8 @@ export function createEurope({ scene, addBox }) {
   // the bakery on the other side
   facade(74.4, -5.6, -Math.PI / 2, 9, { floors: 2, shop: { name: 'BOULANGERIE', color: '#2a4a78', text: '#f2d78a', awning: ['#2a4a78', '#f4efe6'], inside: 'bakery' }, color: 0xf2dcc2, roofC: 0xa84c33, floorY: .11 });
   // (the square's paving stands 10 cm proud: these rooms' floors sit on top of it)
-  facade(74.4, 4, -Math.PI / 2, 8, { floors: 3, color: 0xe8c9a8, floorY: .11 });
+  // on the square's east side, the clothes shop
+  facade(74.4, 4, -Math.PI / 2, 8, { floors: 3, shop: { name: 'BOUTIQUE · MODE', color: '#3a2440', text: '#f2d78a', awning: ['#6a2a5a', '#f4efe6'], inside: 'mode' }, color: 0xe8c9a8, floorY: .11 });
   facade(51.6, 4, Math.PI / 2, 8, { floors: 2, timbered: true, floorY: .11 });
   // a zebra crossing from the square to our side, bollards, benches, a post box
   for (let k = 0; k < 3; k++) flat(2.6, .5, white, FX, .03, ROAD_Z - 1 + k * 1);
@@ -605,7 +609,7 @@ export function createEurope({ scene, addBox }) {
     SQ, MX,
     // the front doors, opened and shut with e
     doors: I.doors,
-    walkers,
+    walkers, boutiques,
     // the fountain's basin, for the mini jet-skis: its centre, the water's radius and height
     fountain: { x: FX, z: FZ, r: FW, y: FY, pool, island: .8 },
     // the church, for what goes inside it: the altar (its front at z 36), the organ's corner, the tower

@@ -2,6 +2,7 @@
 // late diggers), who is in, and the passing messages relayed between them. No Node, no DOM:
 // server.mjs runs it behind WebSockets, a host's tab runs it behind WebRTC data channels.
 // A link is what the room talks through: { send(str, msg), close?(), owner? }.
+import { dateNow } from './events-calendar.js';
 
 export const clean = (s, n) => String(s || '').replace(/[^\p{L}\p{N} _-]/gu, '').trim().slice(0, n);
 export const MAX_OPS = 80000;
@@ -18,9 +19,21 @@ export function createRoom({
   tun = null,                // live values set by the owner (tunables.js), sent to every newcomer
   notes = null,              // the guest book, when the room keeps it (p2p); the server keeps its own
   log = () => {},
+  // the room's date (its machine's), for the feasts of the calendar: { at, tz }
+  clock = () => dateNow(now()),
 } = {}) {
   const clients = new Map();   // id → client { link, me }
   let dirty = false, nextColor = 0, superAt = 0;
+  // a new day where the room runs (or the clocks changed): everyone is told, lazily, on traffic
+  let dateCheck = 0, dateSaid = '';
+  const dayOf = (d) => { const t = new Date(d.at + d.tz * 60000); return `${t.getUTCFullYear()}-${t.getUTCMonth()}-${t.getUTCDate()}|${d.tz}`; };
+  function checkDate() {
+    if (now() < dateCheck) return;
+    dateCheck = now() + 60000;
+    const d = clock(), k = dayOf(d);
+    if (dateSaid && k !== dateSaid) all({ t: 'date', date: d });
+    dateSaid = k;
+  }
 
   const out = (msg) => JSON.stringify(msg);
   const to = (c, msg) => { if (c) c.link.send(out(msg), msg); };
@@ -60,7 +73,7 @@ export function createRoom({
     if (m.t === 'hello' && !me) {
       c.me = { id: newId(), name: clean(m.name, 10) || 'creuseur', color: nextColor++, p: [0, 0, -11.5], yaw: 0, w: 'home' };
       clients.set(c.me.id, c);
-      const w = { t: 'welcome', id: c.me.id, color: c.me.color, room: name, ops, players: [...clients.values()].filter(o => o !== c).map(o => o.me) };
+      const w = { t: 'welcome', id: c.me.id, color: c.me.color, room: name, ops, players: [...clients.values()].filter(o => o !== c).map(o => o.me), date: clock() };
       if (tun) w.tun = tun;
       const owner = [...clients.values()].find(o => o.link.owner);
       if (owner) w.host = owner.me.id;
@@ -69,6 +82,7 @@ export function createRoom({
       return;
     }
     if (!me) return;
+    checkDate();
     if (m.t === 'state') {
       me.p = m.p; me.yaw = m.yaw; me.w = m.w; me.g = typeof m.g === 'string' ? m.g.slice(0, 16) : null;
       others(c, { t: 'state', id: me.id, p: m.p, yaw: m.yaw, w: m.w, dig: !!m.dig, g: me.g });

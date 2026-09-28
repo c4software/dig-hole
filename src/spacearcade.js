@@ -4,6 +4,7 @@
 // planets' structures share (the astronaut collides with the voxels, and with these).
 import * as THREE from 'three';
 import * as V from './vehicles.js';
+import { spaceBoutique } from './boutiques.js';
 
 // the games of each hall, left to right along the back wall: the one place to edit
 export const SPACE_GAMES = {
@@ -187,6 +188,8 @@ export function createSpaceArcade({ has = () => false, name = (id) => id } = {})
     const pot = new THREE.Mesh(new THREE.CylinderGeometry(.3, .24, .5, 12), trimM); pot.position.set(HW - .6, .25, HD - .6); group.add(pot);
     const leaf = new THREE.Mesh(new THREE.IcosahedronGeometry(.45, 1), V.mat(0x4f8a3a, { roughness: .8 })); leaf.position.set(HW - .6, .85, HD - .6); group.add(leaf);
     group.traverse(o => { if (o.isMesh && o.material.type === 'MeshStandardMaterial') o.receiveShadow = true; });
+    // the clothes corner by the left wall (boutiques.js)
+    spaceBoutique(w, group);
     // clear the rock out of the room and the doorway
     clearGround(terrain, group, [[-HW, .06, -HD, HW, HH, HD], [-DW - .4, .06, HD - .5, DW + .4, 3.2, HD + 3.6]]);
     const solid = solidsOf(group);

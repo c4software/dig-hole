@@ -92,7 +92,7 @@ export function createLaser({ scene, terrain, colliders, audio }) {
     gun.position.set(.22, 1.2, .32);
     a.g.add(vest, gun);
     scene.add(a.g);
-    return { name, color, g: a.g, pos: new THREE.Vector3(), path: [], cd: rand(.5, 1.5), react: 0, target: null, scan: 0, frags: 0, deaths: 0, t: Math.random() * 9, safe: 0, wasIn: false };
+    return { name, color, g: a.g, rig: a.rig, pos: new THREE.Vector3(), path: [], cd: rand(.5, 1.5), react: 0, target: null, scan: 0, frags: 0, deaths: 0, t: Math.random() * 9, safe: 0, wasIn: false };
   }
   function toHouse(b) {
     houseSpot(b.pos);
@@ -195,7 +195,8 @@ export function createLaser({ scene, terrain, colliders, audio }) {
       }
       if (face) b.g.rotation.y = Math.atan2(face.x - b.pos.x, face.z - b.pos.z);
       const walking = !b.target && live;
-      b.g.position.set(b.pos.x, b.pos.y + (walking ? Math.abs(Math.sin(b.t * 8)) * .05 : 0), b.pos.z);
+      b.g.position.set(b.pos.x, b.pos.y, b.pos.z);
+      b.rig.st.speed = walking ? 3.2 : 0; b.rig.update(dt);
     }
   }
 

@@ -65,6 +65,8 @@ import { createReveal } from './vrreveal.js';
 import { createSpaceArcade, spaceWorld, HALL_DIR } from './spacearcade.js';
 import { createSpaceRace, DECK_DIR } from './spacerace.js';
 import { createPodrace } from './podrace.js';
+import { createLooks } from './looks.js';
+import { createEvents } from './events.js';
 
 const REACH = 3.2;
 const params = new URLSearchParams(location.search);
@@ -108,6 +110,17 @@ const ui = createUI();
 try { await Promise.race([document.fonts.load('700 40px "Noto Sans JP"', '桜ひ'), new Promise(r => setTimeout(r, 3000))]); } catch {}
 const world = createWorld(document.getElementById('app'));
 const { renderer, scene, camera } = world;
+// the graphics context lost and given back (a driver reset, a heavy frame): three rebuilds its
+// programs, but the painted textures must be sent again or they come back black
+renderer.domElement.addEventListener('webglcontextrestored', () => {
+  const seen = new Set();
+  scene.traverse((o) => {
+    for (const m of [].concat(o.material || [])) for (const k in m) {
+      const t = m[k];
+      if (t && t.isTexture && !seen.has(t)) { seen.add(t); t.needsUpdate = true; }
+    }
+  });
+});
 world.shadows(scene);
 loadBar.style.width = '20%';
 await frame();
@@ -332,7 +345,7 @@ const SEASONS = [
   { name: 'hiver', sub: 'il gèle · on ne guérit plus dehors' },
 ];
 const GRASS_HOME = [0x78ac4c, 0x9cb44c, 0xb09c4a, 0xeef2f6], GRASS_CHINA = [0x98a462, 0xa2a85c, 0xb0a062, 0xeef2f6];
-let seasonNow = -1, clockTxt = '', lootDay = -1;
+let seasonNow = -1, clockTxt = '', lootDay = -1, hourNow = 12;
 const clockEl = document.getElementById('clock'), clockTxtEl = document.getElementById('clock-txt');
 // the host may change the clock's pace: then it turns from where it was (clockAnchor: [ms, s, speed])
 function clockNow() {
@@ -345,7 +358,9 @@ function updateClock(dt) {
   const c = clockNow();
   const hour = tun.get('hour') >= 0 ? tun.get('hour') : (c % DAY) / DAY * 24;
   const day = Math.floor(c / DAY);
-  const season = tun.get('season') >= 0 ? tun.get('season') : Math.floor(day / 2) % 4;
+  // a feast may bring its own season (noël: snow), unless the host forces one
+  const season = tun.get('season') >= 0 ? tun.get('season') : events?.season ?? Math.floor(day / 2) % 4;
+  hourNow = hour;
   if (season !== seasonNow) {
     world.setSeason(season);
     setGrassColors(GRASS_HOME[season], GRASS_CHINA[season]);
@@ -378,6 +393,7 @@ if (!MULTI) drops.load(eco.s.drops);
 
 // ---------- ground changes: every one goes through here, and out to the room ----------
 let net = null;
+let events = null;    // the feasts of the calendar (events.js), made once everything else is
 function applyOp(op, local = true) {
   const t = terrains[op.w];
   let out = null;
@@ -391,6 +407,7 @@ function applyOp(op, local = true) {
   else if (op.k === 'unladder') ladders.remove(op.id);
   else if (op.k === 'drop') drops.add(op);
   else if (op.k === 'take') drops.taken(op);
+  else if (op.k === 'ev') events?.onOp(op, local);
   else if (op.k === 'find') {
     const f = finds[op.w].remove(op.key);
     if (!local && f && !(eco.s.finds[op.w] = eco.s.finds[op.w] || []).includes(op.key)) eco.s.finds[op.w].push(op.key);
@@ -522,6 +539,7 @@ addEventListener('mousedown', (e) => {
   if ((state === 'play' || state === 'drive' || (state === 'kart' && !race?.screen)) && !document.pointerLockElement && e.target === renderer.domElement) { lockPointer(); return; }
   if (state === 'kart' && race && !race.screen) { race.mod.press?.(e.button, true); return; }
   if (state !== 'play') return;
+  if (looks.mouse(e.button)) return;
   if (gunOut() && !mg.armed && (e.button === 0 || e.button === 2)) { shootPortal(e.button === 0 ? 0 : 1); return; }
   if (eco.s.tool === 'disc' && eco.s.discs && !mg.armed && e.button === 0) { fireDisc(); return; }
   if (e.button === 0) digging = true;
@@ -628,7 +646,7 @@ const LIFT = { id: 'lift' };
 
 function findNear() {
   camera.getWorldDirection(dir);
-  if (onPlanet()) return space.near(here, moonP.pos) || orbit.near(here, moonP.pos) || (moonP.pos.distanceTo(LANDERS[here]) < (here === 'mars' ? 6 : 4.5) ? LANDER : null);
+  if (onPlanet()) return space.near(here, moonP.pos) || orbit.near(here, moonP.pos) || looks.nearSpace(here, moonP.pos) || (moonP.pos.distanceTo(LANDERS[here]) < (here === 'mars' ? 6 : 4.5) ? LANDER : null);
   if (here === 'home' && delivery.canSteal(player.pos)) return VAN;
   if (here === 'home' && (VAN_NO.name = delivery.foreignVan(player.pos))) return VAN_NO;
   if (here === 'home' && elevator.owned && elevator.near(player.pos)) return LIFT;
@@ -686,12 +704,14 @@ function updateAim() {
     else if (near.id === 'updoor') p = house.room.locked ? 'la porte de l\'étage · fermée à clef' : house.room.doorOpen ? '<b>e</b> fermer la porte' : '<b>e</b> ouvrir la porte';
     else if (near.id === 'vr') p = '<b>e</b> mettre le casque… ?';
     else if (near.id === 'egg') p = '<b>e</b> l\'œuf d\'or';
+    else if (near.id === 'ev') p = events.prompt(near);
     else if (near.id === 'sdoor') p = doorOf(near)?.open ? '<b>e</b> fermer la porte' : '<b>e</b> ouvrir la porte';
     else if (near.id === 'dgun') p = !reliquary.ready ? 'le reliquaire est vide · il en revient un bientôt' : eco.s.discs ? '<b>e</b> le lance-disques · tu as déjà le tien' : '<b>e</b> prendre le lance-disques chasse-vampire';
     else if (near.id === 'organ') p = `<b>e</b> ${organ.playing ? 'morceau suivant' : 'jouer de l\'orgue'} · ${SONGS[(organSong + 1) % SONGS.length].name} · <b>t</b> orgue héros`;
     else if (near.id === 'pgun') p = !cave.gunReady ? 'le socle du pistolet à portails · il en revient un bientôt' : eco.s.portal ? '<b>e</b> le pistolet à portails · tu as déjà le tien' : '<b>e</b> prendre le pistolet à portails';
     else if (near.game) p = `<b>e</b> jouer · ${GAMES[near.game].name}`;
     else if (crypt.prompt(near) !== undefined) p = crypt.prompt(near);
+    else if (looks.prompt(near)) p = looks.prompt(near);
     else if (near.id === 'lift') p = elevator.holds(player.pos) ? (elevator.y > -1 ? `<b>e</b> descendre à ${liftBottomDepth().toFixed(0)} m` : '<b>e</b> remonter') : '<b>e</b> appeler l\'ascenseur';
     ui.prompt(p);
     return;
@@ -724,10 +744,9 @@ function activeTool() {
 }
 // the tools you own, in turn: shovel, drill, portal gun
 function switchTool() {
-  const tools = ['shovel', ...(eco.s.lv.drill ? ['drill'] : []), ...(eco.s.portal ? ['portal'] : []), ...(eco.s.discs ? ['disc'] : [])];
-  if (tools.length < 2) { ui.toast('pas encore de foreuse · la quincaillerie en vend', true); return; }
+  const tools = ['shovel', ...(eco.s.lv.drill ? ['drill'] : []), ...(eco.s.portal ? ['portal'] : []), ...(eco.s.discs ? ['disc'] : []), 'hands'];
   eco.s.tool = tools[(tools.indexOf(eco.s.tool) + 1) % tools.length];
-  ui.toast(eco.s.tool === 'portal' ? 'pistolet à portails · clic gauche : bleu · clic droit : orange' : eco.s.tool === 'disc' ? 'lance-disques chasse-vampire · clic pour tirer' : activeTool().name);
+  ui.toast(eco.s.tool === 'portal' ? 'pistolet à portails · clic gauche : bleu · clic droit : orange' : eco.s.tool === 'disc' ? 'lance-disques chasse-vampire · clic pour tirer' : eco.s.tool === 'hands' ? 'mains vides · clic gauche : lever les mains · clic droit : les baisser' : activeTool().name);
   audio.tick();
 }
 let drillT = 0, drillBite = 0;
@@ -942,6 +961,7 @@ function aliBoom(power) {
   bombs.boom('dyn', eye.clone().addScaledVector(dir, .4).add(new THREE.Vector3(0, -.4, 0)), power);
 }
 function useItem() {
+  if (looks.handsOut) { audio.deny(); ui.toast('mains vides · h pour reprendre l\'outil', true); return; }
   const it = eco.s.slot;
   if (!eco.s.items[it]) { audio.deny(); ui.toast(`plus de ${ITEMS[it].name}`, true); return; }
   const ali = ['dyn', 'sup', 'med', 'cell'].includes(it) && eco.s.items[it] && eco.shoddy(it) ? aliRoll() : null;
@@ -1367,6 +1387,9 @@ const SITES = {
 let site = SITES.moon;
 
 const moonP = createMoonPlayer(scene, camera, () => terrains[onPlanet() ? here : 'moon']);
+// what you wear, your emotes, your empty hands (looks.js)
+const looks = createLooks({ scene, camera, eco, ui, audio, player, moonP, house, world, T, getNet: () => net, getState: () => state, getPanel: () => panelKind, getHere: () => here, onPlanet: () => onPlanet(),
+  openPanel: (k) => openPanel(k), renderPanel: (q) => renderPanel(q), save: () => save(), armed: () => mg.armed, digging: () => (digging || shovel.busy) && !mg.armed });
 const LANDER = { id: 'lander' };
 
 function gainPart(id) {
@@ -2216,6 +2239,7 @@ async function startReveal() {
 // ---------- stations ----------
 function interact(it) {
   if (crypt.interact(it)) return;
+  if (looks.interact(it)) return;
   switch (it.id) {
     case 'sell': {
       if (!eco.s.sackN) { audio.deny(); ui.toast('rien à vendre', true); return; }
@@ -2238,6 +2262,7 @@ function interact(it) {
       house.room.toggleDoor(); audio.step();
       return;
     case 'vr': startReveal(); return;
+    case 'ev': events.act(it); return;
     case 'trapdoor': goCave(true); return;
     case 'caveup': goCave(false); return;
     case 'pgun': takeGun(); return;
@@ -2589,7 +2614,9 @@ function craftRow(r) {
 
 function renderPanel(quip) {
   const k = panelKind;
+  if (looks.render(k, quip)) return;
   if (k === 'drop') ui.panel(drops.panel(quip, hotSlots()));
+  else if (k === 'ev') ui.panel(events.panel(quip));
   else if (k === 'shop') {
     const rows = ORDER.map(id => upgradeRow(id, false));
     for (const id of ['ladder', 'med', 'cell']) rows.push({ id: 'item:' + id, kind: 'objet', name: ITEMS[id].name, lvl: `×${eco.s.items[id]}`, sub: ITEMS[id].sub, price: ITEMS[id].price, poor: eco.s.money < ITEMS[id].price });
@@ -2668,12 +2695,19 @@ ui.el.shopItems.addEventListener('click', (e) => {
   if (!b || b.classList.contains('static')) return;
   const id = b.dataset.id;
   const deny = () => { audio.deny(); ui.flashItem(id, 'shake'); };
+  if (looks.click(panelKind, id)) return;
   if (panelKind === 'drop') {
     const here_ = onPlanet() ? { w: here, p: moonP.pos.toArray() } : { w: here, p: [player.pos.x - Math.sin(player.yaw) * 1.1, player.pos.y, player.pos.z - Math.cos(player.yaw) * 1.1] };
     const r = drops.click(id, here_);
     if (r === 'deny') return deny();
     if (r === 'put') { closePanel(); ui.toast('paquet posé · qui passe dessus le ramasse'); return; }
     audio.tick(); renderPanel(); return;
+  }
+  if (panelKind === 'ev') {
+    const r = events.click(id);
+    if (r === 'deny') return deny();
+    renderPanel(r); ui.flashItem(id, 'bought');
+    return;
   }
   if (panelKind === 'cshop' && id.startsWith('kgood:')) {
     const k = KONBINI[id.slice(6)];
@@ -3065,7 +3099,7 @@ function loop(ts) {
       moonP.update(playing ? dt : 0, playing ? down : new Set());
       player.pos.copy(moonP.pos); player.vel.copy(moonP.vel);
       player.stats.jetting = moonP.stats.jetting;
-    } else if (state === 'reveal') reveal.update(dt);
+    } else if (state === 'reveal' || reveal.playing) reveal.update(dt);
     else player.update(playing ? dt : 0);
     elevator.update(dt, player);
     updateLaunch(dt);
@@ -3157,7 +3191,7 @@ function loop(ts) {
           drillHeat = Math.min(EXPLORE ? .9 : 1, drillHeat + tool.heat);
           if (drillHeat >= 1) { overheated = true; audio.hiss(); ui.toast('surchauffe ! la foreuse refroidit…', true, 2000); hintOnce('heat', 'relâche un peu la foreuse entre deux perçages : elle chauffe', 5000); }
         }
-      } else if (digging && !shovel.busy) shovel.start(tool.cd * (eco.s.perks.titan ? .85 : 1));
+      } else if (digging && !shovel.busy && !looks.handsOut) shovel.start(tool.cd * (eco.s.perks.titan ? .85 : 1));
       updateAim();
       updateMoles(dt);
       updateDeep(dt);
@@ -3237,7 +3271,7 @@ function loop(ts) {
   launcher.update(dt, Math.hypot(player.vel.x, player.vel.z) > 0.5, solidAt, discHit);
   reliquary.update(dt); organ.update(dt, camera.position);
   if (here === 'home') bats.update(dt, t, world.env.night);
-  shovel.root.visible = holding && !drilling && !mg.armed && !portals.held && !launcher.held;
+  shovel.root.visible = holding && !drilling && !mg.armed && !portals.held && !launcher.held && !looks.handsOut;
   mg.updateBlaster(dt, holding && mg.armed && state === 'play', Math.hypot(player.vel.x, player.vel.z) > 0.5);
   drill.root.visible = holding && drilling && !portals.held && !launcher.held;
   drillBite = Math.max(0, drillBite - dt);
@@ -3294,11 +3328,26 @@ function loop(ts) {
   terrains.mars.group.visible = w === 'mars'; marsDecor.visible = w === 'mars';
   space.show(w); orbit.show(w);
   if (onPlanet()) { space.update(dt, here, t); orbit.update(dt, here); }
+  // the feasts: their decor, their hunt, their fireworks (and halloween's fog, over the world's)
+  events.update(dt);
   // shadows: redrawn when the eye moves, or a few times a second for the sun and the critters
   shadowT += dt;
   if (shadowT > .25 || camera.position.distanceToSquared(shadowAt) > .04) { renderer.shadowMap.needsUpdate = true; shadowT = 0; shadowAt.copy(camera.position); }
+  if (state !== 'attract') looks.update(dt);
   if ((!race?.screen || race.onScreen) && !reveal.frozen) { portals.render(myId()); world.render(); }
 }
+// ---------- the feasts of the calendar (events.js): by the server's date, or the host's word ----------
+events = createEvents({ world, terrains, eco, ui, audio, tun, moles, organ, songs: SONGS, CHINA, ACH_LIST, hooks: {
+  multi: MULTI, unlock, save: () => save(), sendOp: (op) => applyOp(op), myName: () => myName(),
+  here: () => here, view: () => state === 'attract' ? 'home' : viewNow(), state: () => state,
+  pos: () => onPlanet() ? moonP.pos : player.pos, eye: () => camera.position, hour: () => hourNow,
+  heal: (n) => { eco.s.health = Math.min(100, eco.s.health + n); },
+  battery: () => { eco.s.battery = eco.batteryMax; audio.charge(); },
+  speed: (sec) => { speedT = Math.max(speedT, sec); },
+  grav: (sec) => { if (onPlanet()) return; gravT = sec; player.stats.grav = .35; },
+  openPanel: (k) => openPanel(k), hintOnce, redrawBoard: () => house.drawBoard(eco.s.ach),
+  cardOk: () => ['play', 'panel', 'paused', 'read', 'drive'].includes(state) && !mg.active && !race,
+} });
 renderer.setAnimationLoop(loop);
 
 // a change of mode on the title screen reloads the page: the new mode then starts straight away
@@ -3375,7 +3424,8 @@ if (params.has('go')) {
 window.__dig = {
   world, terrains, player, eco, ui, camera, renderer, scene, heart, shovel, delivery, elevator, moles, finds, bombs, plane, animals, hologram, moonP, rocket, gainPart, launch, get landerPos() { return landerPos; }, MOON, MARS, marsRocket, MARS_PAD,
   get net() { return net; },
-  mg, kart, startKart, quitKart, RACES, space, orbit, startWatch, stopWatch, get race() { return race; }, startRace, quitRace, launchGame, offerGame, stepMenu: (dt) => updateGameMenu(dt), openGameMenu, gameMenuPlay, gameMenuBack, pickMode, get gm() { return gm; }, get lobby() { return lobby; }, setReady, stepLobby: (dt) => updateLobby(dt),
+  get events() { return events; },
+  looks, mg, kart, startKart, quitKart, RACES, space, orbit, startWatch, stopWatch, get race() { return race; }, startRace, quitRace, launchGame, offerGame, stepMenu: (dt) => updateGameMenu(dt), openGameMenu, gameMenuPlay, gameMenuBack, pickMode, get gm() { return gm; }, get lobby() { return lobby; }, setReady, stepLobby: (dt) => updateLobby(dt),
   steal, get alarm() { return alarm; }, stepAlarm: (dt) => updateAlarm(dt),
   stepLaunch(dt) { updateLaunch(dt); },
   get state() { return state; },

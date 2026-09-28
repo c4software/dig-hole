@@ -2,6 +2,8 @@
 // petals they drop, Japanese utility poles and their sagging bundles of wire, and
 // old European street lamps. Everything is built in a parent group's own frame.
 import * as THREE from 'three';
+import { createRig } from './rig.js';
+import { randomOutfit } from './outfits.js';
 import { mergeGeometries, mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import * as V from './vehicles.js';
 
@@ -357,8 +359,6 @@ export function createContact({ parent, color = 0x1e1a30, opacity = .5 }) {
 }
 
 // ---------- passers-by: they walk the pavements, to and fro ----------
-const SKIN = [0xf2d0b0, 0xe8b894, 0xc89070, 0x8a5a3a, 0xf6dcc4];
-const HAIR = [0x2a1e18, 0x4a3020, 0x8a6a40, 0xd8c090, 0x1a1a1e, 0x9a9a9a];
 // what people say when a disc flies at them, or they come out of a portal
 const SHOUTS = { hit: ['aïe !', 'ouille !', 'au secours !', 'mais ça va pas ?!'], near: ['hé !', 'attention !', 'ouh là !'], fly: ['waaah !', 'mais… ?!', 'au secours !'], dazed: ['où suis-je ?', 'ma tête…', 'drôle de rue…'] };
 const bubbleTex = new Map();
@@ -376,28 +376,21 @@ function bubble(text) {
   return t;
 }
 
-export function createWalkers({ parent, paths, clothes, seed = 3 }) {
+export function createWalkers({ parent, paths, clothes, seed = 3, style = 'europe' }) {
   const rnd = seeded(seed);
-  const pick = (a) => a[Math.floor(rnd() * a.length)];
   const people = [];
-  const mat = new Map();
-  const m = (c) => { if (!mat.has(c)) mat.set(c, new THREE.MeshLambertMaterial({ color: c })); return mat.get(c); };
-  const body = new THREE.CapsuleGeometry(.2, .5, 4, 10), leg = new THREE.CapsuleGeometry(.075, .55, 3, 6), arm = new THREE.CapsuleGeometry(.055, .45, 3, 6), head = new THREE.SphereGeometry(.14, 12, 10), hair = new THREE.SphereGeometry(.15, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2);
   function person(sitting = false) {
     const g = new THREE.Group();
-    const top = m(pick(clothes)), bottom = m(pick([0x2a3448, 0x3a3a40, 0x5a4a3a, 0x7a8aa0, 0xd8d0c0])), skin = m(pick(SKIN));
-    const b = new THREE.Mesh(body, top); b.position.y = 1.12; g.add(b);
-    const h = new THREE.Mesh(head, skin); h.position.y = 1.62; g.add(h);
-    const hr = new THREE.Mesh(hair, m(pick(HAIR))); hr.position.y = 1.64; hr.rotation.x = -.25; g.add(hr);
-    const legs = [-.09, .09].map(x => { const p = new THREE.Group(); p.position.set(x, .78, 0); const l = new THREE.Mesh(leg, bottom); l.position.y = -.38; p.add(l); g.add(p); return p; });
-    const arms = [-.26, .26].map(x => { const p = new THREE.Group(); p.position.set(x, 1.36, 0); const a = new THREE.Mesh(arm, top); a.position.y = -.26; p.add(a); g.add(p); return p; });
-    if (sitting) { legs.forEach(l => { l.rotation.x = -1.4; }); g.position.y = -.33; arms.forEach(a => { a.rotation.x = -.7; }); }
-    g.traverse(o => { if (o.isMesh) o.castShadow = true; });
+    const rig = createRig(randomOutfit(rnd, { tops: clothes, style }), { detail: 'lo', lod: true });
+    rig.st.sit = sitting;
+    g.add(rig.root);
     g.userData.keep = true;           // they move: never baked into the static decor
     parent.add(g);
+    // the old limbs, now bones: the thighs and the shoulders
+    const legs = [rig.bone('hipL'), rig.bone('hipR')], arms = [rig.bone('shL'), rig.bone('shR')];
     // what they do: walk their path; fly (out of a portal); lie (knocked down); daze; flee; back (walking home)
     // body: where they are in the world, for the portals (size: the height of their middle)
-    return { g, legs, arms, mode: 'walk', t2: 0, sitting, body: { pos: new THREE.Vector3(), vel: new THREE.Vector3(), size: .9, cd: 0 }, say: null, sayT: 0, flee: new THREE.Vector3() };
+    return { g, rig, legs, arms, mode: 'walk', t2: 0, sitting, body: { pos: new THREE.Vector3(), vel: new THREE.Vector3(), size: .9, cd: 0 }, say: null, sayT: 0, flee: new THREE.Vector3() };
   }
   for (const path of paths) {
     const pts = path.map(([x, z]) => new THREE.Vector3(x, 0, z));
@@ -420,11 +413,12 @@ export function createWalkers({ parent, paths, clothes, seed = 3 }) {
     const A = p.pts[p.seg], B = p.pts[p.seg + 1] || A;
     return tmp2.set(A.x + (B.x - A.x) * p.t, 0, A.z + (B.z - A.z) * p.t);
   }
-  const limbs = (p, s, arms = .8) => { p.legs[0].rotation.x = s; p.legs[1].rotation.x = -s; p.arms[0].rotation.x = -s * arms; p.arms[1].rotation.x = s * arms; };
+  // a body's state for the rig: how fast, on the ground or not; then its pose for this frame
+  const pose = (p, dt, speed, ground = true, vy = 0) => { p.rig.st.speed = speed; p.rig.st.ground = ground; p.rig.st.vy = vy; p.rig.update(dt); };
   return {
     people,
     // someone sitting still (a café chair, a bench), facing `rot`
-    sit(x, y, z, rot) { const p = person(true); p.g.position.set(x, y - .33, z); p.g.rotation.y = rot; sitters.push(p); return p; },
+    sit(x, y, z, rot) { const p = person(true); p.g.position.set(x, y - .45, z); p.g.rotation.y = rot; sitters.push(p); return p; },
     // the person a point (world) is inside of: a capsule for the body, a ball for the head
     hitTest(w) {
       for (const p of [...people, ...sitters]) {
@@ -456,6 +450,7 @@ export function createWalkers({ parent, paths, clothes, seed = 3 }) {
     flung(p) { p.mode = 'fly'; p.g.position.copy(p.body.pos).sub(off); shout(p, 'fly', 1.5); },
     update(dt) {
       for (const p of sitters) {
+        if (p.g.visible) p.rig.update(dt);
         if (p.t2 > 0) { p.t2 -= dt; if (p.t2 <= 0) p.g.position.y -= .15; }
         if (p.sayT > 0) { p.sayT -= dt; if (p.sayT <= 0) p.say.visible = false; }
       }
@@ -467,16 +462,18 @@ export function createWalkers({ parent, paths, clothes, seed = 3 }) {
           const v = p.body.vel; v.y -= 14 * dt;
           G.addScaledVector(v, dt);
           p.g.rotation.x += dt * 3;
-          limbs(p, Math.sin(p.ph += dt * 30) * 1.2, 1.4);
-          if (G.y <= 0 && v.y < 0) { G.y = 0; p.g.rotation.x = 0; p.mode = 'daze'; p.t2 = 2.5; limbs(p, 0); shout(p, 'dazed', 2.2); }
+          pose(p, dt, 0, false, -8);
+          if (G.y <= 0 && v.y < 0) { G.y = 0; p.g.rotation.x = 0; p.mode = 'daze'; p.t2 = 2.5; shout(p, 'dazed', 2.2); }
         } else if (p.mode === 'lie') {
           // falling back, a moment on the ground, getting up
           p.t2 += dt;
           const k = p.t2 < .35 ? p.t2 / .35 : p.t2 < 2 ? 1 : Math.max(0, 1 - (p.t2 - 2) / .5);
           p.g.rotation.x = -k * 1.45; G.y = k * .15;
+          pose(p, dt, 0);
           if (p.t2 > 2.5) { p.g.rotation.x = 0; G.y = 0; p.mode = 'flee'; p.t2 = 4; }
         } else if (p.mode === 'daze') {
           p.t2 -= dt; p.g.rotation.z = Math.sin(p.t2 * 6) * .12;
+          pose(p, dt, 0);
           if (p.t2 <= 0) {
             p.g.rotation.z = 0;
             // too far from home (another town, the cave): gone, and back on the path in a while
@@ -497,10 +494,9 @@ export function createWalkers({ parent, paths, clothes, seed = 3 }) {
           p.body.vel.copy(d).multiplyScalar(sp);
           p.g.rotation.set(0, Math.atan2(d.x, d.z), 0);
           p.ph += dt * sp * 5.5;
-          const s = Math.sin(p.ph) * .6;
-          p.legs[0].rotation.x = s; p.legs[1].rotation.x = -s;
-          if (p.mode === 'flee') { p.arms[0].rotation.x = p.arms[1].rotation.x = -2.8 + Math.sin(p.ph * 2) * .3; p.t2 -= dt; if (p.t2 <= 0) p.mode = 'back'; }
-          else { p.arms[0].rotation.x = -s * .8; p.arms[1].rotation.x = s * .8; }
+          pose(p, dt, sp);
+          // running off with the arms up
+          if (p.mode === 'flee') { p.arms[0].rotation.set(-2.8 + Math.sin(p.ph * 2) * .3, 0, .3); p.arms[1].rotation.set(-2.8 - Math.sin(p.ph * 2) * .3, 0, -.3); p.t2 -= dt; if (p.t2 <= 0) p.mode = 'back'; }
         } else {
           const a = p.pts[p.seg], b = p.pts[p.seg + 1];
           const len = a.distanceTo(b) || 1;
@@ -513,8 +509,8 @@ export function createWalkers({ parent, paths, clothes, seed = 3 }) {
           p.g.rotation.y = Math.atan2(dx * p.dir, dz * p.dir);
           p.body.vel.set(dx / l * p.dir * p.speed, 0, dz / l * p.dir * p.speed);
           p.ph += dt * p.speed * 5.5;
-          limbs(p, Math.sin(p.ph) * .5);
-          G.y = Math.abs(Math.cos(p.ph)) * .03;
+          G.y = 0;
+          if (p.g.visible) pose(p, dt, p.speed);
         }
         p.body.pos.copy(G).add(off);
       }

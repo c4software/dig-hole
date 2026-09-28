@@ -5,6 +5,7 @@
 import * as THREE from 'three';
 import { roofColliders } from './street.js';
 import { buildGameRoom } from './gameroom.js';
+import { buildWardrobe } from './boutiques.js';
 
 const std = (color, extra) => new THREE.MeshLambertMaterial({ color, ...extra });
 
@@ -364,9 +365,13 @@ export function createHouse({ scene, colliders, interactables, label }) {
     g.add(leaf);
   }
   const pic = new THREE.Mesh(new THREE.PlaneGeometry(.9, .6), new THREE.MeshBasicMaterial({ map: label('le trou', { w: 256, h: 170, size: 42, color: '#f0e8d6', bg: '#2a3a28' }) }));
-  pic.position.set(-HW / 2 + T + .02, 1.9, -18.75); pic.rotation.y = Math.PI / 2;
+  // over the bed (the left wall is the wardrobe's)
+  pic.position.set(-4.55, 1.95, zb + T + .02);
   g.add(pic);
-  box(.02, .7, 1.0, std(0xd9a125), -HW / 2 + T + .005, 1.9, -18.75);
+  box(1.0, .7, .02, std(0xd9a125), -4.55, 1.95, zb + T + .005);
+
+  // ---------- the wardrobe corner: armoire, mirror, turntable (boutiques.js) ----------
+  const wardrobe = buildWardrobe({ g, addBox, interactables, label });
 
   // ---------- upstairs ----------
   const room = buildGameRoom({ g, addBox, interactables, label, F, HH, HH2, HW, T, zf, zb, hz, wallMat });
@@ -378,7 +383,7 @@ export function createHouse({ scene, colliders, interactables, label }) {
     toggleDoor() { doorOpen = !doorOpen; doorBox.off = doorOpen; return doorOpen; },
     // is a point inside the four walls?
     inside: (p) => p.x > -HW / 2 && p.x < HW / 2 && p.z > zb && p.z < zf && p.y > -0.5 && p.y < HH2,
-    room,
+    room, wardrobe,
     drawBoard,
     showTrophy(key) { if (trophies[key]) trophies[key].visible = true; },
     // lit windows at night, seen from the garden

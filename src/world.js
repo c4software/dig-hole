@@ -362,6 +362,7 @@ export function createWorld(container) {
   blossoms.finish({ scatter: Array.from({ length: 30 }, () => [-100 + Math.random() * 200, -13.1 + (Math.random() - .5) * 2, .8 + Math.random() * 1.2]) });
   // the village around the garden
   const europe = createEurope({ scene, addBox });
+  interactables.push(...europe.boutiques);
 
   // ---------- the two stations ----------
 
