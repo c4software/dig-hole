@@ -1,11 +1,12 @@
-# The static game as a docker image (nginx), pushed to the GitHub container registry:
-#   ghcr.io/<owner>/<repo>-static:latest on main, :<version> on v* tags, :sha-xxxxxxx always
+# The static game (no node server), built once per push on main:
+#   - as a docker image (nginx) on the GitHub container registry: ghcr.io/<owner>/<repo>-static:latest
+#   - on GitHub Pages, when the repository variable PAGES_ENABLED is 'true'
+#     (settings → pages → source: « GitHub Actions »; a private repository needs a paid plan for pages)
 name: image statique
 
 on:
   push:
     branches: [main]
-    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
@@ -45,9 +46,6 @@ jobs:
           images: ghcr.io/${{ github.repository }}-static
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=sha,prefix=sha-
 
       - uses: docker/build-push-action@v6
         with:
@@ -59,3 +57,35 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  pages:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.PAGES_ENABLED == 'true'
+    needs: image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: build statique
+        run: |
+          npm ci --no-audit --no-fund
+          ./build-static.sh dist-static
+          # pages ignores netlify's files (the server page stays at serveur.html)
+          rm -f dist-static/_headers dist-static/_redirects
+          touch dist-static/.nojekyll
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist-static
+      - id: deploy
+        uses: actions/deploy-pages@v4
+

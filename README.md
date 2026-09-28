@@ -136,4 +136,11 @@ docker run --rm -p 8080:8080 dig-hole-static      # → http://localhost:8080
 ```
 
 Le CI (`.github/workflows/docker-static.yml`) lance les tests puis publie l'image (amd64 et arm64)
-sur `ghcr.io/c4software/dig-hole-static` : `latest` à chaque push sur `main`, la version sur un tag `v*`.
+sur `ghcr.io/c4software/dig-hole-static:latest` à chaque push sur `main`.
+
+## github pages
+
+Le même workflow peut aussi publier la version statique sur GitHub Pages :
+réglages du dépôt → *Pages* → source « GitHub Actions », puis une variable de dépôt `PAGES_ENABLED` = `true`
+(*Settings → Secrets and variables → Actions → Variables*). Un dépôt privé demande une offre payante pour Pages.
+Le jeu est alors sur `https://<compte>.github.io/dig-hole/`, et le panneau serveur sur `…/serveur.html`.
