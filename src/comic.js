@@ -559,7 +559,7 @@ export function createComic({ audio, ui } = {}) {
     for (const p of r.parts) { g.fillStyle = p.c; g.fillRect(Math.round(p.x - cam), Math.round(p.y), 2, 2); }
     for (const p of r.pops) text(g, p.t, Math.round(p.x - cam), Math.round(p.y), '#ffe04a', 1, '#000', 'center');
     // the caves without the lantern: only a little halo around the captain
-    if (z.dark) darkness(g, me.x - cam, me.y - 12, r.team.lantern ? 150 : 34);
+    if (z.dark) darkness(g, me.x - cam, me.y - 12, r.team.lantern ? 230 : 34, r.team.lantern ? .6 : .96);
     if (r.fade > 0) { g.fillStyle = `rgba(0,0,0,${Math.min(1, r.fade * 2.4)})`; g.fillRect(0, 0, VW, VH); }
     // what's going on
     if (r.msg && r.clock - r.msg.at < r.msg.d) box(g, r.msg.t, 8);
@@ -591,12 +591,12 @@ export function createComic({ audio, ui } = {}) {
     text(g, s, VW / 2, y, '#fff', 1, null, 'center');
   }
   let dark = null;
-  function darkness(g, x, y, rad) {
+  function darkness(g, x, y, rad, depth = .96) {
     if (!dark) dark = canvas(VW, VH);
     const [c, d] = dark;
     d.globalCompositeOperation = 'source-over';
     d.clearRect(0, 0, VW, VH);
-    d.fillStyle = 'rgba(0,0,0,.96)'; d.fillRect(0, 0, VW, VH);
+    d.fillStyle = `rgba(0,0,0,${depth})`; d.fillRect(0, 0, VW, VH);
     d.globalCompositeOperation = 'destination-out';
     const gr = d.createRadialGradient(x, y, rad * .4, x, y, rad);
     gr.addColorStop(0, 'rgba(0,0,0,1)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
