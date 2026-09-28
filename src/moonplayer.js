@@ -192,14 +192,17 @@ export function createMoonPlayer(scene, camera, getTerrain) {
     get up() { return up; },
     get onGround() { return onGround; },
     // arrive standing on the surface above `at`, facing along the ground
-    place(at) {
+    place(at, face = null) {
       const t0 = T();
       pos.copy(at);
       up.copy(pos).sub(t0.center).normalize();
       // climb out if we landed inside rock
       for (let n = 0; n < 200 && solidBody(pos); n++) pos.addScaledVector(up, .2);
       vel.set(0, 0, 0);
-      heading.set(1, 0, 0).addScaledVector(up, -up.x).normalize();
+      // facing a point (a terminal, a door) when asked, otherwise along the ground
+      if (face) heading.copy(face).sub(pos).addScaledVector(up, -face.clone().sub(pos).dot(up));
+      if (!face || heading.lengthSq() < .01) heading.set(1, 0, 0).addScaledVector(up, -up.x);
+      heading.normalize();
       if (heading.lengthSq() < .01) heading.set(0, 0, 1);
       view.copy(heading);
     },
