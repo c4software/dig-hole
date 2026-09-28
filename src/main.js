@@ -1542,7 +1542,7 @@ const RACES = {
   invaders: { mod: createInvaders({ audio, ui }), screen: true, help: 'q d ou ← → : bouger · espace : tirer · abats la vague avant qu\'elle ne touche la lune', prizes: [1500, 700, 350, 150] },
   shooter: { mod: createShooter({ audio, ui }), screen: true, help: 'zqsd ou flèches : voler · espace : tirer · e : bombe · ramasse les capsules', prizes: [1800, 900, 450, 200] },
   // the church organ's rhythm game, at the console
-  orgue: { mod: createOrgue({ scene: homeRoot, camera, audio, ui, organ, church: CH }), help: 'les notes au passage de la ligne · maintenir les longues · shift : grand jeu', prizes: [1500, 700, 350, 150] },
+  orgue: { noBanner: true, mod: createOrgue({ scene: homeRoot, camera, audio, ui, organ, church: CH }), help: 'les notes au passage de la ligne · maintenir les longues · shift : grand jeu', prizes: [1500, 700, 350, 150] },
   // the crypt's secret: an island far off, reached from the table under the nave
   worms3d: { mod: createWorms3d({ scene, camera, ui }), help: 'zqsd : ramper · espace : sauter · souris : viser · clic maintenu : tirer · 1…0, molette : armes', prizes: [2500, 1000, 500, 200] },
   // the moon arcade
@@ -1614,7 +1614,8 @@ function startRace(id, { seed = Math.floor(Math.random() * 1e9), hostId = myId()
   }
   else {
     const mode = opts?.mode && race.mod.modes?.find(m => m.id === opts.mode);
-    ui.layer(GAMES[id].name + (mode ? ' · ' + mode.name : ''), mode?.help || race.help);
+    // (a game with its own title screen, like the organ's setlist, doesn't need the banner)
+    if (!race.noBanner) ui.layer(GAMES[id].name + (mode ? ' · ' + mode.name : ''), mode?.help || race.help);
   }
   syncPauseQuit();
 }
