@@ -784,18 +784,23 @@ test('build-static.sh: a self-contained folder, no server, every module versione
   try {
     const log = execFileSync(path.join(ROOT, 'build-static.sh'), [out], { cwd: ROOT }).toString();
     assert.match(log, /static v\d+/);
-    for (const f of ['index.html', 'serveur.html', 'style.css', 'src/main.js', 'src/rendezvous.js', 'vendor/three.module.js', '_headers', '_redirects']) assert.ok(fs.existsSync(path.join(out, f)), f);
-    assert.match(fs.readFileSync(path.join(out, 'src/config.js'), 'utf8'), /serverless: true/);
+    for (const f of ['index.html', 'serveur.html', 'style.css', 'src/main.js', 'src/rendezvous.js', 'vendor/three.module.min.js', '_headers', '_redirects']) assert.ok(fs.existsSync(path.join(out, f)), f);
+    assert.match(fs.readFileSync(path.join(out, 'src/config.js'), 'utf8'), /serverless: ?(true|!0)/);   // minified or not
     assert.match(fs.readFileSync(path.join(ROOT, 'src/config.js'), 'utf8'), /serverless: false/);   // the source stays as is
     const v = /static v(\d+)/.exec(log)[1];
     assert.match(fs.readFileSync(path.join(out, 'index.html'), 'utf8'), new RegExp(`src="\\./src/main\\.js\\?v=${v}"`));
-    for (const f of fs.readdirSync(path.join(out, 'src'))) {
+    // every import, static or import() (the games come on demand), versioned — minified or not
+    for (const f of fs.readdirSync(path.join(out, 'src'), { recursive: true })) {
+      if (!f.endsWith('.js')) continue;
       const s = fs.readFileSync(path.join(out, 'src', f), 'utf8');
-      assert.ok(!/from '\.\/[a-z0-9-]+\.js'/.test(s), f + ' has an unversioned import');
+      assert.ok(!/(from\s*|import\s*\(\s*)["']\.{1,2}\/[a-z0-9/-]+\.js["']/.test(s), f + ' has an unversioned import');
     }
+    assert.match(fs.readFileSync(path.join(out, 'src/games.js'), 'utf8'), new RegExp(`import\\(\\s*["']\\./kart\\.js\\?v=${v}["']`));
     assert.match(fs.readFileSync(path.join(out, '_headers'), 'utf8'), /\/src\/\*\n\s+Content-Type: text\/javascript/);
-    // and deploy.sh is the same as ever
-    assert.equal(execFileSync('git', ['diff', '--stat', 'HEAD', '--', 'deploy.sh'], { cwd: ROOT }).toString(), '');
+    // and deploy.sh keeps its interface: dist/, port 8765, the same versioning and minifying
+    const deploy = fs.readFileSync(path.join(ROOT, 'deploy.sh'), 'utf8');
+    assert.match(deploy, /node server\.mjs --port 8765 --dir dist/);
+    assert.match(deploy, /node tools\/minify\.mjs dist/);
   } finally { fs.rmSync(out, { recursive: true, force: true }); }
 });
 

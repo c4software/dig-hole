@@ -11,7 +11,9 @@ mkdir -p "$OUT"
 rsync -a --delete index.html serveur.html netlab.html style.css favicon.svg assets vendor src "$OUT/"
 # no server: the menu offers hosting and joining only, meeting through the public trackers
 printf '%s\n' "// config.js, written by build-static.sh: a static copy, no node server behind it." "export const CONFIG = { serverless: true };" > "$OUT/src/config.js"
-sed -i -E "s#(from '\./[a-z0-9-]+\.js)'#\1?v=$V'#g; s#(import\('\./[a-z0-9-]+\.js)'\)#\1?v=$V')#g" "$OUT"/src/*.js
+find "$OUT/src" -name '*.js' -exec sed -i -E "s#((from |import\()'\.{1,2}/[a-z0-9/-]+\.js)'#\1?v=$V'#g" {} +
+# minified in place, same files, same paths (tools/minify.mjs; without esbuild: left as is, with a warning)
+node tools/minify.mjs "$OUT" || echo "⚠ minification ratée : modules non minifiés"
 for f in "$OUT"/*.html; do
   sed -i -E "s#src=\"\./src/([a-z0-9-]+)\.js\"#src=\"./src/\1.js?v=$V\"#g; s#href=\"\./style\.css\"#href=\"./style.css?v=$V\"#" "$f"
 done
