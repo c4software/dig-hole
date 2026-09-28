@@ -17,18 +17,20 @@ const swirlFrag = `varying vec2 vUv; uniform vec3 uC; uniform float uT;
 void main(){ vec2 p = vUv * 2.0 - 1.0; float r = length(p), a = atan(p.y, p.x);
   float s = sin(a * 5.0 + r * 9.0 - uT * 4.0) * .5 + .5;
   gl_FragColor = vec4(mix(uC * .25, uC * 1.6, s * (1.0 - r * .6) + (1.0 - r) * .5), 1.0); }`;
-// paired, it shows what the other side sees: the picture drawn from the moved camera, at the same pixel
-const viewFrag = `uniform sampler2D uMap; uniform vec2 uRes; uniform vec3 uC; varying vec2 vUv;
+// paired, it shows what the other side sees: the picture drawn from the moved camera, at the same pixel.
+// Only the patch of screen the portal covers is drawn, into the corner of the target: uCrop maps the
+// screen to that patch (x0, y0, 1/w, 1/h), uFill is how much of the target it fills
+const viewFrag = `uniform sampler2D uMap; uniform vec2 uRes; uniform vec4 uCrop; uniform vec2 uFill; uniform vec3 uC; varying vec2 vUv;
 void main(){ vec2 p = vUv * 2.0 - 1.0; float r = length(p);
-  vec3 c = texture2D(uMap, gl_FragCoord.xy / uRes).rgb;
+  vec2 s = (gl_FragCoord.xy / uRes - uCrop.xy) * uCrop.zw;
+  vec3 c = texture2D(uMap, clamp(s, 0.0, 1.0) * uFill).rgb;
   gl_FragColor = vec4(mix(c, uC * 1.4, smoothstep(.82, 1.0, r) * .8), 1.0); }`;
 
 export function createPortals({ scene, camera, renderer, audio }) {
   const root = new THREE.Group(); scene.add(root);
   const T = { value: 0 };
-  const rtSize = new THREE.Vector2();
   const res = { value: new THREE.Vector2(1, 1) };
-  // the portals, by owner: [blue, orange], each null or { pos, n, up, right, g, surf, ring, rt, view }
+  // the portals, by owner: [blue, orange], each null or { pos, n, up, right, g, surf, swirl, view }
   const pairs = new Map();
   const surfGeo = new THREE.CircleGeometry(1, 48), ringGeo = new THREE.RingGeometry(.94, 1.1, 64, 1), haloGeo = new THREE.RingGeometry(1.08, 1.3, 64, 1);
 
@@ -46,12 +48,12 @@ export function createPortals({ scene, camera, renderer, audio }) {
     g.position.copy(p.pos);
     g.scale.setScalar(.01); g.visible = w === world;
     root.add(g);
-    return { ...p, owner, which, w, g, surf, swirl, view: null, rt: null, open: 0 };
+    return { ...p, owner, which, w, g, surf, swirl, view: null, open: 0 };
   }
   function drop(q) {
     if (!q) return;
     root.remove(q.g);
-    q.swirl.dispose(); q.view?.dispose(); q.rt?.dispose();
+    q.swirl.dispose(); q.view?.dispose();
     q.g.children.forEach(m => m.material !== q.swirl && m.material.dispose());
   }
   // a portal from what the network carries: [x, y, z, nx, ny, nz, ux, uy, uz]
@@ -203,32 +205,67 @@ export function createPortals({ scene, camera, renderer, audio }) {
   }
 
   // ---------- seeing through: the scene again, from the camera moved through the pair ----------
+  // Only your own pair is seen through, and each view is kept cheap: the moved camera's frustum is
+  // cropped to the portal's patch of screen (only what shows through it is drawn, into only those
+  // pixels), the two targets outlive the portals, and the far side is cut by one global clipping
+  // plane left on (zeroed, it cuts nothing) while your pair is open: switching it on and off sent
+  // every material of the scene through a program change three times a frame.
+  const K = .5;                                   // the views' resolution, against the screen's
+  const rts = [null, null];                       // by colour
   const vcam = new THREE.PerspectiveCamera();
-  const mA = new THREE.Matrix4(), mB = new THREE.Matrix4(), half = new THREE.Matrix4().makeRotationY(Math.PI), m = new THREE.Matrix4();
-  const clip = new THREE.Plane(), frustum = new THREE.Frustum(), pv = new THREE.Matrix4(), sphere = new THREE.Sphere();
+  const mA = new THREE.Matrix4(), mB = new THREE.Matrix4(), half = new THREE.Matrix4().makeRotationY(Math.PI), m = new THREE.Matrix4(), crop = new THREE.Matrix4();
+  const clip = new THREE.Plane(new THREE.Vector3(), 0), planes = [clip];
+  const frustum = new THREE.Frustum(), pv = new THREE.Matrix4(), sphere = new THREE.Sphere(), corner = new THREE.Vector4(), box = [0, 0, 0, 0];
+  let views = 0;                                  // drawn this frame (for the curious)
+  // the portal's box on screen, in NDC; false when a corner is behind the eye
+  function screenBox(q) {
+    box[0] = box[1] = Infinity; box[2] = box[3] = -Infinity;
+    for (let k = 0; k < 4; k++) {
+      const sx = k & 1 ? RX : -RX, sy = k & 2 ? RY : -RY;
+      corner.set(q.pos.x + q.right.x * sx + q.up.x * sy, q.pos.y + q.right.y * sx + q.up.y * sy, q.pos.z + q.right.z * sx + q.up.z * sy, 1).applyMatrix4(pv);
+      if (corner.w < camera.near) return false;
+      const x = corner.x / corner.w, y = corner.y / corner.w;
+      box[0] = Math.min(box[0], x); box[1] = Math.min(box[1], y); box[2] = Math.max(box[2], x); box[3] = Math.max(box[3], y);
+    }
+    return true;
+  }
   function drawThrough(A, B) {
-    renderer.getDrawingBufferSize(rtSize);
-    const w = Math.max(2, Math.round(rtSize.x * .5)), h = Math.max(2, Math.round(rtSize.y * .5));
-    if (!A.rt) {
-      A.rt = new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType });
-      A.view = new THREE.ShaderMaterial({ vertexShader: swirlVert, fragmentShader: viewFrag, uniforms: { uMap: { value: A.rt.texture }, uRes: res, uC: { value: new THREE.Color(COLORS[A.which]) } } });
-    } else if (A.rt.width !== w || A.rt.height !== h) A.rt.setSize(w, h);
-    mA.makeBasis(A.right, A.up, A.n).setPosition(A.pos);
+    const W = Math.max(2, Math.round(res.value.x * K)), H = Math.max(2, Math.round(res.value.y * K));
+    let rt = rts[A.which];
+    if (!rt) rt = rts[A.which] = new THREE.WebGLRenderTarget(W, H, { type: THREE.HalfFloatType });
+    else if (rt.width !== W || rt.height !== H) rt.setSize(W, H);
+    if (!A.view) A.view = new THREE.ShaderMaterial({ vertexShader: swirlVert, fragmentShader: viewFrag, uniforms: { uMap: { value: rt.texture }, uRes: res, uCrop: { value: new THREE.Vector4() }, uFill: { value: new THREE.Vector2() }, uC: { value: new THREE.Color(COLORS[A.which]) } } });
+    // the patch, a pixel of margin all round, snapped to the target's pixels (the whole screen when too close)
+    if (!screenBox(A)) { box[0] = box[1] = -1; box[2] = box[3] = 1; }
+    const px0 = Math.max(0, Math.floor((box[0] + 1) / 2 * W) - 1), py0 = Math.max(0, Math.floor((box[1] + 1) / 2 * H) - 1);
+    const px1 = Math.min(W, Math.ceil((box[2] + 1) / 2 * W) + 1), py1 = Math.min(H, Math.ceil((box[3] + 1) / 2 * H) + 1);
+    if (px1 - px0 < 1 || py1 - py0 < 1) { A.surf.material = A.swirl; return; }
+    const vw = px1 - px0, vh = py1 - py0;
+    const x0 = px0 / W * 2 - 1, y0 = py0 / H * 2 - 1, x1 = px1 / W * 2 - 1, y1 = py1 / H * 2 - 1;
+    const sx = 2 / (x1 - x0), sy = 2 / (y1 - y0);
+    crop.set(sx, 0, 0, -sx * (x0 + x1) / 2, 0, sy, 0, -sy * (y0 + y1) / 2, 0, 0, 1, 0, 0, 0, 0, 1);
+    A.view.uniforms.uCrop.value.set(px0 / W, py0 / H, W / vw, H / vh);
+    A.view.uniforms.uFill.value.set(vw / W, vh / H);
+    mA.makeBasis(A.right, A.up, A.n).setPosition(A.pos).invert();
     mB.makeBasis(B.right, B.up, B.n).setPosition(B.pos);
-    m.copy(mB).multiply(half).multiply(mA.clone().invert()).multiply(camera.matrixWorld);
+    m.copy(mB).multiply(half).multiply(mA).multiply(camera.matrixWorld);
     vcam.matrixWorld.copy(m); vcam.matrixWorld.decompose(vcam.position, vcam.quaternion, vcam.scale);
     vcam.matrixWorldInverse.copy(m).invert();
-    vcam.projectionMatrix.copy(camera.projectionMatrix); vcam.projectionMatrixInverse.copy(camera.projectionMatrixInverse);
+    vcam.projectionMatrix.multiplyMatrices(crop, camera.projectionMatrix); vcam.projectionMatrixInverse.copy(vcam.projectionMatrix).invert();
     clip.setFromNormalAndCoplanarPoint(B.n, B.pos);
-    const prevT = renderer.getRenderTarget(), prevClip = renderer.clippingPlanes;
-    const shadows = renderer.shadowMap.autoUpdate;
-    renderer.setRenderTarget(A.rt);
-    renderer.clippingPlanes = [clip]; renderer.shadowMap.autoUpdate = false;
+    rt.viewport.set(0, 0, vw, vh); rt.scissor.set(0, 0, vw, vh); rt.scissorTest = true;
+    const prevT = renderer.getRenderTarget(), shadows = renderer.shadowMap.autoUpdate;
+    renderer.setRenderTarget(rt);
+    renderer.shadowMap.autoUpdate = false;
     renderer.render(scene, vcam);
-    renderer.clippingPlanes = prevClip; renderer.shadowMap.autoUpdate = shadows;
+    renderer.shadowMap.autoUpdate = shadows;
     renderer.setRenderTarget(prevT);
+    clip.normal.set(0, 0, 0); clip.constant = 0;
     A.surf.material = A.view;
+    views++;
   }
+  // in the frame, near enough, and facing you
+  function seen(q) { sphere.set(q.pos, RY); return frustum.intersectsSphere(sphere) && q.pos.distanceToSquared(camera.position) < 45 * 45 && tmp.subVectors(camera.position, q.pos).dot(q.n) > 0; }
 
   return {
     get held() { return gun.visible; },
@@ -274,18 +311,29 @@ export function createPortals({ scene, camera, renderer, audio }) {
     get open() { for (const p of pairs.values()) if (p[0] && p[1] && p[0].w === world && p[1].w === world) return true; return false; },
     // before the frame: your own pair's views (the others only swirl)
     render(meId) {
+      views = 0;
       renderer.getDrawingBufferSize(res.value);
       const pair = pairs.get(meId);
       for (const p of pairs.values()) for (const q of p) if (q && (p !== pair || !p[0] || !p[1])) q.surf.material = q.swirl;
-      if (!pair || !pair[0] || !pair[1] || pair[0].w !== world) return;
+      // the clipping plane stays on while your pair is open here, and only then
+      if (!pair || !pair[0] || !pair[1] || pair[0].w !== world || pair[1].w !== world) {
+        if (renderer.clippingPlanes === planes) renderer.clippingPlanes = [];
+        return;
+      }
+      if (renderer.clippingPlanes !== planes) { clip.normal.set(0, 0, 0); clip.constant = 0; renderer.clippingPlanes = planes; }
       camera.updateMatrixWorld();
       pv.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse); frustum.setFromProjectionMatrix(pv);
+      const vis0 = seen(pair[0]), vis1 = seen(pair[1]);
+      if (!vis0) pair[0].surf.material = pair[0].swirl;
+      if (!vis1) pair[1].surf.material = pair[1].swirl;
+      if (!vis0 && !vis1) return;
       const was = gun.visible; gun.visible = false;
-      const vis = pair.map(q => { sphere.set(q.pos, RY); return frustum.intersectsSphere(sphere) && q.pos.distanceTo(camera.position) < 45 && tmp.subVectors(camera.position, q.pos).dot(q.n) > 0; });
-      for (const q of pair) q.surf.visible = false;
-      for (let k = 0; k < 2; k++) if (vis[k]) drawThrough(pair[k], pair[1 - k]); else pair[k].surf.material = pair[k].swirl;
-      for (const q of pair) q.surf.visible = true;
+      pair[0].surf.visible = pair[1].surf.visible = false;
+      if (vis0) drawThrough(pair[0], pair[1]);
+      if (vis1) drawThrough(pair[1], pair[0]);
+      pair[0].surf.visible = pair[1].surf.visible = true;
       gun.visible = was;
     },
+    get views() { return views; },
   };
 }
