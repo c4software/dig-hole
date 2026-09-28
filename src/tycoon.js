@@ -180,6 +180,7 @@ export function createTycoon({ audio, ui, eco, pay, save } = {}) {
 
   // ---------- events (only while someone's there) ----------
   function stepEvents(dt) {
+    if (!run) return;   // the step just before may have ended it
     const r = run, C = r.C;
     for (const k in r.ev) { r.ev[k] -= dt; if (r.ev[k] <= 0) delete r.ev[k]; }
     if (!r.host) return;
