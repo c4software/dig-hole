@@ -1,11 +1,9 @@
 // encre-level.js: the arena of « encre 2D » — a symmetric tile map, its paintable faces cut in segments, and the ink.
+import { mulberry as rng } from './lib/math.js';
 export const T = 32, S = 4, SL = T / S, W = 128, H = 30, D = 10;
 export const INK = ['#ff7a14', '#2e64ff'], INK_DARK = ['#b44700', '#1634b0'], INK_LIGHT = ['#ffb35c', '#8fb0ff'];
 
-export function rng(seed) {
-  let a = (seed >>> 0) || 1;
-  return () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
-}
+export { rng };
 
 // a blotchy splat: one big drop, satellites, a few flung droplets
 export function splatPath(g, x, y, r, rand = Math.random) {

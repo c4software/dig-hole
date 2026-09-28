@@ -5,6 +5,7 @@
 import { text, canvas, hexOf } from './nes-art.js';
 import { CW, LH, FX, COLS, FY, W, STAR, MOON, drawPlant, drawZombie, buildField, drawRover, drawPea } from './pvz-art.js';
 import { createSynth } from './lune-sfx.js';
+import { clamp } from './lib/math.js';
 
 const COUNT = 2.5, SEND = .1, STAR_V = 25, PEA_V = 175, VS_DUR = 240, WAVES = 12, FLAGS = new Set([6, 12]);
 const PLANTS = {
@@ -35,7 +36,6 @@ const MODES = [
   { id: 'versus', name: 'face à face', sub: 'plantes contre zombies · seul, tu mènes les zombies contre un jardinier', help: 'plantes : tenir 4 minutes · zombies : entrer dans la base' },
 ];
 const BOTN = ['radis', 'tournesol', 'bêche', 'râteau'];
-const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 const laneY = (l) => FY + l * LH + LH - 4;
 const cellX = (c) => FX + c * CW + CW / 2;
 

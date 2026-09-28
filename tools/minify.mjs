@@ -31,4 +31,4 @@ if (fs.existsSync(css)) {
   try { const min = (await esbuild.transform(code, { loader: 'css', minify: true })).code; fs.writeFileSync(css, min); before += code.length; after += min.length; }
   catch (e) { console.warn(`⚠ style.css laissé tel quel : ${e.message.split('\n')[0]}`); }
 }
-console.log(`minifié : ${files.length} modules + style.css,${(before / 1024).toFixed(0)} → ${(after / 1024).toFixed(0)} ko`);
+console.log(`minifié : ${files.length} modules + style.css, ${(before / 1024).toFixed(0)} → ${(after / 1024).toFixed(0)} ko`);

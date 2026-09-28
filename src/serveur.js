@@ -7,9 +7,9 @@ import { CONFIG } from './config.js';
 import { createHostPanel, localBackend } from './hostpanel.js';
 import { tun } from './tunables.js';
 import { roomKey } from './signal.js';
+import { esc } from './lib/fmt.js';
 
 const params = new URLSearchParams(location.search);
-const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const DAY8 = 360 * 8;
 // the garden's clock, as the game computes it together (main.js clockNow)
 const clock = () => { const a = tun.get('clockAnchor'); return a ? ((a[1] + (Date.now() - a[0]) / 1000 * a[2]) % DAY8 + DAY8) % DAY8 : (Date.now() / 1000) % DAY8; };

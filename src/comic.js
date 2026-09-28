@@ -6,6 +6,7 @@ import { text, canvas, hexOf } from './nes-art.js';
 import { TS, ROWS, EMPTY, ROCK, BLOCK, WALL, SPIKE, DOOR, BACK, LOCK, createWorld, tileAt, solidAt, rng } from './comic-level.js';
 import { VW, VH, H, THEMES, buildTiles, buildBack, drawHero, drawFoe, drawItem, drawDoor, drawDeco, drawLander, ITEM } from './comic-art.js';
 import { createSynth } from './lune-sfx.js';
+import { clamp } from './lib/math.js';
 
 const STEP = 1 / 60, COUNT = 2.6, SEND = 1 / 12, G = 620, JUMP = 272, JUMP_BOOTS = 342, WALK = 86, HW = 5, HH = 22;
 const HP = 6, LIVES = 4, MAXCOLA = 5, SHOT_V = 200;
@@ -19,7 +20,6 @@ const SAY = {
   boots: 'bottes lunaires : tu sautes bien plus haut !', cork: 'tire-bouchon : tes tirs tournent et passent les murs',
   key: 'la clé ! les portes verrouillées s\'ouvrent', lantern: 'la lanterne : les grottes s\'éclairent', wand: 'baguette : k pour te téléporter devant',
 };
-const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 
 function createSfx() {
   const s = createSynth({

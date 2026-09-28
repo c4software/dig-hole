@@ -6,6 +6,7 @@ import { DEFS, tun } from './tunables.js';
 import { readWorldFile } from './p2p.js';
 import { getTurn, setTurn, parseTurn, turnText } from './rtc.js';
 import { CATALOG } from './catalog.js';
+import { esc } from './lib/fmt.js';
 
 const CSS = `
 .hp { position: fixed; z-index: 60; top: 16px; right: 16px; bottom: 16px; width: min(440px, calc(100vw - 32px)); display: flex; flex-direction: column;
@@ -62,7 +63,6 @@ const CSS = `
 `;
 const hex = (c) => '#' + (c >>> 0).toString(16).padStart(6, '0');
 const COLORS = [0xd9a125, 0x39c07a, 0x4a8fe0, 0xe4183a, 0xb05ae0, 0xf08a2a, 0x2ac0c0, 0xf2a7c3];
-const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const fmt = (d, v) => d.options ? '' : d.k === 'hour' && v < 0 ? 'auto' : (Math.round(v * 100) / 100) + (d.unit || '');
 const STATES = { rdv: ['par les relais', 'wait'], invite: ['en attente de réponse', 'wait'], answered: ['réponse reçue', 'wait'], connecting: ['connexion…', 'wait'], on: ['connecté', 'on'], failed: ['échec (réseau)', 'bad'], gone: ['parti', ''], kicked: ['renvoyé', 'bad'] };
 const SIG = { probe: 'recherche du serveur…', wait: 'inscription…', on: 'en ligne', off: 'pas de serveur de rencontre : invitations par code', taken: 'nom déjà pris sur le serveur : invitations par code' };

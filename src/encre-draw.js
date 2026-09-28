@@ -1,5 +1,6 @@
 // encre-draw.js: the look of « encre 2D » — chunky outlined text, the backdrop, the kids and their squid form.
 import { INK, INK_DARK, INK_LIGHT, rng, splatPath } from './encre-level.js';
+import { rrect } from './lib/tex.js';
 
 export const OUT = '#1a130d';
 export function txt(g, s, x, y, size, fill = '#fff', align = 'center', rot = 0) {
@@ -13,9 +14,7 @@ export function txt(g, s, x, y, size, fill = '#fff', align = 'center', rot = 0) 
   g.fillStyle = fill; g.fillText(s, 0, 0);
   g.restore();
 }
-export function rrect(g, x, y, w, h, r) {
-  g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();
-}
+export { rrect };
 
 // the backdrop: a night city in two layers, some old splats on the walls, stars
 export function createBackdrop(seed) {

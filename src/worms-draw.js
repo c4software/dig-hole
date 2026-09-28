@@ -1,5 +1,6 @@
 // worms-draw.js: the look of « taupes de guerre » — outlined text, the helmeted moles, their weapons, the sky.
 import { rng, W } from './worms-map.js';
+import { rrect } from './lib/tex.js';
 
 export const OUT = '#1a130d';
 export const TEAM = [
@@ -23,9 +24,7 @@ export function txt(g, s, x, y, size, fill = '#fff', align = 'center', rot = 0) 
   g.fillStyle = fill; g.fillText(s, 0, 0);
   g.restore();
 }
-export function rrect(g, x, y, w, h, r) {
-  g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();
-}
+export { rrect };
 const ell = (g, x, y, rx, ry, rot = 0) => { g.beginPath(); g.ellipse(x, y, rx, ry, rot, 0, 7); };
 
 // a weapon, centred on the paw, pointing along +x

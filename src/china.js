@@ -13,6 +13,7 @@ import { jpInteriors } from './interiors-jp.js';
 import { createRig } from './rig.js';
 import { japanBoutique } from './boutiques.js';
 import { DEFAULT } from './outfits.js';
+import { canvasTex } from './lib/tex.js';
 
 export const CHINA = new THREE.Vector3(400, 0, 0);
 const HALF = NX * S / 2;
@@ -29,13 +30,6 @@ function sign(text, { w = 512, h = 128, bg = '#ffffff', color = '#1a1a1a', size 
   g.fillText(text, w / 2, sub ? h * .42 : h / 2);
   if (sub) { g.font = `500 ${size * .36}px ${JP_FONT}`; g.fillText(sub, w / 2, h * .8); }
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
-  return t;
-}
-function canvasTex(w, h, draw, repeat) {
-  const c = document.createElement('canvas'); c.width = w; c.height = h;
-  draw(c.getContext('2d'), w, h);
-  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
-  if (repeat) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(...repeat); }
   return t;
 }
 

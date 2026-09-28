@@ -4,6 +4,7 @@
 import { W, H, WATER, rng, createMap } from './worms-map.js';
 import { OUT, TEAM, txt, rrect, drawWeapon, drawMole, drawGrave, drawCrate, createBackdrop, drawWater } from './worms-draw.js';
 import { createSfx } from './worms-sfx.js';
+import { clamp } from './lib/math.js';
 
 const STEP = 1 / 60, G = 520, WIND = 190, TURN = 30, COUNT = 3.2, READY = 1.3, WALK = 52;
 const WEAPONS = [
@@ -25,7 +26,6 @@ const MODES = [
 const WORDS = ['boum !', 'paf !', 'vlan !', 'badaboum !', 'crac !', 'pouf !'];
 const DIRS = Array.from({ length: 12 }, (_, k) => [Math.cos(k * Math.PI / 6), Math.sin(k * Math.PI / 6)]);
 const r2 = (v) => Math.round(v * 100) / 100;
-const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 
 export function createWorms() {
   const sfx = createSfx();

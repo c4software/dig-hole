@@ -14,6 +14,8 @@ import * as V from './vehicles.js';
 import { mergeStatic } from './merge.js';
 import { netTrack, netNow, netStamp } from './netlerp.js';
 import { hostOf, createChip, fmt, ord, hexOf } from './retro.js';
+import { wrapAngle as wrap } from './lib/math.js';
+import { tagTex } from './lib/tex.js';
 
 const PI = Math.PI, TAU = PI * 2;
 // the arena: walls at ±W, fort tops at H; karts: radius R, height KH, a step they climb, gravity
@@ -24,7 +26,6 @@ const BOTS = [['pipo', 0xe8384f], ['roxane', 0xf2c230], ['gaston', 0x3a8ef0], ['
 const ITEMS = { g: 'carapace verte', r: 'carapace rouge', b: 'banane', m: 'champignon turbo', f: 'fausse boîte' };
 const MODES = [{ id: 'ballons', name: 'bataille de ballons', sub: '3 ballons chacun · le dernier qui en a encore gagne', help: 'zqsd · shift : saut et dérapage · espace : objet (s + espace : vers l\'arrière) · r : retour au fort', unit: 'frags' }];
 const BOFF = [[-.028, .16, -.055], [.028, .16, -.055], [0, .19, -.07]];
-const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 const clamp = THREE.MathUtils.clamp;
 const rot = (q, x, z) => { for (let k = 0; k < q; k++) [x, z] = [-z, x]; return [x, z]; };
 const css = (hex, k = 0) => '#' + new THREE.Color(hex).lerp(new THREE.Color(k > 0 ? 0xffffff : 0), Math.abs(k)).getHexString();
@@ -33,13 +34,6 @@ function repTex(w, h, draw) { const t = V.paintTex(w, h, draw); t.wrapS = t.wrap
 const checker = (a, b) => new THREE.MeshStandardMaterial({ roughness: .75, map: repTex(64, 64, (g) => { g.fillStyle = a; g.fillRect(0, 0, 64, 64); g.fillStyle = b; g.fillRect(0, 0, 32, 32); g.fillRect(32, 32, 32, 32); }) });
 function softTex() {
   return V.paintTex(64, 64, (g) => { const r = g.createRadialGradient(32, 32, 0, 32, 32, 32); r.addColorStop(0, 'rgba(255,255,255,1)'); r.addColorStop(.6, 'rgba(255,255,255,.5)'); r.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = r; g.fillRect(0, 0, 64, 64); });
-}
-function tagTex(text, color) {
-  return V.paintTex(256, 64, (g, w, h) => {
-    g.fillStyle = 'rgba(20,14,10,.72)'; g.beginPath(); g.roundRect(4, 8, w - 8, h - 16, 20); g.fill();
-    g.fillStyle = hexOf(color); g.beginPath(); g.arc(30, h / 2, 10, 0, TAU); g.fill();
-    g.fillStyle = '#fff'; g.font = '600 30px Rubik, sans-serif'; g.textBaseline = 'middle'; g.fillText(text.slice(0, 12), 50, h / 2 + 1);
-  });
 }
 // the "?" box face: a bright frame and the question mark, see-through in between
 function boxFace(g, w, fake) {

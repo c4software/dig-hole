@@ -3,6 +3,7 @@
 import { T, W, H, INK, INK_DARK, INK_LIGHT, createLevel, rng, splatPath } from './encre-level.js';
 import { txt, rrect, OUT, createBackdrop, drawKid, drawSquid } from './encre-draw.js';
 import { createSfx } from './encre-sfx.js';
+import { clamp } from './lib/math.js';
 
 const DUR = 180, COUNT = 3.4, HX = 11, HT = 36, G = 2300, GB = 1300, STEP = 1 / 120;
 const TEAM = ['oranges', 'bleus'];
@@ -10,7 +11,6 @@ const BOTN = ['pâté', 'tartine', 'bulot', 'moule', 'crevette', 'flaque', 'grib
 const MAIN = { v: 950, r: 21, dmg: 34, cost: .011, every: .11 };
 const BOMB = { r: 82, dmg: 100, reach: 110 };
 const pct = (v) => v.toFixed(1).replace('.', ',');
-const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 
 export function createEncre({ audio, ui } = {}) {
   const sfx = createSfx();

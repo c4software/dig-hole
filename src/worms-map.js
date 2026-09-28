@@ -1,11 +1,9 @@
 // worms-map.js: the island of « taupes de guerre » — a bitmap of garden earth over water, carved by every blast.
 // Built from the seed alone, so every client has the same one; the carves replay exactly.
+import { mulberry as rng } from './lib/math.js';
 export const W = 2560, H = 1100, WATER = 1000;
 
-export function rng(s) {
-  s = (s >>> 0) || 1;
-  return () => { s = (s + 0x6D2B79F5) | 0; let t = Math.imul(s ^ (s >>> 15), 1 | s); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
-}
+export { rng };
 const smooth = (a, b, v) => { const t = Math.min(1, Math.max(0, (v - a) / (b - a))); return t * t * (3 - 2 * t); };
 
 // the shape: one to three islands, hills, floating clods with roots, old mole burrows

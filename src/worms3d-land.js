@@ -2,6 +2,7 @@
 // ground), drawn with surface nets in chunks, dug by explosions and grown by girders. The same
 // seed makes the same island everywhere; after that only the explosions travel.
 import * as THREE from 'three';
+import { rng16807 as rng } from './lib/math.js';
 
 export const VS = .5;                          // one cell, 50 cm
 export const NX = 96, NY = 40, NZ = 96;        // 48 m x 20 m x 48 m
@@ -12,10 +13,7 @@ const PX = NX + 1, PY = NY + 1, PZ = NZ + 1;
 const C = 16;                                  // cells a chunk, each way
 const NCX = Math.ceil(NX / C), NCY = Math.ceil(NY / C), NCZ = Math.ceil(NZ / C);
 
-export function rng(seed) {
-  let s = (seed >>> 0) || 1;
-  return () => { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; };
-}
+export { rng };
 // seeded value noise
 function noiseKit(seed) {
   const h3 = (i, j, k) => {

@@ -44,6 +44,7 @@ import { createSpaceArcade, spaceWorld, HALL_DIR } from './spacearcade.js';
 import { createSpaceRace, DECK_DIR } from './spacerace.js';
 import { createLooks } from './looks.js';
 import { createEvents } from './events.js';
+import { esc, esc as escH } from './lib/fmt.js';
 
 const REACH = 3.2;
 const params = new URLSearchParams(location.search);
@@ -1778,7 +1779,6 @@ const GAME_KEYS = {
 };
 const DEFAULT_KEYS = [['z q s d', 'marcher'], ['clic', 'creuser'], ['espace', 'sauter'], ['r', 'remonter']];
 const gmEl = document.getElementById('gamemenu'), $g = (id) => document.getElementById(id);
-const escH = (t) => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 let gm = null;   // { g, host, opts, prev, t }
 const defaultOpts = (g) => { const m = RACES[g]?.mod?.modes; return m?.length ? { mode: m[0].id } : {}; };
 function openGameMenu(g, { host = true } = {}) {
@@ -2999,7 +2999,6 @@ function updateNetList(dt) {
   netListT = 1;
   if (!net.online) return;
   const hex = (c) => '#' + c.toString(16).padStart(6, '0');
-  const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   ui.setNet(`<div class="t">${esc(net.title || 'le jardin commun')}</div>` + net.list().map(p => `<div><i style="background:${hex(p.color)}"></i>${esc(p.name)}${p.me ? ' (toi)' : ''}</div>`).join(''));
 }
 

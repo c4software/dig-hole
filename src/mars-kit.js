@@ -1,10 +1,13 @@
 // mars-kit.js: what the three mars games share (patates, survie, colonie) — a pixel canvas laid over the page
 // or over a screen, a mouse with clickable buttons drawn each frame, crisp text over the pixels, a tiny synth.
+import { createSynth } from './lib/sfx.js';
+import { clamp, lerp } from './lib/math.js';
+import { hexOf } from './lib/fmt.js';
 export const W = 400, H = 225;
-export const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
-export const lerp = (a, b, t) => a + (b - a) * t;
+export { clamp };
+export { lerp };
 export const rng = (seed) => { let s = (seed >>> 0) % 2147483647 || 1; return () => (s = s * 16807 % 2147483647) / 2147483647; };
-export const hexOf = (n) => '#' + (n >>> 0).toString(16).padStart(6, '0');
+export { hexOf };
 export const fmtN = (v) => Math.floor(v).toLocaleString('fr-FR');
 // an offscreen canvas kept in memory (not on the gpu, where a reset would wipe it)
 export function makeCanvas(w, h) {
@@ -155,38 +158,18 @@ export function createKeys() {
 }
 export const LEFT = ['KeyA', 'ArrowLeft'], RIGHT = ['KeyD', 'ArrowRight'], UP = ['KeyW', 'ArrowUp'], DOWN = ['KeyS', 'ArrowDown'];
 
-// ---------- the synth: its own context, a quiet master ----------
+// ---------- the synth: its own context, a quiet master (the shared one, lib/sfx.js) ----------
 export function createSfx(vol = .12) {
-  let ctx = null, master = null, noise = null, loop = null;
-  const last = {};
-  function init() {
-    if (ctx) { if (ctx.state === 'suspended') ctx.resume().catch(() => {}); return; }
-    try {
-      ctx = new (window.AudioContext || window.webkitAudioContext)();
-      master = ctx.createGain(); master.gain.value = vol; master.connect(ctx.destination);
-      noise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
-      const d = noise.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-    } catch { ctx = null; }
-  }
-  const ok = (k, gap) => { if (!ctx || ctx.state !== 'running') return false; const t = performance.now(); if (last[k] && t - last[k] < gap) return false; last[k] = t; return true; };
-  function tone(f, dur, type = 'sine', v = .5, to = f, delay = 0) {
-    const t = ctx.currentTime + delay, o = ctx.createOscillator(), g = ctx.createGain();
-    o.type = type; o.frequency.setValueAtTime(f, t); o.frequency.exponentialRampToValueAtTime(Math.max(20, to), t + dur);
-    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(v, t + .008); g.gain.exponentialRampToValueAtTime(.001, t + dur);
-    o.connect(g); g.connect(master); o.start(t); o.stop(t + dur + .02);
-  }
-  function hiss(dur, f, v = .5, to = f, type = 'lowpass', delay = 0, q = 1) {
-    const t = ctx.currentTime + delay, s = ctx.createBufferSource(), fl = ctx.createBiquadFilter(), g = ctx.createGain();
-    s.buffer = noise; fl.type = type; fl.Q.value = q;
-    fl.frequency.setValueAtTime(f, t); fl.frequency.exponentialRampToValueAtTime(Math.max(40, to), t + dur);
-    g.gain.setValueAtTime(v, t); g.gain.exponentialRampToValueAtTime(.001, t + dur);
-    s.connect(fl); fl.connect(g); g.connect(master); s.start(t, Math.random() * .5); s.stop(t + dur + .02);
-  }
+  const S = createSynth({ vol });
+  let loop = null;
+  const ok = S.ok;
+  const tone = (f, dur, type = 'sine', v = .5, to = f, delay = 0) => S.blip(f, dur, { type, vol: v, to, at: delay });
+  const hiss = (dur, f, v = .5, to = f, type = 'lowpass', delay = 0, q = 1) => S.hiss(dur, f, { vol: v, to, type, at: delay, q });
   const notes = (seq, type = 'triangle', v = .3, gap = .12) => seq.forEach((f, i) => tone(f, i === seq.length - 1 ? gap * 4 : gap * 1.3, type, v, f, i * gap));
   const s = {
-    init,
-    get on() { return !!ctx && ctx.state === 'running'; },
-    pause() { s.hum(0); if (ctx && ctx.state === 'running') ctx.suspend().catch(() => {}); },
+    init: S.init,
+    get on() { return S.running; },
+    pause() { s.hum(0); S.pause(); },
     tone: (...a) => ok('t' + a[0], 30) && tone(...a),
     click() { if (ok('click', 40)) tone(1200, .04, 'square', .12, 900); },
     nope() { if (ok('nope', 150)) { tone(180, .12, 'square', .18, 140); tone(150, .14, 'square', .14, 110, .08); } },
@@ -209,7 +192,8 @@ export function createSfx(vol = .12) {
     lose() { if (ok('lose', 1500)) notes([392, 370, 349, 262], 'triangle', .3, .2); },
     // a low engine drone, set every frame (0: off)
     hum(v, f = 60) {
-      if (!ctx || ctx.state !== 'running') return;
+      const ctx = S.ctx, master = S.master;
+      if (!S.running) return;
       if (!loop && v > 0) {
         const o = ctx.createOscillator(), o2 = ctx.createOscillator(), g = ctx.createGain(), fl = ctx.createBiquadFilter();
         o.type = 'sawtooth'; o2.type = 'square'; fl.type = 'lowpass'; fl.frequency.value = 380; g.gain.value = 0;

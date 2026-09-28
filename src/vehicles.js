@@ -3,6 +3,7 @@
 // and a little spring for body roll, pitch and squash.
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { canvasTex as paintTex } from './lib/tex.js';
 
 const geos = new Map();
 const cached = (key, make) => { if (!geos.has(key)) geos.set(key, make()); return geos.get(key); };
@@ -106,12 +107,7 @@ export function contactShadow(w, d, opacity = .55) {
 }
 
 // ---------- a painted canvas: plates, numbers, stickers ----------
-export function paintTex(w, h, draw) {
-  const c = document.createElement('canvas'); c.width = w; c.height = h;
-  draw(c.getContext('2d'), w, h);
-  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
-  return t;
-}
+export { paintTex };
 export const plate = (text, bg = '#f4f1e6', fg = '#1a1a22') => cached('plate' + text + bg, () => paintTex(256, 64, (g, w, h) => {
   g.fillStyle = bg; g.beginPath(); g.roundRect(2, 2, w - 4, h - 4, 10); g.fill();
   g.lineWidth = 4; g.strokeStyle = fg; g.stroke();

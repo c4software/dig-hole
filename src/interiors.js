@@ -7,19 +7,13 @@
 import * as THREE from 'three';
 import { seeded } from './street.js';
 import { mergeStatic } from './merge.js';
+import { canvasTex } from './lib/tex.js';
 
 const UNIT = new THREE.BoxGeometry(1, 1, 1);
 const CYL = new THREE.CylinderGeometry(1, 1, 1, 8);
 const BALL = new THREE.SphereGeometry(1, 8, 6);
 const SHADE = new THREE.CylinderGeometry(.55, 1, 1, 8);
 
-function canvasTex(w, h, draw, repeat) {
-  const c = document.createElement('canvas'); c.width = w; c.height = h;
-  draw(c.getContext('2d'), w, h);
-  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
-  if (repeat) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(...repeat); }
-  return t;
-}
 
 // palettes, kept short: every colour is a material, every material a draw call
 const PAPERS = [0xf3e6c8, 0xe6dcc8, 0xdfe6d6, 0xf0d8cc, 0xd6e0e6, 0xf4ecdc];
