@@ -1059,13 +1059,18 @@ function explode(kind, pos, power = 1) {
   } else {
     const out = applyOp({ k: 'carve', w: W(pos), c: pos.toArray().map(v => +v.toFixed(3)), r: b.r, tier, space: take ? eco.space : 0, destroy: !take });
     ores = out.ores;
-    // the holy bomba doesn't stop at a crater: a well of light bored ~20 m further down, narrowing
-    if (kind === 'holy') for (let n = 1; n <= 8; n++) {
-      const o2 = applyOp({ k: 'carve', w: W(pos), c: [+pos.x.toFixed(3), +(pos.y - b.r * .6 - n * 2.4).toFixed(3), +pos.z.toFixed(3)], r: Math.max(2.2, 5.5 - n * .45), tier, space: eco.space, destroy: false });
-      ores.push(...o2.ores);
+    // the holy bomba doesn't stop at a crater: a well of light bored ~20 m further down, narrowing,
+    // one ring every few frames (the ground is remeshed a little each frame, not all at once)
+    if (kind === 'holy') {
+      const w = W(pos), at = pos.clone();
+      for (let n = 1; n <= 8; n++) setTimeout(() => {
+        const o2 = applyOp({ k: 'carve', w, c: [+at.x.toFixed(3), +(at.y - b.r * .6 - n * 2.4).toFixed(3), +at.z.toFixed(3)], r: Math.max(2.2, 5.5 - n * .45), tier, space: eco.space, destroy: false });
+        collectOres(o2.ores, new THREE.Vector3(0, 1, 0));
+      }, n * 110);
     }
   }
-  T().flush();
+  // a huge blast: only the nearest chunks now, the loop rebuilds the rest over the next frames
+  if (kind === 'holy') T().flush(10, 14); else T().flush();
   collectOres(ores, new THREE.Vector3(0, 1, 0));
   if (kind === 'holy') { holy.blast(pos); unlock('holy'); net?.sendFx({ k: 'holyfx', w: here, p: pos.toArray().map(v => +v.toFixed(2)) }); }
   audio.boom((kind === 'holy' ? 2 : kind === 'met' ? 1.8 : kind === 'sup' || kind === 'shell' ? 1.3 : 0.8) * Math.max(.6, power));
