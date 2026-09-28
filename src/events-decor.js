@@ -112,7 +112,7 @@ export const DECOR = {
     // santa's presents, dropped all over the place
     const spots = hideSpots(ctx, { n: 12, seed: 25, make: (i) => A.present(...colors[i % colors.length], .9) });
     // the sleigh, round and round over the village at night
-    const sl = A.sleigh(); sl.visible = false; sl.userData.keep = true; sl.scale.setScalar(1.8); H.add(sl);
+    const sl = A.sleigh(); sl.visible = false; sl.userData.keep = true; sl.name = 'traineau'; sl.scale.setScalar(1.8); H.add(sl);
     const bells = ctx.bulbs(sl, [0xffd23a]); bells.add(V(-.5, 1.1, 1.2), V(-.5, 1.1, 5.5), 8, 0); bells.add(V(.5, 1.1, 1.2), V(.5, 1.1, 5.5), 8, 0);
     return {
       spots,
@@ -206,8 +206,8 @@ export const DECOR = {
     const last = spots[spots.length - 1]; last.gold = true;
     last.obj.children[0].material = A.std(0xffc83a, { metalness: .9, roughness: .2, emissive: 0x5a3a00 });
     // the bells, back from rome, crossing the sky; a white rabbit hopping in the garden
-    const bells = [0, 1, 2].map(i => { const b = A.bell(2.2); H.add(b); return { b, ph: i * 2.1 }; });
-    const rab = A.bunny(1.2); rab.userData.keep = true; H.add(rab);
+    const bells = [0, 1, 2].map(i => { const b = A.bell(2.2); b.name = 'cloche'; H.add(b); return { b, ph: i * 2.1 }; });
+    const rab = A.bunny(1.2); rab.userData.keep = true; rab.name = 'lapin'; H.add(rab);
     return {
       spots,
       update(dt, t, env) {
@@ -298,7 +298,7 @@ export const DECOR = {
     // the pumpkins to find (small, lit)
     const spots = hideSpots(ctx, { n: 13, seed: 1031, make: () => A.pumpkin(.55) });
     // bats over the house and the garden
-    const bats = Array.from({ length: 16 }, (_, i) => { const b = A.bat(1.8); b.userData.keep = true; H.add(b); return { b, ph: i * .7, r: 4 + (i % 4) * 2.5, h: 3.5 + (i % 5) * 1.2, c: [V(0, 0, -12), V(0, 0, 12), V(61, 0, 2), V(-18, 0, 4)][i % 4], sp: .5 + (i % 3) * .15 }; });
+    const bats = Array.from({ length: 16 }, (_, i) => { const b = A.bat(1.8); b.userData.keep = true; b.name = 'chauve-souris'; H.add(b); return { b, ph: i * .7, r: 4 + (i % 4) * 2.5, h: 3.5 + (i % 5) * 1.2, c: [V(0, 0, -12), V(0, 0, 12), V(61, 0, 2), V(-18, 0, 4)][i % 4], sp: .5 + (i % 3) * .15 }; });
     // ghosts in the ground of the plot: out of sight until dug out
     const ghosts = [[-4, 2.5, 3], [5, 4, -4], [0, 6.5, 0], [-5.5, 9, -5], [4, 12, 5]].map(([x, d, z], i) => { const g = A.ghost(1); g.position.set(x, -d, z); g.visible = false; g.userData.keep = true; H.add(g); return { g, base: V(x, -d, z), ph: i * 1.3, gone: 0, id: i }; });
     return {

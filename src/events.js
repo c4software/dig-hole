@@ -54,7 +54,19 @@ export function createEvents({ world, terrains, eco, ui, audio, tun, moles, orga
   const taken = new Map();    // key → Set of hunted things gone (the room's word, or our save)
   let active = [];            // [{ id, key, year, from, to, forced }]
   let sig = '', checkT = 0, t = 0, bannerFor = null, pending = [];
-  const buildDelay = hooks.buildDelay ?? 1;
+  const buildDelay = hooks.buildDelay ?? 1, born = performance.now();
+  // a pending decor built now (a hunt looked at, the game started): never a hunt of nothing
+  function flush(kind) {
+    for (const k of kind ? [kind] : [...pending]) {
+      const i = pending.indexOf(k);
+      if (i < 0) continue;
+      pending.splice(i, 1);
+      if (!built.has(k) && active.some(e => kindOf(e.id) === k)) safeBuild(k);
+    }
+  }
+  function safeBuild(k) {
+    try { build(k); } catch (err) { console.error('fête', k, err); teardown(k); }
+  }
   const HALLOWEEN_FOG = new THREE.Color(0x2a2438), HALLOWEEN_DAY = new THREE.Color(0xb8a4d0), HAZE = new THREE.Color();
 
   // ---------- the card, under the clock ----------
@@ -101,7 +113,8 @@ export function createEvents({ world, terrains, eco, ui, audio, tun, moles, orga
     const home = new THREE.Group(); home.name = 'ev-' + kind;
     const jp = new THREE.Group(); jp.name = 'ev-jp-' + kind;
     world.homeDecor.add(home); world.china.group.add(jp);
-    const b = { roots: [home, jp], boxes: [], uses: [], bulbs: [], fw: [], hats: new Set(), fish: [] };
+    const b = { roots: [home, jp], boxes: [], uses: [], bulbs: [], fw: [], hats: new Set(), fish: [], d: {} };
+    built.set(kind, b);     // at once: a decor that fails half-way is still torn down whole
     const addBox = (x0, y0, z0, x1, y1, z1) => { const c = { min: new THREE.Vector3(x0, y0, z0), max: new THREE.Vector3(x1, y1, z1) }; world.colliders.push(c); b.boxes.push(c); return c; };
     const ctx = {
       home, jp, JP: CHINA, world, rng: (s) => rng(s),
@@ -118,7 +131,6 @@ export function createEvents({ world, terrains, eco, ui, audio, tun, moles, orga
     // what moves or hides stays apart; the rest is merged into a few draw calls
     for (const s of b.d.spots || []) s.obj.userData.keep = true;
     for (const r of b.roots) { r.traverse(o => { if (o.isSprite || o.isPoints || o.isLineSegments) o.userData.keep = true; }); keepMoving(r); mergeStatic(r, (o) => !!o.userData.keep); }
-    built.set(kind, b);
     // its shaders compiled off the frame (where the driver can), shown once ready
     const R = world.renderer;
     if (R?.compileAsync) for (const r of b.roots) {
@@ -255,6 +267,7 @@ export function createEvents({ world, terrains, eco, ui, audio, tun, moles, orga
     let c;
     if (P.hunt) {
       const n = tk(e.key).size, of = spotsN(e);
+      if (!of) flush(kindOf(e.id));      // (only if it's still to build: shown the next frame)
       const sub = st.done ? `tous trouvés ! ${P.hunt.done} ● de bonus` : P.hunt.sub;
       c = { title: P.hunt.title, sub, n, of, word: `${n}/${of}`, extra: hooks.multi ? `dont ${st.mine || 0} par toi` : '' };
     } else c = P.card(helpers(e));
@@ -498,7 +511,8 @@ export function createEvents({ world, terrains, eco, ui, audio, tun, moles, orga
       t += dt;
       checkT -= dt;
       if (checkT <= 0) { checkT = 20; apply(resolve()); }
-      if (pending.length && t > buildDelay) { const k = pending.shift(); if (!built.has(k) && active.some(e => kindOf(e.id) === k)) build(k); }
+      // the title's first second is the world's own; then a feast a frame (all at once when playing)
+      if (pending.length) { if (hooks.state() !== 'attract') flush(); else if ((performance.now() - born) / 1000 > buildDelay || t > buildDelay) flush(pending[0]); }
       const here = hooks.here(), view = hooks.view(), state = hooks.state();
       const pos = hooks.pos(), eye = hooks.eye();
       const playing = state === 'play';
@@ -520,7 +534,7 @@ export function createEvents({ world, terrains, eco, ui, audio, tun, moles, orga
     },
     // for tests and the curious
     get built() { return [...built.keys()]; },
-    spotsOf: (id) => built.get(kindOf(parseOverride(id) || id))?.d.spots || [],
+    spotsOf: (id) => { const k = kindOf(parseOverride(id) || id); flush(k); return built.get(k)?.d.spots || []; },
     taken, resolve, apply: (l) => apply(l),
     refresh() { checkT = 0; },
   };

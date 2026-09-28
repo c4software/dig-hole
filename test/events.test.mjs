@@ -181,7 +181,7 @@ test('net.js: a client in july joining a server on christmas eve gets noël', as
 // ---------- the decor, built and torn down, without a browser (canvases are stand-ins) ----------
 function domStubs() {
   const el = () => ({ style: { setProperty() {} }, classList: { _s: new Set(['hidden']), add(c) { this._s.add(c); }, remove(c) { this._s.delete(c); }, toggle() {}, contains(c) { return this._s.has(c); } }, appendChild() {}, set className(v) { this.classList._s = new Set(String(v).split(' ').filter(Boolean)); }, offsetHeight: 80 });
-  const ctx2d = new Proxy({}, { get: (t, k) => k in t ? t[k] : (k === 'createRadialGradient' || k === 'createLinearGradient' ? () => ({ addColorStop() {} }) : () => {}), set: (t, k, v) => { t[k] = v; return true; } });
+  const ctx2d = new Proxy({}, { get: (t, k) => k in t ? t[k] : (k === 'createImageData' ? (w, h) => ({ data: new Uint8ClampedArray(4 * w * h) }) : k === 'createRadialGradient' || k === 'createLinearGradient' ? () => ({ addColorStop() {} }) : () => {}), set: (t, k, v) => { t[k] = v; return true; } });
   globalThis.document = { createElement: (t) => t === 'canvas' ? { width: 0, height: 0, style: {}, getContext: () => ctx2d } : el(), getElementById: () => null, head: el(), body: el(), addEventListener() {} };
   globalThis.location = { protocol: 'http:', host: 'lab', search: '' };
 }
@@ -247,4 +247,35 @@ test('events.js: every feast builds its decor, its uses answer, and it leaves no
   assert.equal(ev.spotsOf('halloween').find(s => s.id === 3).obj.visible, false);
   assert.ok(ev.taken.get(hk).has(3));
   tun.reset(); serverClock.clear();
+});
+
+test('events.js: in the real village (its walls and houses), every hunt places all its things, the title first', async () => {
+  domStubs();
+  const THREE = await import('three');
+  const { tun } = await import('../src/tunables.js');
+  const { createEvents } = await import('../src/events.js');
+  const { createEurope } = await import('../src/europe.js');
+  const { createNeighbours } = await import('../src/neighbours.js');
+  const scene = new THREE.Scene(); scene.add(new THREE.PerspectiveCamera());
+  const colliders = [], interactables = [];
+  createEurope({ scene, addBox: (x0, y0, z0, x1, y1, z1) => colliders.push({ min: new THREE.Vector3(x0, y0, z0), max: new THREE.Vector3(x1, y1, z1) }) });
+  const nb = createNeighbours({ colliders, interactables }); scene.add(nb.group);
+  const cg = new THREE.Group(); cg.position.set(400, 0, 0);
+  const world = { homeDecor: new THREE.Group(), china: { group: cg }, colliders, interactables, label: () => new THREE.Texture(), env: { day: 1, night: 0 },
+    walkers: { home: { people: [] } }, scene: { fog: new THREE.Fog(0xffffff, 45, 300), background: new THREE.Color() }, space: false };
+  let state = 'attract';
+  const ev = createEvents({ world, terrains: { home: { cellOf: () => [0, 0, 0], solidCell: () => true } }, eco: { s: { ach: {}, money: 0 }, earn() {}, pay: () => true, give() {}, nameOf: String },
+    ui: new Proxy({}, { get: () => () => {} }), audio: new Proxy({}, { get: () => () => {} }), tun, moles: { list: [] }, organ: null, CHINA: new THREE.Vector3(400, 0, 0), ACH_LIST: [],
+    hooks: { multi: false, here: () => 'home', view: () => 'home', state: () => state, pos: () => new THREE.Vector3(), eye: () => new THREE.Vector3(0, 11, 22), hour: () => 12, cardOk: () => state === 'play', unlock() {}, save() {}, sendOp() {}, myName: () => 'moi', hintOnce() {}, redrawBoard() {}, heal() {}, battery() {}, speed() {}, grav() {}, openPanel() {}, buildDelay: 30 } });
+  for (const [id, n] of [['juillet', 10], ['valentin', 14], ['noel', 12], ['paques', 19], ['halloween', 13]]) {
+    tun.set('event', overrideToTun(id)); ev.refresh();
+    state = 'attract';
+    ev.update(.016);
+    assert.deepEqual(ev.built, [], id + ': nothing built in the title\'s first second');
+    state = 'play';
+    ev.update(.016);
+    assert.deepEqual(ev.built, [id], id + ': built once playing');
+    assert.equal(ev.spotsOf(id).length, n, id);
+  }
+  tun.reset();
 });
