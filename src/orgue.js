@@ -9,7 +9,7 @@
 // scores go round live; places by score (booed off: behind everyone who finished). Solo: two bots
 // from the parish, their runs worked out from the seed.
 import * as THREE from 'three';
-import { SETLIST, LEVELS, LANE_KEYS, makeChart } from './orgue-songs.js';
+import { SETLIST, SECTIONS, LEVELS, LANE_KEYS, makeChart } from './orgue-songs.js';
 import { rng, hostOf, hexOf, ord } from './retro.js';
 
 const MODES = [
@@ -50,18 +50,20 @@ export function createOrgue({ scene, camera, audio, ui, organ, church }) {
   function newBus() {
     if (!A) return;
     if (accBus) { const b = accBus; b.gain.setTargetAtTime(0, A.ctx.currentTime, .05); setTimeout(() => b.disconnect(), 500); }
-    accBus = A.ctx.createGain(); accBus.connect(A.out);
+    accBus = A.ctx.createGain(); accBus.connect(chart?.metal && A.drive ? A.drive : A.out);
   }
   const songNow = () => (performance.now() - t0) / 1000;
   const lat = () => A ? (A.ctx.outputLatency || A.ctx.baseLatency || 0) : 0;
   const audioAt = (st) => A ? Math.max(A.ctx.currentTime, A.ctx.currentTime + st - songNow() - lat()) : 0;
   // notes on the organ; the grand jeu adds the 16' and 4' ranks
-  function sound(notes, at, dur, vel, bus = A?.out) {
+  // (a metal piece: the reeds, through the drive)
+  function sound(notes, at, dur, vel, bus) {
     if (!A) return [];
-    const out = [];
+    const out = [], metal = !!chart?.metal;
+    bus ??= metal && A.drive ? A.drive : A.out;
     for (const m of notes) {
-      out.push(A.voice(m, at, dur, vel, bus));
-      if (gj) { out.push(A.voice(m + 12, at, dur, vel * .45, bus)); if (m > 36) out.push(A.voice(m - 12, at, dur, vel * .35, bus)); }
+      out.push(A.voice(m, at, dur, vel, bus, metal));
+      if (gj) { out.push(A.voice(m + 12, at, dur, vel * .45, bus, metal)); if (m > 36) out.push(A.voice(m - 12, at, dur, vel * .35, bus, metal)); }
     }
     return out;
   }
@@ -73,10 +75,10 @@ export function createOrgue({ scene, camera, audio, ui, organ, church }) {
     if (!A || !chart || failed) return;
     const ac = chart.accomp, ahead = songT + 1.1;
     while (accIdx < ac.length && ac[accIdx][0] < ahead) {
-      const [t, l, ...notes] = ac[accIdx++];
+      const e = ac[accIdx++], [t, l, ...notes] = e;
       if (t + l < songT + .05) continue;
       const s0 = Math.max(t, songT);
-      sound(notes, audioAt(s0), t + l - s0, .065 / Math.sqrt(notes.length), accBus);
+      sound(notes, audioAt(s0), t + l - s0, .065 / Math.sqrt(notes.length) * (e.acc ? .8 : 1), accBus);
     }
   }
   // back in time with the song after a pause: what was scheduled goes, it starts again from here
@@ -597,18 +599,28 @@ export function createOrgue({ scene, camera, audio, ui, organ, church }) {
     g.lineJoin = 'round'; g.lineWidth = stroke; g.strokeStyle = 'rgba(26,19,13,.95)'; if (stroke) g.strokeText(s, x, y);
     g.fillStyle = color; g.fillText(s, x, y);
   }
+  // the setlist by section, a window of rows that follows the choice when it doesn't all fit
   function drawPick(g, W, H) {
-    const top = Math.max(280, H * .38), w = Math.min(560, W - 40), rowH = clamp((H - top - 120) / SETLIST.length, 22, 38), h = 110 + rowH * SETLIST.length, x = (W - w) / 2, y = Math.max(top, H - h - 16);
+    const rows = [];
+    SETLIST.forEach((S, i) => { if (!i || S.section !== SETLIST[i - 1].section) rows.push({ head: SECTIONS[S.section] }); rows.push({ i, S }); });
+    const top = Math.max(200, H * .3), w = Math.min(560, W - 40), rowH = clamp((H - top - 120) / rows.length, 26, 34);
+    const fit = Math.max(4, Math.min(rows.length, Math.floor((H - top - 126) / rowH)));
+    const at = rows.findIndex(r => r.i === pick), from = clamp(at - Math.floor(fit / 2), 0, rows.length - fit);
+    const h = 110 + rowH * fit, x = (W - w) / 2, y = Math.max(top, H - h - 16);
     g.fillStyle = 'rgba(26,19,13,.82)'; round(g, x, y, w, h, 18); g.fill();
     g.strokeStyle = 'rgba(255,176,32,.6)'; g.lineWidth = 3; g.stroke();
     txt(g, 'orgue héros · ' + mode, W / 2, y + 34, 26, '#ffdc8f');
-    SETLIST.forEach((S, i) => {
-      const yy = y + 70 + i * rowH, on = i === pick;
-      if (on) { g.fillStyle = 'rgba(255,176,32,.9)'; round(g, x + 14, yy, w - 28, rowH - 6, 10); g.fill(); }
-      const [name, who] = S.name.split(' · ');
-      txt(g, name, x + 30, yy + (rowH - 6) / 2, Math.min(18, rowH * .45), on ? '#1a130d' : '#f6ecd8', 'left', 'Rubik', 0);
-      txt(g, who || '', x + w - 30, yy + (rowH - 6) / 2, Math.min(14, rowH * .36), on ? '#3a2410' : '#b8a888', 'right', 'Rubik', 0);
+    rows.slice(from, from + fit).forEach((r, k) => {
+      const yy = y + 70 + k * rowH, mid = yy + (rowH - 6) / 2;
+      if (r.head) { txt(g, r.head, x + 24, mid, Math.min(15, rowH * .45), r.head === SECTIONS[1] ? '#ff7a4a' : '#ffdc8f', 'left', 'Titan One', 0); return; }
+      const on = r.i === pick;
+      if (on) { g.fillStyle = r.S.metal ? 'rgba(255,110,60,.92)' : 'rgba(255,176,32,.9)'; round(g, x + 14, yy, w - 28, rowH - 6, 10); g.fill(); }
+      const [name, who] = r.S.name.split(' · ');
+      txt(g, name, x + 30, mid, Math.min(18, rowH * .5), on ? '#1a130d' : '#f6ecd8', 'left', 'Rubik', 0);
+      txt(g, who || '', x + w - 30, mid, Math.min(14, rowH * .4), on ? '#3a2410' : '#b8a888', 'right', 'Rubik', 0);
     });
+    if (from > 0) txt(g, '▲', x + w - 22, y + 58, 12, '#ffdc8f', 'center', 'Rubik', 0);
+    if (from + fit < rows.length) txt(g, '▼', x + w - 22, y + h - 44, 12, '#ffdc8f', 'center', 'Rubik', 0);
     const host = seats.find(s => s.id === hostId);
     txt(g, isHost ? `↑ ↓ choisir · entrée ou espace : jouer · ${Math.max(0, Math.ceil(pickT))} s` : `${host?.name ?? 'l\'hôte'} choisit le morceau…`, W / 2, y + h - 24, 15, '#ffdc8f', 'center', 'Rubik', 0);
   }

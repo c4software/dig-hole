@@ -89,7 +89,7 @@ export function createNet({ scene, onOp, onJoin, onLeave, onWelcome, onStatus, o
         const fx = m.fx;
         if (fx.k === 'look') { p.look = clean(fx.o); p.planet = null; }
         else if (fx.k === 'emote') { if (fx.e) p.avatar.rig.play(String(fx.e)); else p.avatar.rig.stop(); }
-        else if (fx.k === 'hands') { p.hands = fx.l | 0; p.tool = String(fx.tool || 'shovel'); p.avatar.rig.hold(p.tool === 'hands' ? null : p.tool); }
+        else if (fx.k === 'hands') { p.hands = Array.isArray(fx.l) ? fx.l.slice(0, 2).map((v) => Math.max(0, Math.min(2, +v || 0))) : fx.l | 0; p.tool = String(fx.tool || 'shovel'); p.avatar.rig.hold(p.tool === 'hands' ? null : p.tool); }
         else onFx?.(m.id, p, fx);
       }
       // from a host's tab: its live values, its word (a raid, a kick), the guest book
@@ -161,7 +161,7 @@ export function createNet({ scene, onOp, onJoin, onLeave, onWelcome, onStatus, o
     // what I wear, what my hands do: said once, then again to whoever arrives
     setLook(o) { myLook = o; send({ k: 'look', o }); },
     emote(e) { send({ k: 'emote', e }); },
-    setHands(l, tool) { if (myHands.l === l && myHands.tool === tool) return; myHands = { l, tool }; sendHands(); },
+    setHands(l, tool) { if (String(myHands.l) === String(l) && myHands.tool === tool) return; myHands = { l, tool }; sendHands(); },
     list() { return [{ name, color, me: true }, ...[...peers.values()].map(p => ({ name: p.name, color: p.color }))]; },
   };
 }

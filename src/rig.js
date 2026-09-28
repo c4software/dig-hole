@@ -740,9 +740,15 @@ export function createRig(outfit, { detail = 'hi', lod = false, shadow = true, p
   }
 
   function overlays(P) {
-    // the empty-handed: 0 down, 1 forward, 2 up in the air
-    if (st.hands === 1) for (const [s, n] of SIDES) { P.r('sh' + n, -1.25, 0, s * .12); P.r('elb' + n, -.35, -s * 1.4, 0); P.curl(n, .05); }
-    else if (st.hands === 2) for (const [s, n] of SIDES) { P.r('sh' + n, -2.85, -s * 1.5, s * .28); P.r('elb' + n, -.2, 0, 0); P.curl(n, .02); }
+    // the empty-handed, each arm on its own, from 0 (down) through 1 (forward) to 2 (up in the air);
+    // a number is both arms (older clients)
+    if (st.hands !== -1 && st.hands != null) for (const [s, n] of SIDES) {
+      const l = Array.isArray(st.hands) ? +st.hands[n === 'L' ? 0 : 1] || 0 : +st.hands || 0;
+      if (l <= 0) continue;
+      if (l <= 1) { P.add('sh' + n, -1.25 * l, 0, s * .12 * l); P.add('elb' + n, -.35 * l, -s * 1.4 * l, 0); P.curl(n, .05 * l); continue; }
+      const k = l - 1, m = (a, b) => a + (b - a) * k;
+      P.r('sh' + n, m(-1.25, -2.85), m(0, -s * 1.5), m(s * .12, s * .28)); P.r('elb' + n, m(-.35, -.2), m(-s * 1.4, 0), 0); P.curl(n, m(.05, .02));
+    }
     if (rig.tool) {
       // carrying: the right arm swings less, the elbow a little bent
       P.a[BI.shR * 3] *= .45; P.add('elbR', -.35, 0, 0); P.curl('R', 1.3);

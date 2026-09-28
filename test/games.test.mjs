@@ -34,7 +34,7 @@ const { createOrgan } = await import('../src/church.js');
 // the ids main.js offers (its RACES table), read from the source
 const main = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
 const block = main.slice(main.indexOf('const RACES = {'), main.indexOf('\n};\n', main.indexOf('const RACES = {')));
-const RACE_IDS = [...block.matchAll(/^ {2}([a-z0-9]+): \{ make:/gm)].map(m => m[1]);
+const RACE_IDS = [...block.matchAll(/^ {2}([a-z0-9]+): \{[^\n]*\bmake: \(create\)/gm)].map(m => m[1]);
 
 test('every game of RACES has its code in games.js, and nothing more', () => {
   assert.ok(RACE_IDS.length >= 20, `RACES read from main.js: ${RACE_IDS.length}`);

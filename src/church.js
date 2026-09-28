@@ -4,6 +4,7 @@
 // circle the belfry: silver discs, whirring, bouncing off walls, for whoever dares.
 import * as THREE from 'three';
 import { toolMat } from './tool.js';
+import { metalSongs } from './orgue-metal.js';
 
 // ---------- the pieces (all public domain): [start in beats, length in beats, midi notes…] ----------
 // The Toccata in D minor (Bach): the mordent and fall, three times, an octave lower each time, in
@@ -81,14 +82,16 @@ function dies() {
   s.push([t, 5, 26, 38, 50, 53, 57, 62]);
   return s;
 }
-// name, the piece, seconds a beat
+// name, the piece, seconds a beat; then the cathedral metal (orgue-metal.js), after the dies irae
+// so the pieces before keep their places. Scores in time order: they are fed a little at a time
 export const SONGS = [
   { name: 'toccata et fugue en ré mineur · j.-s. bach', score: toccata(), beat: .5 },
   { name: 'jésus que ma joie demeure · j.-s. bach', score: jesu(), beat: .62 },
   { name: 'canon en ré · pachelbel', score: canon(), beat: .45 },
   { name: 'ode à la joie · beethoven', score: ode(), beat: .5 },
   { name: 'dies irae · plain-chant', score: dies(), beat: .75 },
-].map(p => ({ ...p, length: p.score.reduce((a, [t, l]) => Math.max(a, t + l), 0) * p.beat + 3 }));
+  ...metalSongs(toccata),
+].map(p => ({ ...p, score: p.score.sort((a, b) => a[0] - b[0]), length: p.score.reduce((a, [t, l]) => Math.max(a, t + l), 0) * p.beat + 3 }));
 
 export function createOrgan({ parent, at, rot = 0 }) {
   // the instrument: a case of pipes against the wall, a console with two keyboards and a bench
@@ -122,7 +125,7 @@ export function createOrgan({ parent, at, rot = 0 }) {
   g.updateMatrixWorld(true);
 
   // ---------- the sound: additive pipes, a long stone reverb ----------
-  let ctx = null, out = null, playing = null;
+  let ctx = null, out = null, drive = null, playing = null;
   function ensure() {
     if (ctx) return ctx;
     const AC = window.AudioContext || window.webkitAudioContext;
@@ -134,14 +137,32 @@ export function createOrgan({ parent, at, rot = 0 }) {
     rev.buffer = ir;
     const dry = ctx.createGain(), wet = ctx.createGain(); dry.gain.value = .55; wet.gain.value = .5;
     out.connect(dry); out.connect(rev); rev.connect(wet); dry.connect(ctx.destination); wet.connect(ctx.destination);
+    // the metal registration: the plenum and reeds pushed through a soft clipper, some left clean
+    drive = ctx.createGain();
+    const pre = ctx.createGain(), ws = ctx.createWaveShaper(), tone = ctx.createBiquadFilter(), post = ctx.createGain(), clean = ctx.createGain();
+    const curve = new Float32Array(1024);
+    for (let n = 0; n < curve.length; n++) { const x = n / 511.5 - 1; curve[n] = Math.tanh(2.4 * x) / Math.tanh(2.4); }
+    ws.curve = curve; ws.oversample = '2x';
+    pre.gain.value = 2.6; tone.type = 'lowpass'; tone.frequency.value = 4800; post.gain.value = .34; clean.gain.value = .5;
+    drive.connect(pre); pre.connect(ws); ws.connect(tone); tone.connect(post); post.connect(out); drive.connect(clean); clean.connect(out);
     return ctx;
   }
   const PARTIALS = [[1, 1], [2, .5], [3, .22], [4, .2], [6, .08], [8, .06]];
-  function voice(m, t0, dur, vel, dest = bus) {
+  // the reeds: a trompette (a sawtooth) over the 8' and 4' flues
+  const REEDS = [['sawtooth', 1, .45], ['sine', 1, .6], ['sine', 2, .3]];
+  function voice(m, t0, dur, vel, dest = bus, reed = false) {
     const f = 440 * Math.pow(2, (m - 69) / 12);
     const env = ctx.createGain(); env.gain.setValueAtTime(0, t0);
     env.gain.linearRampToValueAtTime(vel, t0 + .03); env.gain.setValueAtTime(vel, t0 + dur); env.gain.linearRampToValueAtTime(0, t0 + dur + .12);
     env.connect(dest);
+    if (reed) {
+      for (const [type, h, a] of REEDS) {
+        const o = ctx.createOscillator(); o.type = type; o.frequency.value = f * h * (type === 'sawtooth' ? 1.0015 : 1);
+        const gg = ctx.createGain(); gg.gain.value = a; o.connect(gg); gg.connect(env);
+        o.start(t0); o.stop(t0 + dur + .2);
+      }
+      return env;
+    }
     for (const [h, a] of PARTIALS) {
       if (f * h > 9000) continue;
       const o = ctx.createOscillator(); o.frequency.value = f * h * (1 + (h === 2 ? .0012 : 0));
@@ -150,22 +171,31 @@ export function createOrgan({ parent, at, rot = 0 }) {
     }
     return env;
   }
-  // a piece from `offset` seconds in (someone else started it a little earlier); the one playing stops
+  // a piece from `offset` seconds in (someone else started it a little earlier); the one playing stops.
+  // Its notes go to the audio clock a second and a half ahead (the metal pieces have thousands)
   let bus = null;
   function play(song = 0, offset = 0) {
     if (!ensure()) return;
     if (ctx.state === 'suspended') ctx.resume();
     stop();
     const S = SONGS[song % SONGS.length];
-    bus = ctx.createGain(); bus.connect(out);
-    const t0 = ctx.currentTime + .05 - offset;
-    for (const [t, l, ...notes] of S.score) {
-      const start = t0 + t * S.beat;
-      if (start + l * S.beat < ctx.currentTime) continue;
-      const vel = .09 / Math.sqrt(notes.length);
-      for (const m of notes) voice(m, Math.max(ctx.currentTime, start), l * S.beat, vel);
+    bus = ctx.createGain(); bus.connect(S.metal ? drive : out);
+    playing = { song, S, t0: ctx.currentTime + .05 - offset, i: 0, until: performance.now() / 1000 + S.length - offset };
+    feed();
+  }
+  function feed() {
+    if (!playing || !bus || !ctx) return;
+    const P = playing, S = P.S, now = ctx.currentTime;
+    while (P.i < S.score.length) {
+      const e = S.score[P.i], [t, l, ...notes] = e, start = P.t0 + t * S.beat, end = start + l * S.beat;
+      if (start > now + 1.5) break;
+      P.i++;
+      if (end < now) continue;
+      // metal: the tune above the band
+      const vel = .09 / Math.sqrt(notes.length) * (S.metal ? (e.acc ? .8 : 1.25) : 1);
+      const at = Math.max(now, start);
+      for (const m of notes) voice(m, at, end - at, vel, bus, S.metal);
     }
-    playing = { song, until: performance.now() / 1000 + S.length - offset };
   }
   function stop() {
     if (!bus) return;
@@ -175,7 +205,7 @@ export function createOrgan({ parent, at, rot = 0 }) {
   }
   // the rhythm game (orgue.js) borrows the pipes: the same voices and reverb, on its own buses
   let lent = false;
-  function lend(on) { lent = on; if (!on || !ensure()) return null; if (ctx.state === 'suspended') ctx.resume(); return { ctx, out, voice }; }
+  function lend(on) { lent = on; if (!on || !ensure()) return null; if (ctx.state === 'suspended') ctx.resume(); return { ctx, out, drive, voice }; }
   return {
     group: g, play, stop, pipes, lend,
     get playing() { return !!playing; }, get song() { return playing ? playing.song : -1; },
@@ -183,6 +213,7 @@ export function createOrgan({ parent, at, rot = 0 }) {
     update(dt, ear) {
       const on = playing && performance.now() / 1000 < playing.until;
       if (playing && !on) playing = null;
+      feed();
       halo.opacity += ((on ? .12 + Math.random() * .05 : 0) - halo.opacity) * Math.min(1, dt * 4);
       if (!ctx) return;
       const d = ear ? ear.distanceTo(g.position) : 999;

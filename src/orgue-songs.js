@@ -51,12 +51,18 @@ function prelude() {
   return s;
 }
 
-// the setlist: the church's pieces, then the three new ones; `reps` plays a short piece twice
+// the setlist in two sections: the church's pieces and three more, then the cathedral metal
+// (church.js, from orgue-metal.js); `reps` plays a short piece twice
+const pick = (S, section) => ({ name: S.name, score: S.score, beat: S.beat, metal: !!S.metal, section });
+export const SECTIONS = ['l\'église', 'cathédrale métal'];
 export const SETLIST = [
-  ...SONGS.map(S => ({ name: S.name, score: S.score, beat: S.beat })),
-  { name: 'prélude en do · j.-s. bach', score: prelude(), beat: .6 },
-  { name: 'amazing grace · cantique', score: grace(), beat: .52 },
-  { name: 'dans l\'antre du roi de la montagne · grieg', score: mountainKing(), beat: .42 },
+  ...SONGS.filter(S => !S.metal).map(S => pick(S, 0)),
+  ...[
+    { name: 'prélude en do · j.-s. bach', score: prelude(), beat: .6 },
+    { name: 'amazing grace · cantique', score: grace(), beat: .52 },
+    { name: 'dans l\'antre du roi de la montagne · grieg', score: mountainKing(), beat: .42 },
+  ].map(S => pick(S, 0)),
+  ...SONGS.filter(S => S.metal).map(S => pick(S, 1)),
 ].map(S => {
   const beats = S.score.reduce((a, [t, l]) => Math.max(a, t + l), 0);
   return { ...S, beats, reps: beats * S.beat < 26 ? 2 : 1 };
@@ -82,16 +88,22 @@ export function makeChart(song, level) {
   const S = SETLIST[song % SETLIST.length], L = LEVELS[level] || LEVELS.normal, N = L.lanes;
   const span = S.beats + 2;
   const ev = [];
-  for (let r = 0; r < S.reps; r++) for (const [t, l, ...notes] of S.score) ev.push({ t: +((t + r * span) * S.beat).toFixed(4), l: l * S.beat, notes, used: false });
+  for (let r = 0; r < S.reps; r++) for (const e of S.score) { const [t, l, ...notes] = e; ev.push({ t: +((t + r * span) * S.beat).toFixed(4), l: l * S.beat, notes, used: false, acc: !!e.acc }); }
   ev.sort((a, b) => a.t - b.t || Math.max(...b.notes) - Math.max(...a.notes));
   // the onsets, and the top voice at each
   const groups = [];
   for (const e of ev) { const g = groups[groups.length - 1]; if (g && Math.abs(g.t - e.t) < .002) g.ev.push(e); else groups.push({ t: e.t, ev: [e] }); }
-  for (const g of groups) g.lead = g.ev.reduce((a, e) => Math.max(...e.notes) > Math.max(...a.notes) || (Math.max(...e.notes) === Math.max(...a.notes) && e.l > a.l) ? e : a);
+  // (the metal pieces mark their band `acc`: never the tune, an onset with only the band is no note)
+  for (const g of groups) {
+    const cand = g.ev.filter(e => !e.acc);
+    g.lead = cand.length ? cand.reduce((a, e) => Math.max(...e.notes) > Math.max(...a.notes) || (Math.max(...e.notes) === Math.max(...a.notes) && e.l > a.l) ? e : a) : null;
+  }
   // what the level keeps: a note at least `gap` after the last one; a long note just after a short
-  // one (a grace note, a mordent) takes its place
+  // one (a grace note, a mordent) takes its place. In fast passages (sixteenths at 150) that
+  // leaves one note in two at expert, one in six in facile
   const kept = [];
   for (const g of groups) {
+    if (!g.lead) continue;
     const a = kept[kept.length - 1], b = kept[kept.length - 2];
     if (!a || g.t - a.t >= L.gap - 1e-4) kept.push(g);
     else if (g.lead.l > a.lead.l * 1.8 && (!b || g.t - b.t >= L.gap - 1e-4)) kept[kept.length - 1] = g;
@@ -116,10 +128,10 @@ export function makeChart(song, level) {
     prevP = p; prevLane = lane;
     g.lead.used = true;
     gems.push({ t: g.t, lane, len: g.lead.l, notes: g.lead.notes, pitch: p, gold: false, phrase: 0 });
-    // chords: the other voices starting there, in lanes away from the tune
+    // chords: the other voices starting there, in lanes away from the tune (not in a fast run)
     const spare = gems.length > 1 ? g.t - gems[gems.length - 2].t : 9;
     const others = g.ev.filter(e => e !== g.lead).sort((a, b) => top(b) - top(a));
-    for (let k = 0; k < L.chord - 1 && k < others.length && spare >= L.gap * 1.6; k++) {
+    for (let k = 0; k < L.chord - 1 && k < others.length && spare >= Math.max(L.gap * 1.6, .28); k++) {
       const taken = gems.filter(q => q.t === g.t).map(q => q.lane);
       const want = [lane - 2, lane - 3, lane + 2, lane + 3, lane - 1, lane + 1].find(x => x >= 0 && x < N && !taken.includes(x));
       if (want == null) break;
@@ -140,7 +152,7 @@ export function makeChart(song, level) {
   // phrases of eight tune notes; every fourth one, from the second, is gold: all of it fills the grand jeu
   let n = 0;
   for (const q of gems) { if (!q.extra) n++; q.phrase = Math.floor(Math.max(0, n - 1) / 8); q.gold = q.phrase % 4 === 1; }
-  const accomp = ev.filter(e => !e.used).map(e => [e.t, e.l, ...e.notes]);
+  const accomp = ev.filter(e => !e.used).map(e => { const a = [e.t, e.l, ...e.notes]; if (e.acc) a.acc = true; return a; });
   const length = ev.reduce((a, e) => Math.max(a, e.t + e.l), 0);
-  return { gems, accomp, length, beat: S.beat, name: S.name };
+  return { gems, accomp, length, beat: S.beat, name: S.name, metal: S.metal };
 }
