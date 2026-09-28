@@ -189,7 +189,7 @@ export function createInvaders() {
     scr.setRect(rect);
     const me0 = humans.find((h) => h.me) || { id: meId ?? 'me', name: 'toi', color: 0xc8581a, me: true };
     run = { seed, mode: mode.id, vs: mode.id === 'versus', scr, humans, hostId, meId: me0.id, host: hostId === me0.id || !hostId, send: send ?? (() => {}),
-      R: rng(seed ^ 0x51ed), players: new Map(), bots: [], shots: [], vshots: [], ab: [], parts: [], pops: [], pending: new Map(),
+      R: rng(seed ^ 0x51ed), players: new Map(), gone: new Set(), bots: [], shots: [], vshots: [], ab: [], parts: [], pops: [], pending: new Map(),
       phase: 'count', phaseT: 0, clock: 0, acc: 0, sendT: 0, syncT: 0, note: 0, shake: 0, prevFire: false, sky: stars(seed, W, GY, 110), solo: humans.length < 2, final: null };
     const n = run.vs && humans.length < 2 ? 3 : Math.max(1, humans.length);
     humans.forEach((h, k) => run.players.set(h.id, newPlayer(h, k, n)));
@@ -474,7 +474,7 @@ export function createInvaders() {
   // ---------- the network ----------
   function onFx(id, fx) {
     const r = run;
-    if (!r || !fx || id === r.meId) return;
+    if (!r || !fx || id === r.meId || r.gone.has(id)) return;
     let p = r.players.get(id);
     if (!p && fx.t === 's') { p = newPlayer({ id, name: 'invité', color: 0xffffff }, 0, 1); r.players.set(id, p); }
     if (fx.t === 's' && p) {
@@ -515,6 +515,7 @@ export function createInvaders() {
   function peerLeft(id) {
     const r = run;
     if (!r || id === r.meId) return;
+    r.gone.add(id);
     const p = r.players.get(id);
     if (p) r.players.delete(id);
     r.humans = r.humans.filter((h) => h.id !== id);

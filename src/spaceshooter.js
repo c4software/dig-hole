@@ -74,7 +74,7 @@ export function createShooter() {
     scr.setRect(rect);
     const me0 = humans.find((h) => h.me) || { id: meId ?? 'me', name: 'toi', color: 0xc8581a, me: true };
     run = { seed, scr, humans, hostId, meId: me0.id, host: hostId === me0.id || !hostId, send: send ?? (() => {}), solo: humans.length < 2,
-      R: rng(seed ^ 0x5eed), players: new Map(), enemies: new Map(), eb: [], shots: [], caps: new Map(), parts: [], pops: [], rings: [], outBox: [],
+      R: rng(seed ^ 0x5eed), players: new Map(), gone: new Set(), enemies: new Map(), eb: [], shots: [], caps: new Map(), parts: [], pops: [], rings: [], outBox: [],
       level: 0, loop: 0, lvT: 0, phase: 'count', phaseT: 0, clock: 0, acc: 0, sendT: 0, syncT: 0, hpT: 0, shake: 0, flash: 0, capN: 0,
       script: null, si: 0, killed: new Set(), groups: new Map(), sky: stars(seed, W, H, 140), scroll: 0, prevBomb: false, final: null };
     const n = Math.max(1, humans.length);
@@ -552,7 +552,7 @@ export function createShooter() {
   // ---------- the network ----------
   function onFx(id, fx) {
     const r = run;
-    if (!r || !fx || id === r.meId) return;
+    if (!r || !fx || id === r.meId || r.gone.has(id)) return;
     let p = r.players.get(id);
     if (!p && fx.t === 's') { p = newPlayer({ id, name: 'invité', color: 0xffffff }, 0, 1); r.players.set(id, p); }
     if (fx.t === 's' && p) {
@@ -584,6 +584,7 @@ export function createShooter() {
   function peerLeft(id) {
     const r = run;
     if (!r || id === r.meId) return;
+    r.gone.add(id);
     r.players.delete(id);
     r.humans = r.humans.filter((h) => h.id !== id);
     if (id === r.hostId) {
