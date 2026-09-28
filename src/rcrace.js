@@ -10,6 +10,7 @@
 // rarely, the global pulse.
 import * as THREE from 'three';
 import * as V from './vehicles.js';
+import { netTrack, netNow, netStamp } from './netlerp.js';
 
 const LAPS = 3, GRID = 6, SP = .25, CP_M = 20, BATTLE_T = 180, STUNT_T = 360;
 const ROAD_Z = -13.1, G = 15, R = .19;
@@ -1370,9 +1371,13 @@ export function createRC({ scene, camera, audio, ui, world, terrain }) {
     const extra = mode === 'chrono' ? r2(c.bestLap) : mode === 'cascades' ? c.got.size : 0;
     return [r2(c.x), r2(c.y), r2(c.z), r2(c.yaw), r2(c.pitch), r2(c.roll), r2(c.vx), r2(c.vz), Math.round(c.prog), c.done ? 1 : 0, (c.boost > 0 ? 1 : 0) | (c.zapT > 0 ? 2 : 0) | (c.air ? 4 : 0) | (c.loop ? 8 : 0) | (c.sinkT > 0 ? 16 : 0), r2(c.steer), extra, r2(c.time)];
   }
-  function unpack(c, a) {
+  // the others' cars: replayed ~100 ms late from their stamped states; a 3 m jump is a respawn
+  const newTrack = () => netTrack({ angles: [3, 4, 5], cut: (a, b) => Math.hypot(a[0] - b[0], a[2] - b[2]) > 3 });
+  function unpack(c, a, ts, src) {
     if (!a) return;
     const [x, y, z, yaw, pitch, roll, vx, vz, prog, done, fl, steer, extra, time] = a;
+    c.trk ??= newTrack();
+    if (!c.trk.push(ts ?? netNow(), [x, y, z, yaw, pitch, roll, vx, vz], src)) return;   // older than what we have
     c.net = { x, y, z, yaw, pitch, roll, vx, vz, t: 0 }; c.prog = prog; c.best = Math.max(c.best, prog);
     c.boostFx = fl & 1; c.zapFx = fl & 2; c.air = !!(fl & 4); c.loopFx = !!(fl & 8); c.steer = steer || 0; c.seen = clock;
     if (mode === 'chrono') c.bestLap = extra || 0;
@@ -1381,20 +1386,15 @@ export function createRC({ scene, camera, audio, ui, world, terrain }) {
     if (done && !c.done) { c.done = true; c.doneAt = clock; }
   }
   function follow(c, dt) {
-    const n = c.net; if (!n) return;
-    n.t += dt;
-    const k = Math.min(n.t, .25), tx = n.x + n.vx * k, tz = n.z + n.vz * k;
-    if (Math.hypot(tx - c.x, tz - c.z) > 3 || c.loopFx) { c.x = tx; c.z = tz; c.y = n.y; }
-    const a = c.loopFx ? 1 : Math.min(1, dt * 14);
-    c.x += (tx - c.x) * a; c.z += (tz - c.z) * a; c.y += (n.y - c.y) * a;
-    c.yaw += wrap(n.yaw - c.yaw) * a; c.pitch += wrap(n.pitch - c.pitch) * a; c.roll += wrap(n.roll - c.roll) * a;
-    c.vx = n.vx; c.vz = n.vz; c.speed = c.vx * Math.sin(c.yaw) + c.vz * Math.cos(c.yaw);
+    const s = c.trk?.sample(c.smp ??= []); if (!s) return;
+    [c.x, c.y, c.z, c.yaw, c.pitch, c.roll, c.vx, c.vz] = s;
+    c.speed = c.vx * Math.sin(c.yaw) + c.vz * Math.cos(c.yaw);
     if (onCourse()) c.idx = nearest(c.x, c.z, c.idx, 160);
   }
   function onFx(pid, fx) {
     if (state === 'off' || !fx) return;
-    if (fx.t === 's') { const c = byKey(pid); if (c && !mine(c)) unpack(c, fx.c); }
-    else if (fx.t === 'b') { if (!isHost) for (const [k, a] of fx.l) { const c = byKey(k); if (c) unpack(c, a); } }
+    if (fx.t === 's') { const c = byKey(pid); if (c && !mine(c)) unpack(c, fx.c, fx.ts, pid); }
+    else if (fx.t === 'b') { if (!isHost) for (const [k, a] of fx.l) { const c = byKey(k); if (c) unpack(c, a, fx.ts, pid); } }
     else if (fx.t === 'w') spawn(fx);
     else if (fx.t === 'x') { const s = shots.find(q => q.id === fx.id) || hazards.find(q => q.id === fx.id); if (s) kill(s, fx.big); }
     else if (fx.t === 'pk') { const p = act.pickups[fx.i]; if (p) { p.off = 5; p.g.visible = false; } }
@@ -1545,9 +1545,10 @@ export function createRC({ scene, camera, audio, ui, world, terrain }) {
       if (d > .4 || d < 1e-4 || Math.abs(A.y - B.y) > .2) continue;
       const nx = dx / d, nz = dz / d, pen = .4 - d;
       const rel = (B.vx - A.vx) * nx + (B.vz - A.vz) * nz;
-      const both = mine(A) && mine(B);
-      if (mine(A)) { A.x -= nx * pen * (both ? .5 : 1); A.z -= nz * pen * (both ? .5 : 1); if (rel < 0) { A.vx += nx * rel * .6; A.vz += nz * rel * .6; } }
-      if (mine(B)) { B.x += nx * pen * (both ? .5 : 1); B.z += nz * pen * (both ? .5 : 1); if (rel < 0) { B.vx -= nx * rel * .6; B.vz -= nz * rel * .6; } }
+      // against a car someone else drives (a replay a little late): eased apart, never a jolt backwards
+      const both = mine(A) && mine(B), mv = both ? pen * .5 : Math.min(pen, dt * 1.5);
+      if (mine(A)) { A.x -= nx * mv; A.z -= nz * mv; if (rel < 0) { A.vx += nx * rel * .6; A.vz += nz * rel * .6; } }
+      if (mine(B)) { B.x += nx * mv; B.z += nz * mv; if (rel < 0) { B.vx -= nx * rel * .6; B.vz -= nz * rel * .6; } }
       if (rel < -3 && (A === me || B === me)) { audio.bonk(); shake = Math.max(shake, .06); }
       // the bomb changes hands
       if (bomb && bomb.cd <= 0) {
@@ -1695,8 +1696,9 @@ export function createRC({ scene, camera, audio, ui, world, terrain }) {
     sendT -= dt;
     if (sendT <= 0) {
       sendT = .075;
-      if (me) send({ t: 's', c: packCar(me) });
-      if (isHost) { const l = cars.filter(c => c.bot).map(c => [c.key, packCar(c)]); if (l.length) send({ t: 'b', l }); }
+      const ts = netStamp();
+      if (me) send({ t: 's', ts, c: packCar(me) });
+      if (isHost) { const l = cars.filter(c => c.bot).map(c => [c.key, packCar(c)]); if (l.length) send({ t: 'b', ts, l }); }
     }
     if (endT > 0) { endT -= dt; if (endT <= 0) { const r = result; endT = -1; onEnd(r); } }
     cam(dt);
