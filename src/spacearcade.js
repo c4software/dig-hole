@@ -129,7 +129,7 @@ export function createSpaceArcade({ has = () => false, name = (id) => id } = {})
     const wallM = V.mat(look.wall, { roughness: .55, emissive: look.wall, emissiveIntensity: w === 'moon' ? .22 : .08 }), trimM = V.mat(look.trim, { roughness: .6 }), neon = V.lamp(look.neon, 2.2), neon2 = V.lamp(look.neon2, 2.2);
     // the foundation hides the ground's bumps under the floor
     box(HW * 2 + 1.2, 3, HD * 2 + 1.2, V.mat(w === 'mars' ? 0x6a3a2a : 0x8a8a90, { roughness: .95 }), 0, -1.5, 0, group, true);
-    // a tiled floor, faintly self-lit: the moon has next to no ambient light
+    // a tiled floor, unlit: the moon has next to no ambient light
     const tiles = (() => {
       const c = document.createElement('canvas'); c.width = c.height = 128;
       const g = c.getContext('2d');
@@ -138,7 +138,7 @@ export function createSpaceArcade({ has = () => false, name = (id) => id } = {})
       const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(HW, HD);
       return t;
     })();
-    box(HW * 2, .06, HD * 2, V.mat(w === 'moon' ? 0xc8cad4 : 0xc89a82, { roughness: .45, metalness: 0, map: tiles, emissive: w === 'moon' ? 0xc8cad4 : 0xc89a82, emissiveIntensity: w === 'moon' ? .45 : .12, emissiveMap: tiles }), 0, .03, 0, group);
+    box(HW * 2, .06, HD * 2, new THREE.MeshBasicMaterial({ map: tiles, color: w === 'moon' ? 0x8a8c96 : 0x9a7462 }), 0, .03, 0, group);
     // neon lines on the floor, towards the terminals
     for (const x of [-3.6, -1.2, 1.2, 3.6]) box(.06, .02, 6, neon, x, .07, .6, group);
     box(HW * 2, .02, .06, neon2, 0, .07, HD - .4, group);
