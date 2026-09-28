@@ -40,6 +40,8 @@ import { createOrgan, createDiscLauncher, createBats, createReliquary, SONGS } f
 import { createNes } from './nes.js';
 import { createEncre } from './encre.js';
 import { createWorms } from './worms.js';
+import { createWorms3d } from './worms3d.js';
+import { createCrypt, inChurchDig, DIG } from './crypt.js';
 import { initMenus } from './menufx.js';
 import { createGamepad } from './gamepad.js';
 import { createTouch } from './touch.js';
@@ -100,6 +102,8 @@ const terrains = {
   china: createTerrain(scene, { theme: 'china', seed: 4242, ox: CHINA.x, oz: CHINA.z }),
   moon: createTerrain(scene, { theme: 'moon', seed: 777, ox: MOON.x, oy: MOON.y, oz: MOON.z }),
   mars: createTerrain(scene, { theme: 'mars', seed: 1971, ox: MARS.x, oy: MARS.y, oz: MARS.z }),
+  // the ground under the church, with its crypt (see crypt.js)
+  church: createTerrain(scene, { theme: 'church', seed: 1789, ox: DIG.ox, oz: DIG.oz }),
 };
 const finds = { home: createFinds(scene, terrains.home, 'home'), china: createFinds(scene, terrains.china, 'china'), moon: createFinds(scene, terrains.moon, 'moon'), mars: createFinds(scene, terrains.mars, 'mars') };
 finds.home.hollow(); finds.china.hollow();
@@ -113,17 +117,20 @@ if (!MULTI && saved && saved.t) {
   // the planets keep only what was dug (an older, smaller moon is simply forgotten),
   // on the seeds the last super reset gave them
   if (eco.s.planetSeeds) for (const w of ['moon', 'mars']) terrains[w].reseed(eco.s.planetSeeds[w]);
-  for (const [w, k] of [['moon', 'tm'], ['mars', 'tmars']]) if (saved[k]) try { terrains[w].deserialize(saved[k]); } catch (e) { console.warn(w + ' save ignored', e.message); }
+  for (const [w, k] of [['moon', 'tm'], ['mars', 'tmars'], ['church', 'tch']]) if (saved[k]) try { terrains[w].deserialize(saved[k]); } catch (e) { console.warn(w + ' save ignored', e.message); }
 }
 for (const w of ['home', 'china']) for (const key of eco.s.finds[w] || []) finds[w].remove(key);
 terrains.home.setFocus(new THREE.Vector3(...(eco.s.pos && eco.s.where !== 'china' ? eco.s.pos : [0, 0, -8])));
 terrains.china.setFocus(new THREE.Vector3(CHINA.x, 0, CHINA.z - 8));
 for (const w of ['moon', 'mars']) { terrains[w].setFocus(PLANET[w].clone().add(new THREE.Vector3(0, terrains[w].radius + 1, 0))); terrains[w].markAll(); }
 terrains.home.rebuildAll(); terrains.china.rebuildAll();
+terrains.church.setFocus(new THREE.Vector3(DIG.ox, -5, DIG.oz)); terrains.church.markAll();   // built a chunk a frame
 loadBar.style.width = '100%';
 
 let here = eco.s.where === 'china' && eco.s.china ? 'china' : 'home';   // never wake up on the moon: you'd have no air
-const T = () => terrains[here];
+// under the church, the church's own ground
+const W = (p = player.pos) => here === 'home' && inChurchDig(p) ? 'church' : here;
+const T = () => terrains[W()];
 const player = createPlayer(camera, T, world.colliders);
 const shovel = createShovel(camera);
 const drill = createDrill(camera);
@@ -150,6 +157,18 @@ world.colliders.push({ min: new THREE.Vector3(CH.altar.x - .47, 0, CH.altar.z - 
 world.interactables.push({ id: 'dgun', pos: new THREE.Vector3(CH.altar.x, .7, CH.altar.z - .95), reach: 1.8 });
 const launcher = createDiscLauncher({ scene, camera, audio });
 const bats = createBats({ scene: homeRoot, center: CH.tower });
+// under the nave: the tomb that opens, the crypt, what's buried round it
+const crypt = createCrypt({ scene: homeRoot, colliders: world.colliders, interactables: world.interactables, terrain: terrains.church, eco, ui, audio, organ, songs: SONGS, hooks: {
+  unlock: (k) => unlock(k), save: () => save(), hasGame: (g) => !!RACES[g], offerGame: (g) => offerGame(g),
+  goTo(pos, yaw, then) {
+    ui.veil(1); audio.step();
+    setTimeout(() => { player.pos.copy(pos); player.vel.set(0, 0, 0); player.yaw = yaw; player.pitch = 0; player.unstick(); ui.veil(0); then?.(); }, 450);
+  },
+  openVault(D) { applyOp({ k: 'box', w: 'church', i: D.i, j: D.j, kk: D.k, wd: D.w, h: D.h, d: D.d }); terrains.church.flush(); },
+} });
+finds.church = crypt.finds;
+eco.s.finds.church = eco.s.finds.church || [];
+if (eco.s.crypt?.vault) { const D = crypt.door; terrains.church.hollowBox(D.i, D.j, D.k, D.w, D.h, D.d); }
 const DGUN_REGEN = 120;
 // the organ: e plays the next piece, for everyone
 let organSong = SONGS.length - 1;   // so the first press plays the toccata
@@ -330,7 +349,7 @@ function applyOp(op, local = true) {
   else if (op.k === 'unladder') ladders.remove(op.id);
   else if (op.k === 'find') {
     const f = finds[op.w].remove(op.key);
-    if (!local && f && !eco.s.finds[op.w].includes(op.key)) eco.s.finds[op.w].push(op.key);
+    if (!local && f && !(eco.s.finds[op.w] = eco.s.finds[op.w] || []).includes(op.key)) eco.s.finds[op.w].push(op.key);
   }
   if (local && net) net.sendOp(op);
   return out;
@@ -616,6 +635,7 @@ function updateAim() {
     else if (near.id === 'organ') p = `<b>e</b> ${organ.playing ? 'morceau suivant' : 'jouer de l\'orgue'} · ${SONGS[(organSong + 1) % SONGS.length].name}`;
     else if (near.id === 'pgun') p = !cave.gunReady ? 'le socle du pistolet à portails · il en revient un bientôt' : eco.s.portal ? '<b>e</b> le pistolet à portails · tu as déjà le tien' : '<b>e</b> prendre le pistolet à portails';
     else if (near.game) p = `<b>e</b> jouer · ${GAMES[near.game].name}`;
+    else if (crypt.prompt(near) !== undefined) p = crypt.prompt(near);
     else if (near.id === 'lift') p = elevator.holds(player.pos) ? (elevator.y > -1 ? `<b>e</b> descendre à ${liftBottomDepth().toFixed(0)} m` : '<b>e</b> remonter') : '<b>e</b> appeler l\'ascenseur';
     ui.prompt(p);
     return;
@@ -626,7 +646,7 @@ function updateAim() {
   if (heartInReach()) { ui.cross('dig'); ui.prompt(eco.s.portal ? '<b>clic</b> traverser' : '<b>clic</b> ?'); return; }
   if (coreInReach()) { ui.cross('dig'); ui.prompt('<b>clic</b> toucher le noyau'); return; }
   const aim = T().raycast(eye, dir, REACH, true);
-  const fh = finds[here].hitTest(eye, dir, REACH);
+  const fh = finds[W()].hitTest(eye, dir, REACH);
   if (fh && (!aim || fh.t < aim.t)) { ui.cross('dig'); return; }
   if (!aim || !aim.inside) { ui.cross(''); return; }
   ui.cross(T().hardness(aim.i, aim.j, aim.k) > activeTool().tier ? 'hard' : 'dig');
@@ -697,14 +717,15 @@ function collectFind(f) {
     hintOnce('shell', 'les obus enfouis explosent quelques secondes après un coup de pelle', 5000);
     return;
   }
-  applyOp({ k: 'find', w: here, key: f.key });
-  (eco.s.finds[here] = eco.s.finds[here] || []).push(f.key);
+  applyOp({ k: 'find', w: f.world, key: f.key });
+  (eco.s.finds[f.world] = eco.s.finds[f.world] || []).push(f.key);
+  def.onFind?.(f);
   if (def.kind === 'part') { gainPart(f.id); ui.hint(quip, 5000); return; }
   debris.burst(f.center, new THREE.Vector3(0, 1, 0), 0xd9c8a0, 18, 1.2);
   unlock('find');
   if (f.id === 'dino') unlock('dino');
   if (def.kind === 'coins') {
-    const v = f.id === 'chest' ? 300 + Math.floor(Math.random() * 900 + Math.max(0, -player.pos.y) * 8) : 200;
+    const v = f.id === 'chest' ? 300 + Math.floor(Math.random() * 900 + Math.max(0, -player.pos.y) * 8) : def.coins ?? 200;
     eco.earn(v);
     ui.plus('+' + ui.fmt(v)); ui.wash(); ui.setCoins(eco.s.money, true);
     audio.sell();
@@ -737,7 +758,7 @@ function doDig() {
     return;
   }
   const mh = moles.hitTest(eye, dir, REACH);
-  const fh = finds[here].hitTest(eye, dir, REACH);
+  const fh = finds[W()].hitTest(eye, dir, REACH);
   const ht = hit ? hit.t : Infinity;
   if (mh && mh.t < ht && (!fh || mh.t < fh.t)) {
     const tool = activeTool();
@@ -779,7 +800,7 @@ function doDig() {
     center.x = player.pos.x; center.z = player.pos.z;
   }
   const r = tool.r * (eco.s.perks.sharp ? 1.15 : 1) * (eco.s.perks.titan && tool.kind === 'shovel' ? 1.2 : 1);
-  const out = applyOp({ k: 'carve', w: here, c: center.toArray().map(v => +v.toFixed(3)), r, tier: tool.tier, space: eco.space, destroy: false });
+  const out = applyOp({ k: 'carve', w: W(), c: center.toArray().map(v => +v.toFixed(3)), r, tier: tool.tier, space: eco.space, destroy: false });
   if (here === 'home') mg.onDig(center);
   if (here === 'home' && quest.hits(center, r)) takeKey();
   terrain.flush();
@@ -915,11 +936,11 @@ function explode(kind, pos) {
   if (kind === 'fus') {
     // the drill: a straight shaft, 14 m down
     for (let n = 0; n < 18; n++) {
-      const out = applyOp({ k: 'carve', w: here, c: [+pos.x.toFixed(3), +(pos.y - n * .8).toFixed(3), +pos.z.toFixed(3)], r: .85, tier, space: eco.space, destroy: false });
+      const out = applyOp({ k: 'carve', w: W(pos), c: [+pos.x.toFixed(3), +(pos.y - n * .8).toFixed(3), +pos.z.toFixed(3)], r: .85, tier, space: eco.space, destroy: false });
       ores.push(...out.ores);
     }
   } else {
-    const out = applyOp({ k: 'carve', w: here, c: pos.toArray().map(v => +v.toFixed(3)), r: b.r, tier, space: take ? eco.space : 0, destroy: !take });
+    const out = applyOp({ k: 'carve', w: W(pos), c: pos.toArray().map(v => +v.toFixed(3)), r: b.r, tier, space: take ? eco.space : 0, destroy: !take });
     ores = out.ores;
   }
   T().flush();
@@ -1376,6 +1397,8 @@ const RACES = {
   nes: { mod: createNes({ audio, ui }), screen: true, help: 'flèches / zqsd · espace pour sauter · shift pour courir', prizes: [1800, 900, 450, 200] },
   worms: { mod: createWorms({ audio, ui }), screen: true, help: 'au tour par tour · chaque taupe a son tour', prizes: [1500, 700, 350, 150] },
   encre: { mod: createEncre({ audio, ui }), screen: true, help: 'zqsd · espace pour sauter · clic ou j pour tirer · shift pour nager', prizes: [1600, 600], value: (r) => r.pct },
+  // the crypt's secret: an island far off, reached from the table under the nave
+  worms3d: { mod: createWorms3d({ scene, camera, ui }), help: 'zqsd : ramper · espace : sauter · souris : viser · clic maintenu : tirer · 1…0, molette : armes', prizes: [2500, 1000, 500, 200] },
 };
 let race = null;
 const raceReturn = { pos: new THREE.Vector3(), yaw: 0 };
@@ -1432,6 +1455,7 @@ function quitRace(result, silent = false) {
   const text = result.text ?? `${result.place === 1 ? '1re' : result.place + 'e'} place sur ${result.of} en ${mg.fmt(result.time)}`;
   reward(r.prizes[Math.min(result.place, r.prizes.length) - 1], text + (best ? ' · nouveau record !' : ''));
   if (result.place === 1 && r.id === 'kart') unlock('kart');
+  if (result.place === 1 && r.id === 'worms3d') unlock('lombrics');
   save();
 }
 for (const r of Object.values(RACES)) r.mod.onEnd = (res) => quitRace(res);
@@ -1582,7 +1606,7 @@ function renderGameMenu(fresh = false) {
   $g('gm-title').textContent = GAMES[g].name;
   document.querySelector('.gm-head').classList.toggle('long', GAMES[g].name.length > 14);
   $g('gm-kicker').textContent = multi ? (gm.host ? 'ta partie · en ligne' : `${net.peers.get(lobby.host)?.name ?? '?'} propose`)
-    : SCREEN_GAMES.has(g) ? 'sur un écran de la salle de jeux' : g === 'kart' ? 'autour du village' : g === 'jetski' ? 'dans la fontaine de la place' : CAVE_GAMES.has(g) ? 'dans la cave secrète' : RACES[g] ? 'dans les rues de la ville' : 'dans le jardin';
+    : SCREEN_GAMES.has(g) ? 'sur un écran de la salle de jeux' : g === 'kart' ? 'autour du village' : g === 'jetski' ? 'dans la fontaine de la place' : CAVE_GAMES.has(g) ? 'dans la cave secrète' : g === 'worms3d' ? 'dans la crypte, sous la nef' : RACES[g] ? 'dans les rues de la ville' : 'dans le jardin';
   const box = $g('gm-modes');
   if (fresh) {
     box.innerHTML = mods.map((m, i) => `<button type="button" class="btn btn--menu m-opt in" style="--i:${i + 2};--tilt:${i % 2 ? .5 : -.5}deg" data-mode="${m.id}" data-desc="${escH(m.sub)}"${gm.host ? '' : ' disabled'}>` +
@@ -2005,6 +2029,7 @@ async function startReveal() {
 
 // ---------- stations ----------
 function interact(it) {
+  if (crypt.interact(it)) return;
   switch (it.id) {
     case 'sell': {
       if (!eco.s.sackN) { audio.deny(); ui.toast('rien à vendre', true); return; }
@@ -2401,7 +2426,7 @@ function renderPanel(quip) {
     ui.panel({ title: 'l\'établi', quip, rows, note: 'les recettes prennent les minerais dans ton sac', close: 'ranger les outils' });
   } else if (k === 'arcade') {
     const rec = eco.s.records || {};
-    const rows = Object.entries(GAMES).map(([id, g]) => {
+    const rows = Object.entries(GAMES).filter(([, g]) => !g.secret).map(([id, g]) => {
       const r = rec[id];
       const best = r == null ? 'pas encore de record' : `record : ${fmtRecord(g.unit, r)}`;
       return { id: 'game:' + id, kind: 'jouer', name: g.name, sub: `${g.sub} · ${best}`, done: r != null };
@@ -2601,7 +2626,7 @@ function save() {
   eco.s.where = here;
   eco.s.delivery = delivery.state;
   eco.s.ladders = ladders.save();
-  eco.save(MULTI ? {} : { t: terrains.home.serialize(), tc: terrains.china.serialize(), tm: terrains.moon.serialize(), tmars: terrains.mars.serialize() });
+  eco.save(MULTI ? {} : { t: terrains.home.serialize(), tc: terrains.china.serialize(), tm: terrains.moon.serialize(), tmars: terrains.mars.serialize(), tch: terrains.church.serialize() });
 }
 let saveT = 0;
 addEventListener('beforeunload', () => { if (state !== 'attract') save(); });
@@ -2915,18 +2940,18 @@ function loop(ts) {
 
       // depth: below the ground (or, on the moon, below its surface)
       const d = onPlanet() ? Math.max(0, T().radius - moonP.pos.distanceTo(PLANET[here])) : Math.max(0, -player.pos.y);
-      const bestKey = here === 'china' ? 'bestChina' : here === 'moon' ? 'bestMoon' : here === 'mars' ? 'bestMars' : 'best';
+      const bestKey = W() === 'church' ? 'bestChurch' : here === 'china' ? 'bestChina' : here === 'moon' ? 'bestMoon' : here === 'mars' ? 'bestMars' : 'best';
       eco.s[bestKey] = eco.s[bestKey] || 0;
       if (d > eco.s[bestKey]) {
         if (Math.floor(d / 5) > Math.floor(eco.s[bestKey] / 5)) ui.popBest();
         eco.s[bestKey] = d;
-        if (here === 'home') { if (d >= 10) unlock('d10'); if (d >= 50) unlock('d50'); }
+        if (here === 'home' && bestKey === 'best') { if (d >= 10) unlock('d10'); if (d >= 50) unlock('d50'); }
       }
       if (d > 0.6 && !onPlanet()) {
         const tr = T();
         const li = tr.LAYERS.indexOf(tr.layerAt(d)) + 1;
-        const seenKey = here === 'china' ? 'layerSeenChina' : 'layerSeen';
-        if (li > eco.s[seenKey]) { eco.s[seenKey] = li; const l = tr.LAYERS[li - 1]; ui.layer(l.name, l.sub); }
+        const seenKey = W() === 'church' ? 'layerSeenChurch' : here === 'china' ? 'layerSeenChina' : 'layerSeen';
+        if (li > (eco.s[seenKey] || 0)) { eco.s[seenKey] = li; const l = tr.LAYERS[li - 1]; ui.layer(l.name, l.sub); }
       }
       if (d > 1.7 && !onPlanet()) hintOnce('climb', 'pour remonter : taille des marches (40 cm passent sans sauter), ou r pour la surface', 6000);
       if (eco.s.battery / eco.batteryMax < 0.15) hintOnce('lowbat', 'batterie faible · immobile, elle remonte ; la borne de la maison la remplit d\'un coup', 5000);
@@ -2939,7 +2964,7 @@ function loop(ts) {
         let txt = null;
         if (eco.s.perks.detector) {
           let bd = 10;
-          for (const f of finds[here].list) if (!f.gone) { const fd = f.center.distanceTo(player.pos); if (fd < bd) bd = fd; }
+          for (const f of finds[W()].list) if (!f.gone) { const fd = f.center.distanceTo(player.pos); if (fd < bd) bd = fd; }
           if (bd < 10) { txt = `bip · ${bd.toFixed(1)} m`; if (bd < 4) audio.tick(); }
         }
         ui.setDetector(txt);
@@ -2967,8 +2992,9 @@ function loop(ts) {
   if (portals.update(dt, state === 'play' ? (onPlanet() ? planetBody : player) : null, Math.hypot(player.vel.x, player.vel.z) > 0.5) && !onPlanet()) player.unstick();
   const inCave = here === 'home' && cave.inside(player.pos);
   player.stats.away = inCave;
-  world.setIndoor(inCave);
+  world.setIndoor(inCave || (here === 'home' && crypt.inside(player.pos)));
   cave.update(dt, inCave, here === 'home' ? player.pos : null);
+  crypt.update(dt, here === 'home' ? player : null);
   launcher.held = eco.s.tool === 'disc' && eco.s.discs && holding && !mg.armed;
   launcher.update(dt, Math.hypot(player.vel.x, player.vel.z) > 0.5, solidAt, discHit);
   reliquary.update(dt); organ.update(dt, camera.position);
@@ -3019,7 +3045,7 @@ function loop(ts) {
   const w = state === 'attract' ? 'home' : here;
   const inChina = w === 'china', atHome = w === 'home', onMoon = w === 'moon';
   world.china.group.visible = inChina; terrains.china.group.visible = inChina; pads.china.group.visible = inChina;
-  house.group.visible = atHome; terrains.home.group.visible = atHome; pads.home.group.visible = atHome;
+  house.group.visible = atHome; terrains.home.group.visible = atHome; terrains.church.group.visible = atHome; pads.home.group.visible = atHome;
   world.homeDecor.visible = atHome;
   finds.home.group.visible = atHome; finds.china.group.visible = inChina;
   animals.home.group.visible = atHome; animals.china.group.visible = inChina;
@@ -3115,7 +3141,7 @@ window.__dig = {
   test: false,
   skipSwoop() { swoop = 1; this.test = true; },
   start, toSurface, travel, win, save, useItem, applyUpgrades, openPanel, closePanel, enterVan, exitVan, useLift, explode,
-  quest, takeKey, reveal, startReveal, cave, portals, shootPortal, trapGuide, launcher, bats, organ, portalCells, gameroom: house.room, updateAim, get pad() { return pad; }, get touch() { return touch; }, get down() { return down; }, screenView: (dt) => race?.screen && screenView(dt),
+  quest, takeKey, reveal, startReveal, cave, crypt, portals, shootPortal, trapGuide, launcher, bats, organ, portalCells, gameroom: house.room, updateAim, get pad() { return pad; }, get touch() { return touch; }, get down() { return down; }, screenView: (dt) => race?.screen && screenView(dt),
   interact: (id) => interact(id === 'van' ? VAN : id === 'lift' ? LIFT : world.interactables.find(i => i.id === id)),
   swing: doDig,
 };
