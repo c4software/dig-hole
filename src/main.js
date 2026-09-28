@@ -50,6 +50,9 @@ import { createWorms3d } from './worms3d.js';
 import { createCrypt, inChurchDig, DIG } from './crypt.js';
 import { createComic } from './comic.js';
 import { createPvz } from './pvz.js';
+import { createMarioPortal } from './marioportal.js';
+import { createMarioCabinet } from './marioportal-cab.js';
+import { createPainkiller } from './painkiller.js';
 import { initMenus } from './menufx.js';
 import { createGamepad } from './gamepad.js';
 import { createTouch } from './touch.js';
@@ -153,6 +156,7 @@ const audio = createAudio();
 const house = world.house;
 // the secret cave behind the shed, and the portal gun waiting in it
 const cave = createCave({ scene: homeRoot, colliders: world.colliders, interactables: world.interactables });
+createMarioCabinet({ scene: homeRoot, colliders: world.colliders, interactables: world.interactables });
 const portals = createPortals({ scene, camera, renderer: world.renderer, audio });
 // the portal gun is a tool like the shovel and the drill: eco.s.tool === 'portal'
 const gunOut = () => eco.s.tool === 'portal' && eco.s.portal;
@@ -1443,6 +1447,8 @@ const RACES = {
   empile: { mod: createEmpile({ scene: homeRoot, camera, audio, ui, at: slotAt('empile') }), help: 'q d : déplacer · z : tourner · s : descendre · espace : lâcher · 2, 3 ou 4 lignes d\'un coup envoient des gravats', prizes: [1500, 700, 350, 150] },
   bagarre: { mod: createBagarre({ scene: homeRoot, camera, audio, ui, at: slotAt('bagarre') }), help: '3 vies · j : attaque (+ direction) · k : spécial · z + k : remontée · shift : bouclier · éjecte-les hors de l\'arène', prizes: [1500, 700, 350, 150] },
   batballons: { mod: createBatballons({ scene: homeRoot, camera, audio, ui, at: slotAt('batballons') }), help: 'zqsd · shift : saut et dérapage · espace : objet (s + espace : vers l\'arrière) · r : retour au fort', prizes: [1500, 700, 350, 150] },
+  // under the church: the cursed nave, in first person
+  painkiller: { mod: createPainkiller({ scene: homeRoot, camera, audio, ui }), where: 'dans la crypte sous l\'église', help: 'zqsd · espace (garde-le : bunny hop) · clic : tir · clic droit : secondaire · 1 2 3 : armes', prizes: [2500, 1200, 600, 300] },
   // the 2D games draw on their own canvas over the world: no mouse to hold
   nes: { mod: createNes({ audio, ui }), screen: true, help: 'flèches / zqsd · espace pour sauter · shift pour courir', prizes: [1800, 900, 450, 200] },
   worms: { mod: createWorms({ audio, ui }), screen: true, help: 'au tour par tour · chaque taupe a son tour', prizes: [1500, 700, 350, 150] },
@@ -1462,6 +1468,7 @@ const RACES = {
   // the moon arcade
   comic: { mod: createComic({ audio, ui }), screen: true, help: 'flèches / zqsd · espace pour sauter · j pour tirer · e pour les portes · k pour la baguette', prizes: [2000, 900, 450, 200] },
   pvz: { mod: createPvz({ audio, ui }), screen: true, help: 'souris : ramasser les étoiles, choisir une carte, planter · 1 à 9 : cartes · clic droit : annuler', prizes: [1800, 800, 400, 150] },
+  marioportal: { mod: createMarioPortal({ audio, ui }), screen: true, where: 'sur la borne de la cave secrète', help: 'q d · espace pour sauter · shift pour courir · souris et clics pour les portails', prizes: [2000, 1000, 500, 200] },
 };
 let race = null;
 const raceReturn = { pos: new THREE.Vector3(), yaw: 0 };
@@ -1620,7 +1627,7 @@ function raceHud() {
 // Picking a game at the arcade offers it to everyone, wherever they are. Players press « prêt »;
 // from two ready, a 10 s countdown (time to take the teleporter home); at zero the host sends the
 // list of the ready ones and they all start together, on the same seed.
-const SCREEN_GAMES = new Set(['nes', 'encre', 'worms', 'potato', 'survie', 'tycoon', 'invaders', 'shooter', 'comic', 'pvz']);   // played on a screen: from anywhere
+const SCREEN_GAMES = new Set(['nes', 'encre', 'worms', 'potato', 'survie', 'tycoon', 'invaders', 'shooter', 'comic', 'pvz', 'marioportal']);   // played on a screen: from anywhere
 const CAVE_GAMES = new Set(['bomber', 'canards', 'empile', 'ballons', 'moto', 'bagarre', 'batballons']);   // dioramas in the secret cave
 // the races (their own scenery) can be joined from a planet too; the garden's games only from the garden
 const playableHere = (g) => here === 'home' || SCREEN_GAMES.has(g) || !!RACES[g]?.screen || (onPlanet() && !!RACES[g]);
@@ -1663,6 +1670,7 @@ const GAME_KEYS = {
   orgue: [['d f j k', 'jouer les notes'], ['shift', 'grand jeu']],
   comic: [['← →', 'marcher'], ['espace', 'sauter (garder : plus haut)'], ['j', 'tirer (il faut du cola)'], ['e', 'ouvrir une porte'], ['k', 'baguette : se téléporter'], ['r', 'revenir au dernier sol sûr']],
   pvz: [['clic', 'étoiles, cartes, planter'], ['1 … 9', 'choisir une carte'], ['0', 'la pelle'], ['clic droit', 'annuler'], ['flèches espace', 'planter au clavier']],
+  painkiller: [['z q s d', 'courir'], ['espace', 'sauter · bunny hop'], ['clic', 'tir'], ['clic droit', 'secondaire'], ['1 2 3', 'armes']],
 };
 const DEFAULT_KEYS = [['z q s d', 'marcher'], ['clic', 'creuser'], ['espace', 'sauter'], ['r', 'remonter']];
 const gmEl = document.getElementById('gamemenu'), $g = (id) => document.getElementById(id);
@@ -1721,7 +1729,7 @@ function renderGameMenu(fresh = false) {
   $g('gm-title').textContent = GAMES[g].name;
   document.querySelector('.gm-head').classList.toggle('long', GAMES[g].name.length > 14);
   $g('gm-kicker').textContent = multi ? (gm.host ? 'ta partie · en ligne' : `${net.peers.get(lobby.host)?.name ?? '?'} propose`)
-    : spaceWorld(g) ? (spaceWorld(g) === 'moon' ? 'sur la lune' : 'sur mars') : SCREEN_GAMES.has(g) ? 'sur un écran de la salle de jeux' : g === 'kart' ? 'autour du village' : g === 'jetski' ? 'dans la fontaine de la place' : g === 'orgue' ? 'à l\'orgue de l\'église' : CAVE_GAMES.has(g) ? 'dans la cave secrète' : g === 'worms3d' ? 'dans la crypte, sous la nef' : RACES[g] ? 'dans les rues de la ville' : 'dans le jardin';
+    : RACES[g]?.where || (spaceWorld(g) ? (spaceWorld(g) === 'moon' ? 'sur la lune' : 'sur mars') : SCREEN_GAMES.has(g) ? 'sur un écran de la salle de jeux' : g === 'kart' ? 'autour du village' : g === 'jetski' ? 'dans la fontaine de la place' : g === 'orgue' ? 'à l\'orgue de l\'église' : CAVE_GAMES.has(g) ? 'dans la cave secrète' : g === 'worms3d' ? 'dans la crypte, sous la nef' : RACES[g] ? 'dans les rues de la ville' : 'dans le jardin');
   const box = $g('gm-modes');
   if (fresh) {
     box.innerHTML = mods.map((m, i) => `<button type="button" class="btn btn--menu m-opt in" style="--i:${i + 2};--tilt:${i % 2 ? .5 : -.5}deg" data-mode="${m.id}" data-desc="${escH(m.sub)}"${gm.host ? '' : ' disabled'}>` +
