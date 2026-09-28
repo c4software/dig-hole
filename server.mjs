@@ -70,7 +70,8 @@ const server = http.createServer((req, res) => {
   if (p.endsWith('/')) p += 'index.html';
   const file = path.join(ROOT, path.normalize(p));
   // never the server's own data (the admin token, the rooms), even when serving the repo itself
-  if (!file.startsWith(ROOT) || file === PRIVATE || file.startsWith(PRIVATE + path.sep)) { res.writeHead(403).end(); return; }
+  const hidden = (d) => file === d || file.startsWith(d + path.sep);
+  if (!file.startsWith(ROOT) || hidden(PRIVATE) || hidden(path.join(ROOT, 'data'))) { res.writeHead(403).end(); return; }
   fs.readFile(file, (err, buf) => {
     if (err) { res.writeHead(404).end('not found'); return; }
     res.writeHead(200, { 'Content-Type': TYPES[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-store' });
