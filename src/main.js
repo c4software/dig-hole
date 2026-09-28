@@ -48,7 +48,7 @@ import { createInvaders } from './invaders.js';
 import { createShooter } from './spaceshooter.js';
 import { createOrgue } from './orgue.js';
 import { createWorms3d } from './worms3d.js';
-import { createCrypt, inChurchDig, DIG } from './crypt.js';
+import { createCrypt, inChurchDig, DIG, cutDig } from './crypt.js';
 import { createComic } from './comic.js';
 import { createPvz } from './pvz.js';
 import { createMarioPortal } from './marioportal.js';
@@ -172,15 +172,9 @@ function partsElsewhere() {
 }
 // the church: its organ for everyone, the launcher in the reliquary, the bats round the belfry
 const CH = world.church;
-// the nave's flagstones give way over the diggable ground: its own top is the floor there,
-// so a hole dug in it shows (the ground's first layer looks like the flagstones)
-CH.flagstones.onBeforeCompile = (sh) => {
-  sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vDigW;')
-    .replace('#include <project_vertex>', '#include <project_vertex>\nvDigW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
-  sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vDigW;')
-    .replace('void main() {', `void main() {\n  if (vDigW.x > ${DIG.x0.toFixed(2)} && vDigW.x < ${DIG.x1.toFixed(2)} && vDigW.z > ${DIG.z0.toFixed(2)} && vDigW.z < ${DIG.z1.toFixed(2)} && vDigW.y < .5) discard;`);
-};
-CH.flagstones.customProgramCacheKey = () => 'church-dig-floor';
+// over the church's diggable ground, its own top is the floor: the flagstones and the shade decals give way
+cutDig(CH.flagstones);
+scene.traverse(o => { if (o.isMesh && o.userData.keep && o.material.isMeshBasicMaterial && o.material.transparent && o.material.color.getHex() === 0x1e1a30) cutDig(o.material); });
 const organ = createOrgan({ parent: homeRoot, at: CH.organ, rot: -Math.PI / 2 });
 world.colliders.push({ min: new THREE.Vector3(CH.organ.x, 0, CH.organ.z - 1.75), max: new THREE.Vector3(CH.organ.x + .9, 5.6, CH.organ.z + 1.75) });
 world.colliders.push({ min: new THREE.Vector3(CH.organ.x - 1, 0, CH.organ.z - .95), max: new THREE.Vector3(CH.organ.x, 1, CH.organ.z + .95) });

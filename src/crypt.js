@@ -13,6 +13,18 @@ import { islandModel } from './worms3d-land.js';
 
 // the church's ground: 16 m square under the nave, 16 m deep
 export const DIG = { x0: 53, x1: 69, z0: 19, z1: 35, ox: 61, oz: 27 };
+// a material drawn over the church's diggable ground gives way there (the nave's flagstones,
+// the shade decals): the ground's own top is the floor, and a hole dug in it shows
+export function cutDig(mat) {
+  mat.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vDigW;')
+      .replace('#include <project_vertex>', '#include <project_vertex>\nvDigW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vDigW;')
+      .replace('void main() {', `void main() {\n  if (vDigW.x > ${DIG.x0.toFixed(2)} && vDigW.x < ${DIG.x1.toFixed(2)} && vDigW.z > ${DIG.z0.toFixed(2)} && vDigW.z < ${DIG.z1.toFixed(2)} && vDigW.y < .5) discard;`);
+  };
+  mat.customProgramCacheKey = () => 'church-dig-cut';
+  mat.needsUpdate = true;
+}
 export const inChurchDig = (p) => p.x > DIG.x0 && p.x < DIG.x1 && p.z > DIG.z0 && p.z < DIG.z1 && p.y < 3;
 const FOUND = 116, CEMETERY = 117, FILL = 118, TUFA = 119, ROCK = 120, MASON = 121, RUBBLE = 122;
 const BONES = 70, COINS = 71, ROSARY = 72, GLASS = 73;

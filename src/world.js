@@ -13,6 +13,7 @@ import { mergeStatic } from './merge.js';
 import { createNeighbours, SPOTS as NEIGHBOURS } from './neighbours.js';
 import { createBlossoms, createLamps } from './street.js';
 import { createEurope } from './europe.js';
+import { DIG } from './crypt.js';
 
 const HALF = NX * S / 2;   // 8 m, half the plot
 
@@ -178,6 +179,10 @@ export function createWorld(container) {
   const hole = new THREE.Path();
   hole.moveTo(-HALF, -HALF); hole.lineTo(-HALF, HALF); hole.lineTo(HALF, HALF); hole.lineTo(HALF, -HALF);
   lawnShape.holes.push(hole);
+  // and one under the church, over its diggable ground (shape y is world -z)
+  const hc = new THREE.Path();
+  hc.moveTo(DIG.x0, -DIG.z1); hc.lineTo(DIG.x0, -DIG.z0); hc.lineTo(DIG.x1, -DIG.z0); hc.lineTo(DIG.x1, -DIG.z1);
+  lawnShape.holes.push(hc);
   const lawnGeo = new THREE.ShapeGeometry(lawnShape);
   lawnGeo.rotateX(-Math.PI / 2);
   // flip Y of shape coords: after rotateX(-90), shape y becomes -z; the hole is symmetric so it doesn't matter
