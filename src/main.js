@@ -48,6 +48,8 @@ import { createShooter } from './spaceshooter.js';
 import { createOrgue } from './orgue.js';
 import { createWorms3d } from './worms3d.js';
 import { createCrypt, inChurchDig, DIG } from './crypt.js';
+import { createComic } from './comic.js';
+import { createPvz } from './pvz.js';
 import { initMenus } from './menufx.js';
 import { createGamepad } from './gamepad.js';
 import { createTouch } from './touch.js';
@@ -1457,6 +1459,9 @@ const RACES = {
   orgue: { mod: createOrgue({ scene: homeRoot, camera, audio, ui, organ, church: CH }), help: 'les notes au passage de la ligne · maintenir les longues · shift : grand jeu', prizes: [1500, 700, 350, 150] },
   // the crypt's secret: an island far off, reached from the table under the nave
   worms3d: { mod: createWorms3d({ scene, camera, ui }), help: 'zqsd : ramper · espace : sauter · souris : viser · clic maintenu : tirer · 1…0, molette : armes', prizes: [2500, 1000, 500, 200] },
+  // the moon arcade
+  comic: { mod: createComic({ audio, ui }), screen: true, help: 'flèches / zqsd · espace pour sauter · j pour tirer · e pour les portes · k pour la baguette', prizes: [2000, 900, 450, 200] },
+  pvz: { mod: createPvz({ audio, ui }), screen: true, help: 'souris : ramasser les étoiles, choisir une carte, planter · 1 à 9 : cartes · clic droit : annuler', prizes: [1800, 800, 400, 150] },
 };
 let race = null;
 const raceReturn = { pos: new THREE.Vector3(), yaw: 0 };
@@ -1615,7 +1620,7 @@ function raceHud() {
 // Picking a game at the arcade offers it to everyone, wherever they are. Players press « prêt »;
 // from two ready, a 10 s countdown (time to take the teleporter home); at zero the host sends the
 // list of the ready ones and they all start together, on the same seed.
-const SCREEN_GAMES = new Set(['nes', 'encre', 'worms', 'potato', 'survie', 'tycoon', 'invaders', 'shooter']);   // played on a screen: from anywhere
+const SCREEN_GAMES = new Set(['nes', 'encre', 'worms', 'potato', 'survie', 'tycoon', 'invaders', 'shooter', 'comic', 'pvz']);   // played on a screen: from anywhere
 const CAVE_GAMES = new Set(['bomber', 'canards', 'empile', 'ballons', 'moto', 'bagarre', 'batballons']);   // dioramas in the secret cave
 // the races (their own scenery) can be joined from a planet too; the garden's games only from the garden
 const playableHere = (g) => here === 'home' || SCREEN_GAMES.has(g) || !!RACES[g]?.screen || (onPlanet() && !!RACES[g]);
@@ -1656,6 +1661,8 @@ const GAME_KEYS = {
   pile: [['clic', 'creuser'], ['e', 'valider la profondeur']],
   tresor: [['clic', 'creuser'], ['thermo', 'chaud / froid']],
   orgue: [['d f j k', 'jouer les notes'], ['shift', 'grand jeu']],
+  comic: [['← →', 'marcher'], ['espace', 'sauter (garder : plus haut)'], ['j', 'tirer (il faut du cola)'], ['e', 'ouvrir une porte'], ['k', 'baguette : se téléporter'], ['r', 'revenir au dernier sol sûr']],
+  pvz: [['clic', 'étoiles, cartes, planter'], ['1 … 9', 'choisir une carte'], ['0', 'la pelle'], ['clic droit', 'annuler'], ['flèches espace', 'planter au clavier']],
 };
 const DEFAULT_KEYS = [['z q s d', 'marcher'], ['clic', 'creuser'], ['espace', 'sauter'], ['r', 'remonter']];
 const gmEl = document.getElementById('gamemenu'), $g = (id) => document.getElementById(id);

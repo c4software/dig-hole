@@ -38,6 +38,8 @@ export const GAMES = {
   tycoon:  { name: 'colonie martienne',  sub: 'une base sur mars qui produit même quand tu n\'es pas là · crédits → pièces · à plusieurs sur la colonie de l\'hôte', unit: 'coins' },
   invaders: { name: 'envahisseurs lunaires', sub: 'la vague descend sur la lune · boucliers, soucoupe mystère · ensemble ou chacun pour soi', unit: 'score' },
   shooter: { name: 'comète furieuse',    sub: 'shoot\'em up spatial : niveaux, boss, capsules d\'armes, combos · à plusieurs', unit: 'score' },
+  comic:   { name: 'capitaine lune',     sub: 'plateforme rétro sur la lune : cola, bottes, clé, baguette… rapporte les trois trésors · à plusieurs', unit: 'score' },
+  pvz:     { name: 'potager lunaire',    sub: 'défends la base : plantes lunaires contre zombies de l\'espace · à plusieurs, ou en face à face', unit: 'score' },
   peinture: { name: 'peinture',           sub: '90 secondes pour couvrir le trou de ta couleur, contre les drones-peintres · clic pour tirer', unit: 'pct' },
   laser:   { name: 'laser game',         sub: '2 minutes de laser dans le jardin · touché = retour à la maison', unit: 'frags' },
   // under the church, not at the arcade
