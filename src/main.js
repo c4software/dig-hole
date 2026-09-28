@@ -28,6 +28,7 @@ import { createKart } from './kart.js';
 import { createRC } from './rcrace.js';
 import { createJetski } from './jetski.js';
 import { createCave, createTrapGuide, GUN_REGEN, slotAt } from './cave.js';
+import { createPartCompass } from './compass.js';
 import { createBatballons } from './batballons.js';
 import { createCanards } from './canards.js';
 import { createBagarre } from './bagarre.js';
@@ -87,6 +88,7 @@ const RECIPES = [
   { id: 'helmet', name: 'casque de mineur', need: { 21: 5, 23: 2 }, perk: 'helmet', sub: 'morsures et explosions : moitié moins' },
   { id: 'detector', name: 'détecteur de trouvailles', need: { 22: 6, 25: 1 }, perk: 'detector', sub: 'bipe près des objets enfouis' },
   { id: 'sharp', name: 'pelle affûtée', need: { 25: 2, 23: 4 }, perk: 'sharp', sub: '+15 % de rayon de pelle' },
+  { id: 'compass', name: 'boussole de fusée', need: { 21: 4, 22: 2 }, perk: 'compass', sub: 'indique au dixième de mètre la pièce de fusée la plus proche' },
   // the moon's own: made with what only the moon gives (at the lander, or on the bench once you've been)
   { id: 'm_grav', name: '2 gélules anti-gravité', need: { 50: 2, 51: 1 }, item: 'grav', n: 2, moon: true },
   { id: 'm_met', name: 'météore de poche', need: { 53: 1, 52: 2 }, item: 'met', n: 1, moon: true },
@@ -161,6 +163,7 @@ const portals = createPortals({ scene, camera, renderer: world.renderer, audio }
 // the portal gun is a tool like the shovel and the drill: eco.s.tool === 'portal'
 const gunOut = () => eco.s.tool === 'portal' && eco.s.portal;
 const trapGuide = createTrapGuide();
+const partCompass = createPartCompass();
 // the church: its organ for everyone, the launcher in the reliquary, the bats round the belfry
 const CH = world.church;
 const organ = createOrgan({ parent: homeRoot, at: CH.organ, rot: -Math.PI / 2 });
@@ -3174,7 +3177,10 @@ function loop(ts) {
   // the upper floor is only drawn from inside the house (its windows don't let you see in)
   house.room.group.visible = house.inside(camera.position);
   quest.update(dt, player, !eco.s.upKey && here === 'home' && !mg.active && !race && ['play', 'panel', 'drive', 'paused', 'read'].includes(state));
-  trapGuide.update(dt, player, !!eco.s.upKey && !eco.s.caveSeen && here === 'home' && !cave.inside(player.pos) && !mg.active && !race && ['play', 'panel', 'drive', 'paused', 'read'].includes(state));
+  const trapShow = !!eco.s.upKey && !eco.s.caveSeen && here === 'home' && !cave.inside(player.pos) && !mg.active && !race && ['play', 'panel', 'drive', 'paused', 'read'].includes(state);
+  trapGuide.update(dt, player, trapShow);
+  // the rocket compass takes the card once the key and the trapdoor are found
+  partCompass.update(dt, player, finds[W()]?.list || [], !!eco.s.perks.compass && !!eco.s.upKey && !trapShow && !onPlanet() && !mg.active && !race && ['play', 'panel', 'paused', 'read'].includes(state));
   // each town only animates while you're in it
   if (here === 'home') world.neighbours.update(dt);
   if (state === 'play') updateAlarm(dt);
