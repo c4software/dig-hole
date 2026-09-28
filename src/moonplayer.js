@@ -65,8 +65,10 @@ export function createMoonPlayer(scene, camera, getTerrain) {
   }
   addEventListener('wheel', (e) => { if (active) camDist = THREE.MathUtils.clamp(camDist + Math.sign(e.deltaY) * .4, 1.5, 7); }, { passive: true });
 
-  // collisions: the box against the voxels, one world axis at a time
+  // collisions: the box against the voxels, one world axis at a time (and the halls and decks built on the ground)
+  let extra = null;
   const solidBox = (c) => {
+    if (extra && extra(c, HALF)) return true;
     const t = T();
     const [i0, j0, k0] = t.cellOf(c.x - HALF, c.y - HALF, c.z - HALF);
     const [i1, j1, k1] = t.cellOf(c.x + HALF - 1e-4, c.y + HALF - 1e-4, c.z + HALF - 1e-4);
@@ -176,7 +178,7 @@ export function createMoonPlayer(scene, camera, getTerrain) {
     if (hit) dist = Math.max(.6, hit.t - .3);
     camera.position.copy(target).addScaledVector(back, dist);
     // never leave the eye inside the rock: slide it in towards the astronaut until it's clear
-    const inRock = (p) => { const [i, j, k] = t0.cellOf(p.x, p.y, p.z); return t0.solidCell(i, j, k); };
+    const inRock = (p) => { const [i, j, k] = t0.cellOf(p.x, p.y, p.z); return t0.solidCell(i, j, k) || (extra && extra(p, .12)); };
     for (let n = 0; n < 12 && dist > .25 && inRock(camera.position); n++) { dist -= .15; camera.position.copy(target).addScaledVector(back, dist); }
     camera.up.copy(up);
     // the crosshair lands on the ground a few metres ahead; the mouse slides it nearer or further
@@ -207,6 +209,8 @@ export function createMoonPlayer(scene, camera, getTerrain) {
       if (swing <= 0 || kind === 'drill') swing = kind === 'drill' ? Math.max(swing, .35) : 1;
     },
     setTool(kind) { toolKind = kind; },
+    // what else is solid on the ground: fn(point, radius) → true
+    setSolid(fn) { extra = fn; },
     setActive(v) { active = v; model.g.visible = v; },
   };
 }
