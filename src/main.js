@@ -52,6 +52,7 @@ import { createShooter } from './spaceshooter.js';
 import { createOrgue } from './orgue.js';
 import { createWorms3d } from './worms3d.js';
 import { createCrypt, inChurchDig, DIG, cutDig } from './crypt.js';
+import { createHoly } from './holy.js';
 import { createComic } from './comic.js';
 import { createPvz } from './pvz.js';
 import { createMarioPortal } from './marioportal.js';
@@ -214,6 +215,12 @@ const crypt = createCrypt({ scene: homeRoot, colliders: world.colliders, interac
 finds.church = crypt.finds;
 eco.s.finds.church = eco.s.finds.church || [];
 if (eco.s.crypt?.vault) { const D = crypt.door; terrains.church.hollowBox(D.i, D.j, D.k, D.w, D.h, D.d); }
+// the chapel under the templar's tomb, its reliquary, the holy bomba (holy.js); its code is on mars
+const holy = createHoly({ scene: homeRoot, fxScene: scene, interactables: world.interactables, colliders: world.colliders, church: terrains.church, eco, ui, audio, hooks: {
+  marsSeed: () => terrains.mars.seed, save: () => save(), unlock: (k) => unlock(k), emit: (op) => applyOp(op), myName: () => myName(),
+  enterPanel() { state = 'panel'; panelKind = 'holy'; digging = false; throwing = false; player.disable(); if (document.pointerLockElement) document.exitPointerLock(); },
+  closePanel: () => closePanel(), puff: (p, c) => debris.burst(p, new THREE.Vector3(-1, .5, 0), c, 16, 1.4), readTablet: () => openTablet(),
+} });
 const DGUN_REGEN = 120;
 // the organ: e plays the next piece, for everyone
 let organSong = SONGS.length - 1;   // so the first press plays the toccata
@@ -406,6 +413,7 @@ function applyOp(op, local = true) {
   else if (op.k === 'moonportal') { eco.s.moonPortal = true; }
   else if (op.k === 'unladder') ladders.remove(op.id);
   else if (op.k === 'drop') drops.add(op);
+  else if (op.k === 'holy') holy.opened(op, local);
   else if (op.k === 'take') drops.taken(op);
   else if (op.k === 'ev') events?.onOp(op, local);
   else if (op.k === 'find') {
@@ -550,7 +558,7 @@ addEventListener('mousemove', (e) => { if (state === 'kart' && race?.mod.look &&
 // right button held: explosives keep coming, one every THROW_EVERY seconds
 const THROW_EVERY = 0.35;
 let throwing = false, throwT = 0;
-const EXPLOSIVES = new Set(['dyn', 'sup', 'fus', 'met']);
+const EXPLOSIVES = new Set(['dyn', 'sup', 'fus', 'met', 'holy']);
 addEventListener('wheel', () => { if (state === 'play' && (eco.s.lv.drill || eco.s.portal || eco.s.discs) && (!onPlanet() || eco.s.portal || eco.s.discs)) switchTool(); }, { passive: true });
 addEventListener('keydown', (e) => {
   if (e.repeat || e.target.closest?.('input, textarea')) return;
@@ -581,7 +589,7 @@ addEventListener('keydown', (e) => {
   }
   if (e.code === 'KeyF') useItem();
   if (e.code === 'KeyX') switchTool();
-  const n = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8'].indexOf(e.code);
+  const n = ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9'].indexOf(e.code);
   const slots = hotSlots();
   if (n >= 0 && n < slots.length) { eco.s.slot = slots[n]; audio.tick(); }
 });
@@ -646,7 +654,7 @@ const LIFT = { id: 'lift' };
 
 function findNear() {
   camera.getWorldDirection(dir);
-  if (onPlanet()) return space.near(here, moonP.pos) || orbit.near(here, moonP.pos) || looks.nearSpace(here, moonP.pos) || (moonP.pos.distanceTo(LANDERS[here]) < (here === 'mars' ? 6 : 4.5) ? LANDER : null);
+  if (onPlanet()) return space.near(here, moonP.pos) || orbit.near(here, moonP.pos) || looks.nearSpace(here, moonP.pos) || (here === 'mars' && holy.marsNear(moonP.pos)) || (moonP.pos.distanceTo(LANDERS[here]) < (here === 'mars' ? 6 : 4.5) ? LANDER : null);
   if (here === 'home' && delivery.canSteal(player.pos)) return VAN;
   if (here === 'home' && (VAN_NO.name = delivery.foreignVan(player.pos))) return VAN_NO;
   if (here === 'home' && elevator.owned && elevator.near(player.pos)) return LIFT;
@@ -711,6 +719,7 @@ function updateAim() {
     else if (near.id === 'pgun') p = !cave.gunReady ? 'le socle du pistolet à portails · il en revient un bientôt' : eco.s.portal ? '<b>e</b> le pistolet à portails · tu as déjà le tien' : '<b>e</b> prendre le pistolet à portails';
     else if (near.game) p = `<b>e</b> jouer · ${GAMES[near.game].name}`;
     else if (crypt.prompt(near) !== undefined) p = crypt.prompt(near);
+    else if (holy.prompt(near) !== undefined) p = holy.prompt(near);
     else if (looks.prompt(near)) p = looks.prompt(near);
     else if (near.id === 'lift') p = elevator.holds(player.pos) ? (elevator.y > -1 ? `<b>e</b> descendre à ${liftBottomDepth().toFixed(0)} m` : '<b>e</b> remonter') : '<b>e</b> appeler l\'ascenseur';
     ui.prompt(p);
@@ -946,7 +955,7 @@ const KONBINI = {
   coffee:  { name: 'café glacé en canette', sub: '60 s à courir plus vite', price: 60, quip: 'bien frais, du distributeur.', use: () => { speedT = 60; } },
   melon:   { name: 'melon pan', sub: '+15 vie, et la bonne humeur', price: 15, quip: 'croustillant dessus, moelleux dedans.', use: () => { eco.s.health = Math.min(100, eco.s.health + 15); } },
 };
-const hotSlots = () => SLOTS.filter(id => !ITEMS[id].moon || eco.s.moon || EXPLORE);
+const hotSlots = () => SLOTS.filter(id => (!ITEMS[id].moon || eco.s.moon || EXPLORE) && (!ITEMS[id].secret || eco.s.items[id] || eco.s.holy?.taken || EXPLORE));
 let gravT = 0;
 // an aliexpresso unit: mostly fine, sometimes dead, sometimes it goes off as you touch it,
 // sometimes the wick is far too short, and sometimes it's way better than the real thing
@@ -997,6 +1006,7 @@ function useItem() {
   const from = it === 'fus' ? player.pos.clone().add(new THREE.Vector3(0, .3, 0)) : eye.clone().addScaledVector(dir, .5);
   bombs.throwBomb(it, from, dir, player.vel, { dud: ali === 'dud', fuse: ali === 'fast' ? .25 : 1, power: ali === 'strong' ? 1.7 : 1 });
   audio.tick();
+  if (it === 'holy') holy.thrown();
   if (ali === 'fast') { audio.hiss(); ui.toast('mèche ultra courte !', true, 1400); }
 }
 
@@ -1036,7 +1046,7 @@ function explode(kind, pos, power = 1) {
   if (power > 1.2) setTimeout(() => ui.toast('wow · la version aliexpresso est surpuissante', false, 2200), 300);
   const tier = kind === 'dyn' ? Math.min(7, eco.cur('shovel').tier + 2) : 7;
   if (kind === 'air') planeHits++;
-  const take = kind === 'sup' || kind === 'fus' || kind === 'met';
+  const take = kind === 'sup' || kind === 'fus' || kind === 'met' || kind === 'holy';
   let ores = [];
   if (kind === 'fus') {
     // the drill: a straight shaft, 14 m down
@@ -1050,7 +1060,8 @@ function explode(kind, pos, power = 1) {
   }
   T().flush();
   collectOres(ores, new THREE.Vector3(0, 1, 0));
-  audio.boom((kind === 'met' ? 1.8 : kind === 'sup' || kind === 'shell' ? 1.3 : 0.8) * Math.max(.6, power));
+  if (kind === 'holy') { holy.blast(pos); unlock('holy'); net?.sendFx({ k: 'holyfx', w: here, p: pos.toArray().map(v => +v.toFixed(2)) }); }
+  audio.boom((kind === 'holy' ? 2 : kind === 'met' ? 1.8 : kind === 'sup' || kind === 'shell' ? 1.3 : 0.8) * Math.max(.6, power));
   debris.burst(pos, new THREE.Vector3(0, 1, 0), 0x5a4030, 40, 2.4);
   debris.burst(pos, new THREE.Vector3(0, 1, 0), 0xffb060, 14, 2.8);
   moles.blast(pos, b.r);
@@ -1069,6 +1080,8 @@ function explode(kind, pos, power = 1) {
     if (kind !== 'air' || inDigZone()) shakeT = Math.max(shakeT, 0.5 * k + 0.2);
     if (d < b.r + .5) hurt(b.dmg * (1 - d / (b.r + .5)));
   } else if (d < 25 && (kind !== 'air' || inDigZone())) shakeT = Math.max(shakeT, 0.15);
+  // the holy one shakes the whole village
+  if (kind === 'holy' && d < 60) shakeT = Math.max(shakeT, 1.1 * (1 - d / 60) + .3);
 }
 
 // ---------- moles ----------
@@ -1326,6 +1339,8 @@ const marsFlag = flag.clone(); marsFlag.position.copy(marsLanderPos).add(new THR
   rocks.castShadow = true; rocks.receiveShadow = true;
   marsDecor.add(rocks);
 }
+// far from the lander, the templars' arch, and their tablet under it (holy.js)
+holy.buildMars(marsDecor, (d) => surfaceAt('mars', d), MARS);
 }
 scene.add(marsDecor);
 function setupPlanet(w) {
@@ -2239,6 +2254,7 @@ async function startReveal() {
 // ---------- stations ----------
 function interact(it) {
   if (crypt.interact(it)) return;
+  if (holy.interact(it)) return;
   if (looks.interact(it)) return;
   switch (it.id) {
     case 'sell': {
@@ -2588,6 +2604,7 @@ function openPanel(kind) {
 }
 function closePanel() {
   superPw.classList.add('hidden');
+  holy.closeKeypad();
   ui.el.shop.classList.add('hidden');
   ui.el.reader.classList.add('hidden');
   panelKind = null;
@@ -2784,13 +2801,18 @@ ui.el.shopItems.addEventListener('click', (e) => {
 });
 ui.el.shopClose.addEventListener('click', closePanel);
 
-const readerNav = (on) => [...eco.s.letters.map(k => ({ n: k, on: k === on })), { n: '✎ livre d\'or', key: 'notes', on: on === 'notes' }];
+const readerNav = (on) => [...eco.s.letters.map(k => ({ n: k, on: k === on })), ...(holy.known ? [{ n: '✠ tablette', key: 'holy', on: on === 'holy' }] : []), { n: '✎ livre d\'or', key: 'notes', on: on === 'notes' }];
 function enterReader() {
   panelKind = 'read';
   if (state !== 'read') {
     state = 'read'; digging = false; player.disable();
     if (document.pointerLockElement) document.exitPointerLock();
   }
+}
+// the templars' tablet, once read on mars: kept with the letters
+function openTablet() {
+  enterReader();
+  ui.read('la tablette des templiers martiens', holy.tabletText(), readerNav('holy'));
 }
 function openReader(n) {
   enterReader();
@@ -2813,7 +2835,7 @@ async function openNotes() {
 ui.el.readerNav.addEventListener('click', (e) => {
   const b = e.target.closest('[data-n]');
   if (!b) return;
-  if (b.dataset.n === 'notes') openNotes(); else openReader(+b.dataset.n);
+  if (b.dataset.n === 'notes') openNotes(); else if (b.dataset.n === 'holy') openTablet(); else openReader(+b.dataset.n);
 });
 document.getElementById('note-form').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -2905,6 +2927,7 @@ if (MULTI) {
       else if (fx.k === 'organ' && race?.id !== 'orgue') playOrgan(fx.s | 0, false, peer?.name ?? 'quelqu\'un');
       else if (fx.k === 'disc' && fx.p && fx.d) launcher.remote(fx);
       else if (fx.k === 'dv') delivery.remote(id, fx, peer);
+      else if (fx.k === 'holyfx') holy.remote(fx, here);
       else mg.onFx(id, peer, fx);
     },
     onSuperReset(m) { startSuperCountdown(m.in, m.seed, m.by); },
@@ -3267,6 +3290,7 @@ function loop(ts) {
   world.setIndoor(inCave || (here === 'home' && crypt.inside(player.pos)));
   cave.update(dt, inCave, here === 'home' ? player.pos : null);
   crypt.update(dt, here === 'home' ? player : null);
+  holy.update(dt, { here, pos: onPlanet() ? moonP.pos : player.pos, live: bombs.live });
   launcher.held = eco.s.tool === 'disc' && eco.s.discs && holding && !mg.armed;
   launcher.update(dt, Math.hypot(player.vel.x, player.vel.z) > 0.5, solidAt, discHit);
   reliquary.update(dt); organ.update(dt, camera.position);
@@ -3437,4 +3461,22 @@ window.__dig = {
   quest, takeKey, reveal, startReveal, cave, crypt, portals, shootPortal, trapGuide, launcher, bats, organ, portalCells, gameroom: house.room, updateAim, get pad() { return pad; }, get touch() { return touch; }, get down() { return down; }, screenView: (dt) => race?.screen && screenView(dt),
   interact: (id) => interact(id === 'van' ? VAN : id === 'lift' ? LIFT : world.interactables.find(i => i.id === id) || (onPlanet() && findNear()?.id === id ? findNear() : null)),
   swing: doDig,
+  // the holy bomba (holy.js): the module, and two shortcuts for tests
+  holy, openTablet,
+  // on mars: dig a pit down to the templars' tablet and stand in it
+  holyToTablet() {
+    const m = holy.mars; if (here !== 'mars' || !m) return false;
+    const c = m.at.clone().addScaledVector(m.d, -1.6);
+    for (let n = 0; n < 4; n++) applyOp({ k: 'carve', w: 'mars', c: m.at.clone().addScaledVector(m.d, -n * .9).toArray().map(v => +v.toFixed(3)), r: 1.5, tier: 9, space: 0, destroy: true });
+    T().flush(80);
+    moonP.place(m.tabPos.clone().addScaledVector(m.d, .5), m.at.clone().add(new THREE.Vector3(1, 0, 0)));
+    return c;
+  },
+  // at home: straight down to the chapel, in front of the reliquary
+  holyToChapel() {
+    if (here !== 'home') return false;
+    player.pos.copy(holy.chestPos).add(new THREE.Vector3(-1.4, -1 + .05, 0)); player.vel.set(0, 0, 0);
+    player.yaw = -Math.PI / 2; player.pitch = -0.25; player.unstick();
+    return true;
+  },
 };

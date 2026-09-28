@@ -9,7 +9,26 @@ export const BLAST = {
   shell: { r: 2.3, fuse: 0, dmg: 45, push: 13 },    // an old buried shell
   air:   { r: 2.4, fuse: 0, dmg: 40, push: 14 },    // dropped by the bomber
   met:   { r: 4.2, fuse: 2.6, dmg: 50, push: 18 },   // a pocket meteor, made on the moon
+  holy:  { r: 6.0, fuse: 3.0, dmg: 45, push: 24 },   // the holy bomba, from the reliquary under the church
 };
+
+// the holy bomba: a golden orb, a jewelled band, a cross on top (the one from the film)
+export function holyOrb(k = 1) {
+  const g = new THREE.Group();
+  const gold = new THREE.MeshStandardMaterial({ color: 0xe8b830, metalness: .85, roughness: .25, emissive: 0x3a2600 });
+  const orb = new THREE.Mesh(new THREE.SphereGeometry(.18 * k, 18, 14), gold);
+  const band = new THREE.Mesh(new THREE.TorusGeometry(.182 * k, .018 * k, 6, 24), gold); band.rotation.x = Math.PI / 2;
+  const arc = new THREE.Mesh(new THREE.TorusGeometry(.182 * k, .014 * k, 6, 24, Math.PI), gold);
+  const stem = new THREE.Mesh(new THREE.CylinderGeometry(.03 * k, .04 * k, .06 * k, 8), gold); stem.position.y = .2 * k;
+  const up = new THREE.Mesh(new THREE.BoxGeometry(.035 * k, .18 * k, .035 * k), gold); up.position.y = .3 * k;
+  const arm = new THREE.Mesh(new THREE.BoxGeometry(.12 * k, .035 * k, .035 * k), gold); arm.position.y = .33 * k;
+  g.add(orb, band, arc, stem, up, arm);
+  for (let n = 0; n < 6; n++) {
+    const j = new THREE.Mesh(new THREE.OctahedronGeometry(.022 * k), new THREE.MeshBasicMaterial({ color: [0xd01a2a, 0x2a6ae8, 0x2ab85a][n % 3] }));
+    const a = n / 6 * Math.PI * 2; j.position.set(Math.cos(a) * .195 * k, 0, Math.sin(a) * .195 * k); g.add(j);
+  }
+  return g;
+}
 
 function makeBomb(kind) {
   const g = new THREE.Group();
@@ -32,6 +51,8 @@ function makeBomb(kind) {
     const glow = new THREE.Mesh(new THREE.IcosahedronGeometry(.17, 0), new THREE.MeshBasicMaterial({ color: 0xff7a2a, toneMapped: false }));
     glow.rotation.set(.4, .7, 0);
     g.add(glow, rock);
+  } else if (kind === 'holy') {
+    g.add(holyOrb());
   } else {
     const body = new THREE.Mesh(new THREE.CylinderGeometry(.07, .07, .45, 10), new THREE.MeshLambertMaterial({ color: 0xc4202a }));
     const nose = new THREE.Mesh(new THREE.ConeGeometry(.07, .18, 10), new THREE.MeshLambertMaterial({ color: 0xd9a125 }));
@@ -39,7 +60,7 @@ function makeBomb(kind) {
     g.add(body, nose);
   }
   const spark = new THREE.Mesh(new THREE.SphereGeometry(.035, 6, 4), new THREE.MeshBasicMaterial({ color: 0xffd75e }));
-  spark.position.set(kind === 'dyn' ? .17 : 0, kind === 'sup' ? .22 : kind === 'fus' ? .25 : 0, 0);
+  spark.position.set(kind === 'dyn' ? .17 : 0, kind === 'sup' ? .22 : kind === 'fus' ? .25 : kind === 'holy' ? .42 : 0, 0);
   g.add(spark);
   g.userData.spark = spark;
   return g;
