@@ -137,17 +137,18 @@ export function createOrgan({ parent, at, rot = 0 }) {
     return ctx;
   }
   const PARTIALS = [[1, 1], [2, .5], [3, .22], [4, .2], [6, .08], [8, .06]];
-  function voice(m, t0, dur, vel) {
+  function voice(m, t0, dur, vel, dest = bus) {
     const f = 440 * Math.pow(2, (m - 69) / 12);
     const env = ctx.createGain(); env.gain.setValueAtTime(0, t0);
     env.gain.linearRampToValueAtTime(vel, t0 + .03); env.gain.setValueAtTime(vel, t0 + dur); env.gain.linearRampToValueAtTime(0, t0 + dur + .12);
-    env.connect(bus);
+    env.connect(dest);
     for (const [h, a] of PARTIALS) {
       if (f * h > 9000) continue;
       const o = ctx.createOscillator(); o.frequency.value = f * h * (1 + (h === 2 ? .0012 : 0));
       const gg = ctx.createGain(); gg.gain.value = a; o.connect(gg); gg.connect(env);
       o.start(t0); o.stop(t0 + dur + .2);
     }
+    return env;
   }
   // a piece from `offset` seconds in (someone else started it a little earlier); the one playing stops
   let bus = null;
@@ -172,8 +173,11 @@ export function createOrgan({ parent, at, rot = 0 }) {
     b.gain.setTargetAtTime(0, ctx.currentTime, .08);
     setTimeout(() => b.disconnect(), 600);
   }
+  // the rhythm game (orgue.js) borrows the pipes: the same voices and reverb, on its own buses
+  let lent = false;
+  function lend(on) { lent = on; if (!on || !ensure()) return null; if (ctx.state === 'suspended') ctx.resume(); return { ctx, out, voice }; }
   return {
-    group: g, play, stop,
+    group: g, play, stop, pipes, lend,
     get playing() { return !!playing; }, get song() { return playing ? playing.song : -1; },
     // loud in the church, still heard across the village and down the hole
     update(dt, ear) {
@@ -182,7 +186,7 @@ export function createOrgan({ parent, at, rot = 0 }) {
       halo.opacity += ((on ? .12 + Math.random() * .05 : 0) - halo.opacity) * Math.min(1, dt * 4);
       if (!ctx) return;
       const d = ear ? ear.distanceTo(g.position) : 999;
-      out.gain.setTargetAtTime(on ? Math.max(.28, 1 - d / 70) : 0, ctx.currentTime, .2);
+      out.gain.setTargetAtTime(on || lent ? Math.max(.28, 1 - d / 70) : 0, ctx.currentTime, .2);
     },
   };
 }

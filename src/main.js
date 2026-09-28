@@ -45,6 +45,7 @@ import { createSurvie } from './survie.js';
 import { createTycoon } from './tycoon.js';
 import { createInvaders } from './invaders.js';
 import { createShooter } from './spaceshooter.js';
+import { createOrgue } from './orgue.js';
 import { initMenus } from './menufx.js';
 import { createGamepad } from './gamepad.js';
 import { createTouch } from './touch.js';
@@ -495,6 +496,7 @@ addEventListener('keydown', (e) => {
   if (e.code === 'KeyM' && (state === 'play' || bigMap)) { if (onPlanet() && !bigMap) ui.toast('pas de carte ici… pour l\'instant'); else toggleMap(); }
   if (state !== 'play') return;
   if (e.code === 'KeyR') toSurface();
+  if (e.code === 'KeyT' && near && near.id === 'organ') { offerGame('orgue'); return; }
   if (e.code === 'KeyT' && near && near.id === 'globe') {
     if (eco.s.china) travel('china', 'globe');
     else ui.toast('le globe tourne… il faudrait d\'abord trouver le chemin, tout au fond');
@@ -621,7 +623,7 @@ function updateAim() {
     else if (near.id === 'egg') p = '<b>e</b> l\'œuf d\'or';
     else if (near.id === 'sdoor') p = doorOf(near)?.open ? '<b>e</b> fermer la porte' : '<b>e</b> ouvrir la porte';
     else if (near.id === 'dgun') p = !reliquary.ready ? 'le reliquaire est vide · il en revient un bientôt' : eco.s.discs ? '<b>e</b> le lance-disques · tu as déjà le tien' : '<b>e</b> prendre le lance-disques chasse-vampire';
-    else if (near.id === 'organ') p = `<b>e</b> ${organ.playing ? 'morceau suivant' : 'jouer de l\'orgue'} · ${SONGS[(organSong + 1) % SONGS.length].name}`;
+    else if (near.id === 'organ') p = `<b>e</b> ${organ.playing ? 'morceau suivant' : 'jouer de l\'orgue'} · ${SONGS[(organSong + 1) % SONGS.length].name} · <b>t</b> orgue héros`;
     else if (near.id === 'pgun') p = !cave.gunReady ? 'le socle du pistolet à portails · il en revient un bientôt' : eco.s.portal ? '<b>e</b> le pistolet à portails · tu as déjà le tien' : '<b>e</b> prendre le pistolet à portails';
     else if (near.game) p = `<b>e</b> jouer · ${GAMES[near.game].name}`;
     else if (near.id === 'lift') p = elevator.holds(player.pos) ? (elevator.y > -1 ? `<b>e</b> descendre à ${liftBottomDepth().toFixed(0)} m` : '<b>e</b> remonter') : '<b>e</b> appeler l\'ascenseur';
@@ -1430,6 +1432,8 @@ const RACES = {
   tycoon: { mod: createTycoon({ audio, ui, eco, pay: (v, text) => reward(v, text), save: () => save() }), screen: true, help: 'souris · la colonie tourne même sans toi', prizes: [0] },
   invaders: { mod: createInvaders({ audio, ui }), screen: true, help: 'q d ou ← → : bouger · espace : tirer · abats la vague avant qu\'elle ne touche la lune', prizes: [1500, 700, 350, 150] },
   shooter: { mod: createShooter({ audio, ui }), screen: true, help: 'zqsd ou flèches : voler · espace : tirer · e : bombe · ramasse les capsules', prizes: [1800, 900, 450, 200] },
+  // the church organ's rhythm game, at the console
+  orgue: { mod: createOrgue({ scene: homeRoot, camera, audio, ui, organ, church: CH }), help: 'les notes au passage de la ligne · maintenir les longues · shift : grand jeu', prizes: [1500, 700, 350, 150] },
 };
 let race = null;
 const raceReturn = { pos: new THREE.Vector3(), yaw: 0 };
@@ -1627,6 +1631,7 @@ const GAME_KEYS = {
   taupe: [['clic', 'taper les taupes']],
   pile: [['clic', 'creuser'], ['e', 'valider la profondeur']],
   tresor: [['clic', 'creuser'], ['thermo', 'chaud / froid']],
+  orgue: [['d f j k', 'jouer les notes'], ['shift', 'grand jeu']],
 };
 const DEFAULT_KEYS = [['z q s d', 'marcher'], ['clic', 'creuser'], ['espace', 'sauter'], ['r', 'remonter']];
 const gmEl = document.getElementById('gamemenu'), $g = (id) => document.getElementById(id);
@@ -1685,7 +1690,7 @@ function renderGameMenu(fresh = false) {
   $g('gm-title').textContent = GAMES[g].name;
   document.querySelector('.gm-head').classList.toggle('long', GAMES[g].name.length > 14);
   $g('gm-kicker').textContent = multi ? (gm.host ? 'ta partie · en ligne' : `${net.peers.get(lobby.host)?.name ?? '?'} propose`)
-    : spaceWorld(g) ? (spaceWorld(g) === 'moon' ? 'sur la lune' : 'sur mars') : SCREEN_GAMES.has(g) ? 'sur un écran de la salle de jeux' : g === 'kart' ? 'autour du village' : g === 'jetski' ? 'dans la fontaine de la place' : CAVE_GAMES.has(g) ? 'dans la cave secrète' : RACES[g] ? 'dans les rues de la ville' : 'dans le jardin';
+    : spaceWorld(g) ? (spaceWorld(g) === 'moon' ? 'sur la lune' : 'sur mars') : SCREEN_GAMES.has(g) ? 'sur un écran de la salle de jeux' : g === 'kart' ? 'autour du village' : g === 'jetski' ? 'dans la fontaine de la place' : g === 'orgue' ? 'à l\'orgue de l\'église' : CAVE_GAMES.has(g) ? 'dans la cave secrète' : RACES[g] ? 'dans les rues de la ville' : 'dans le jardin';
   const box = $g('gm-modes');
   if (fresh) {
     box.innerHTML = mods.map((m, i) => `<button type="button" class="btn btn--menu m-opt in" style="--i:${i + 2};--tilt:${i % 2 ? .5 : -.5}deg" data-mode="${m.id}" data-desc="${escH(m.sub)}"${gm.host ? '' : ' disabled'}>` +
@@ -2749,7 +2754,7 @@ if (MULTI) {
       else if (fx.k === 'dgun') { reliquary.take(fx.left); ui.toast(`${peer?.name ?? 'quelqu\'un'} a trouvé le lance-disques`, false, 2600); }
       else if (fx.k === 'sdoor') setDoor(fx.w, fx.i, !!fx.o, false);
       else if (fx.k === 'planedown') ui.toast(`${peer?.name ?? 'quelqu\'un'} a abattu le bombardier !`, false, 3500);
-      else if (fx.k === 'organ') playOrgan(fx.s | 0, false, peer?.name ?? 'quelqu\'un');
+      else if (fx.k === 'organ' && race?.id !== 'orgue') playOrgan(fx.s | 0, false, peer?.name ?? 'quelqu\'un');
       else if (fx.k === 'disc' && fx.p && fx.d) launcher.remote(fx);
       else mg.onFx(id, peer, fx);
     },
@@ -2933,7 +2938,7 @@ function loop(ts) {
     else player.update(playing ? dt : 0);
     elevator.update(dt, player);
     updateLaunch(dt);
-    if (state === 'kart' && race) { race.mod.update(dt, down); raceHud(); if (race?.screen) screenView(dt); }
+    if (state === 'kart' && race) { race.mod.update(dt, down); if (race) raceHud(); if (race?.screen) screenView(dt); }
     if (state === 'gamemenu') updateGameMenu(dt);
     if (state === 'watch') { orbit.cam(dt, camera); const el = document.getElementById('mg'); el.classList.remove('hidden'); const h = orbit.hud(); if (el._h !== h) { el.innerHTML = h; el._h = h; } }
     if (state === 'drive') {
