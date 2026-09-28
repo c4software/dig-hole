@@ -313,7 +313,9 @@ export function createInvaders() {
       if (r.vs && r.R() < .3) { const foes = [...r.players.values()].filter((p) => p !== b && !p.out && !p.dead); if (foes.length) b.aim = foes[Math.floor(r.R() * foes.length)].x; }
       else if (cols.length) b.aim = r.gx + cols[Math.floor(r.R() * cols.length)] * CW + 2;
     }
-    let goal = b.aim;
+    let goal = b.aim + (b.id === '@b0' ? -6 : 6);
+    // keep off the other ships
+    for (const p of r.players.values()) if (p !== b && !p.out && Math.abs(p.x - goal) < 16) goal = p.x + (goal >= p.x ? 18 : -18);
     for (const s of r.ab) if (s.y > SY - 50 && s.y < SY + 4 && Math.abs(s.x - (b.x + 6)) < 12) goal = b.x + (s.x > b.x + 6 ? -30 : 30);
     const d = clamp(goal - b.x, -1, 1) * (Math.abs(goal - b.x) > 2 ? 1 : 0);
     b.x = clamp(b.x + d * 85 * STEP, 6, W - 19);

@@ -104,7 +104,7 @@ export function createShooter() {
     r.script = buildScript(r.seed + l * 7919 + loop * 104729, l, loop);
     r.groups.clear();
     if (r.phase !== 'count') { r.phase = 'intro'; r.phaseT = 0; }
-    for (const e of r.enemies.values()) if (!e.boss) e.gone = true;
+    for (const e of r.enemies.values()) e.gone = true;
     r.bossOn = false;
     sfx.music(LEVELS[l].boss ? 'boss' : 'shoot');
     sfx.tempo(1 + loop * .08);
@@ -662,7 +662,8 @@ export function createShooter() {
     r.scr.blit(r.shake);
   }
   function drawEnemy(x, e) {
-    const f = e.flash > 0, ex = Math.round(e.x), ey = Math.round(e.y);
+    // hit: a white flicker, every other frame, so a boss under fire keeps its face
+    const f = e.flash > 0 && Math.floor(run.clock * 30) % 2 === 0, ex = Math.round(e.x), ey = Math.round(e.y);
     let img;
     switch (e.k) {
       case 'rock': img = A.rocks[e.p.s + (f ? '!' : '')]; break;
@@ -837,10 +838,10 @@ function clawArt() {
     '.....aaaaaaa....',
     '...aabbbbbbbaa..',
     '..abbccccccbbba.',
-    '.abcc......ccbba',
-    'abc...........ba',
-    'abc.........aaba',
-    'abcc.......abbba',
+    '.abc.......ccbba',
+    '..............ba',
+    '............aaba',
+    '.bcc.......abbba',
     '.abbcccccccbbba.',
     '..aabbbbbbbbaa..',
     '....aaaaaaaa....',
