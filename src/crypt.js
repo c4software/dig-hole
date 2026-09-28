@@ -208,7 +208,7 @@ export function createCrypt({ scene, colliders, interactables, terrain, eco, ui,
   const dials = [0, 1, 2].map(n => {
     const d = new THREE.Mesh(new THREE.CylinderGeometry(.17, .17, .06, 20), [L(0x8e8578), new THREE.MeshLambertMaterial({ map: signTex[s.crypt.dials[n]] }), L(0x8e8578)]);
     d.rotation.x = Math.PI / 2; d.position.set(-.45 + n * .45, 1.25, .19); leaf.add(d);
-    interactables.push({ id: 'cdial' + n, pos: new THREE.Vector3(61 + .45 - n * .45, fy + 1.25, H.z1 - .25), reach: .9 });
+    interactables.push({ id: 'cdial' + n, pos: new THREE.Vector3(61 + .45 - n * .45, fy + 1.25, H.z1 - .25), reach: 1.4, aim: .96 });
     return d;
   });
   const doorNote = new THREE.Mesh(new THREE.PlaneGeometry(1.2, .22), new THREE.MeshLambertMaterial({ transparent: true, map: tex(512, 96, (c, w) => { c.fillStyle = 'rgba(50,42,34,.9)'; c.font = 'italic 34px Georgia, serif'; c.textAlign = 'center'; c.fillText('ce que les morts ont gravé', w / 2, 58); }) }));

@@ -133,12 +133,12 @@ export function createSpaceArcade({ has = () => false, name = (id) => id } = {})
     const tiles = (() => {
       const c = document.createElement('canvas'); c.width = c.height = 128;
       const g = c.getContext('2d');
-      g.fillStyle = '#8a8c96'; g.fillRect(0, 0, 128, 128);
-      for (let y = 0; y < 2; y++) for (let x = 0; x < 2; x++) { g.fillStyle = (x + y) % 2 ? '#7c7e88' : '#94969f'; g.fillRect(x * 64 + 2, y * 64 + 2, 60, 60); }
+      g.fillStyle = '#3a3c44'; g.fillRect(0, 0, 128, 128);
+      for (let y = 0; y < 2; y++) for (let x = 0; x < 2; x++) { g.fillStyle = (x + y) % 2 ? '#b8bac4' : '#e6e8ee'; g.fillRect(x * 64 + 3, y * 64 + 3, 58, 58); }
       const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(HW, HD);
       return t;
     })();
-    box(HW * 2, .06, HD * 2, V.mat(w === 'moon' ? 0x6a6c78 : 0x7a5a4c, { roughness: .35, metalness: .1, map: tiles, emissive: w === 'moon' ? 0x6a6c78 : 0x7a5a4c, emissiveIntensity: w === 'moon' ? .35 : .1, emissiveMap: tiles }), 0, .03, 0, group);
+    box(HW * 2, .06, HD * 2, V.mat(w === 'moon' ? 0xc8cad4 : 0xc89a82, { roughness: .45, metalness: 0, map: tiles, emissive: w === 'moon' ? 0xc8cad4 : 0xc89a82, emissiveIntensity: w === 'moon' ? .45 : .12, emissiveMap: tiles }), 0, .03, 0, group);
     // neon lines on the floor, towards the terminals
     for (const x of [-3.6, -1.2, 1.2, 3.6]) box(.06, .02, 6, neon, x, .07, .6, group);
     box(HW * 2, .02, .06, neon2, 0, .07, HD - .4, group);
