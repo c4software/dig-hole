@@ -20,7 +20,7 @@ const MODES = [
 ];
 // hp, speed, radius, height, damage, points, souls
 const KINDS = {
-  sk: { name: 'squelette', hp: 45, speed: 5.2, r: .38, h: 1.85, dmg: 9, pts: 100, souls: 1, reach: 1.4, rate: 1 },
+  sk: { name: 'squelette', hp: 45, speed: 4.8, r: .38, h: 1.85, dmg: 7, pts: 100, souls: 1, reach: 1.4, rate: 1 },
   mo: { name: 'moine', hp: 75, speed: 3.1, r: .42, h: 1.95, dmg: 12, pts: 150, souls: 1, reach: 1.4, rate: 2.8 },
   ga: { name: 'gargouille', hp: 50, speed: 6.5, r: .5, h: 1.1, dmg: 11, pts: 150, souls: 1, reach: 1.2, rate: 2.2, fly: true },
   de: { name: 'démon', hp: 220, speed: 4.2, r: .75, h: 2.7, dmg: 22, pts: 300, souls: 3, reach: 2, rate: 1.4 },
@@ -1232,8 +1232,8 @@ export function createPainkiller({ scene, camera, audio, ui }) {
         <div id="pk-ammo" style="font-size:16px;opacity:.9;margin-top:4px"></div>
         <div id="pk-slots" style="font-size:13px;opacity:.7;margin-top:6px;letter-spacing:.1em"></div>
       </div>
-      <div id="pk-banner" style="position:absolute;left:0;right:0;top:30%;text-align:center;font:700 44px/1.1 'Titan One',Rubik,sans-serif;color:#ffcf6a;opacity:0;transition:opacity .3s;letter-spacing:.02em"></div>
-      <div id="pk-boss" style="position:absolute;left:50%;top:92px;width:420px;margin-left:-210px;display:none">
+      <div id="pk-banner" style="position:absolute;left:0;right:0;top:62%;text-align:center;font:700 44px/1.1 'Titan One',Rubik,sans-serif;color:#ffcf6a;opacity:0;transition:opacity .3s;letter-spacing:.02em"></div>
+      <div id="pk-boss" style="position:absolute;left:50%;bottom:120px;width:420px;margin-left:-210px;display:none">
         <div id="pk-bossname" style="text-align:center;font-size:14px;letter-spacing:.14em"></div>
         <div style="height:10px;background:rgba(0,0,0,.6);border:1px solid rgba(255,120,80,.6);border-radius:5px;overflow:hidden;margin-top:4px"><div id="pk-bossbar" style="height:100%;width:100%;background:linear-gradient(90deg,#a80a0a,#ff5a2a)"></div></div>
       </div>`;

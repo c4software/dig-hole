@@ -996,7 +996,7 @@ export function createMarioPortal({ audio, ui } = {}) {
     for (const s of shots) x.drawImage(A.fire[Math.floor(s.t / 4) % 2], Math.round(s.x - cam), Math.round(s.y - cy));
     for (const r of remotes.values()) if (r.lv === lvIdx) for (let k = 0; k < 2; k++) if (r.portals[k]) drawPortal(x, r.portals[k], k, cam, cy, r.color);
     for (let k = 0; k < 2; k++) if (portals[k]) drawPortal(x, portals[k], k, cam, cy);
-    for (const g of ghosts) if (g.lv === lvIdx && g.c && !g.c.hidden && !g.respawn && !(g.c.inv && frame % 4 < 2)) drawHero(x, g.c, anim(g.c), g.color, cam, cy, .55, g.name, g.tag * 8);
+    for (const g of ghosts) if (g.lv === lvIdx && g.c && !g.c.hidden && !g.respawn && !(g.c.inv && frame % 4 < 2)) drawHero(x, g.c, anim(g.c), g.color, cam, cy, .55, raceTime() < 4 && Math.abs(g.c.x - me.x) > 20 ? g.name : null, g.tag * 8);
     for (const r of remotes.values()) if (r.lv === lvIdx && !r.h && r.snaps.length) drawHero(x, { x: r.x, y: r.y, h: r.p ? (r.c ? 16 : 26) : 15, w: 12, form: r.p, face: r.f, behind: r.b, crouch: r.c, gun: r.g }, r.a, r.color, cam, cy, r.b ? .5 : 1, r.name);
     if (!me.behind) drawMe(x, cam, cy);
     for (const b of beams) {
@@ -1275,7 +1275,7 @@ export function createMarioPortal({ audio, ui } = {}) {
         me, get L() { return L; }, get lv() { return lvIdx; }, get camX() { return camX; }, get phase() { return phase; }, enemies: () => enemies, items: () => items, ghosts, portals: () => portals, remotes, render, mouse,
         shoot: shootPortal, place, go() { if (phase === 'count') clock = COUNT; },
         warp(tx, ty) { me.dead = 0; me.inv = 60; me.x = tx * TS; me.y = ty != null ? ty * TS - me.h : (Math.max(0, groundTop(tx))) * TS - me.h; me.vx = me.vy = 0; camX = Math.max(0, Math.min(L.W * TS - W, me.x - 100)); if (L.auto) autoX = camX; follow(true); },
-        form(f) { setForm(me, f); }, level(n) { loadLevel(n); },
+        form(f) { setForm(me, f); }, level(n) { if (levels[n]) loadLevel(n); },
       };
     },
   };
