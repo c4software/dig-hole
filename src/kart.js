@@ -11,6 +11,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import * as V from './vehicles.js';
+import { netTrack, netNow, netStamp } from './netlerp.js';
 
 export const KART_ORIGIN = new THREE.Vector3(0, 0, 0);
 const N = 1300, CP = 13, SEG = N / CP, LAPS = 4, KR = .78;
@@ -803,7 +804,7 @@ export function createKart({ scene, camera, audio, ui }) {
     return { n, ...o, g: m.g, anim: m.anim, x: 0, z: 0, y: 0, yaw: 0, vh: 0, speed: 0, idx: 0, lat: 0, along: 0, passed: -1, prog: 0, done: false, finT: 0,
       spin: 0, spinA: 0, inv: 0, ghost: 0, boost: 0, boostPow: 1.35, drift: 0, driftT: 0, dlvl: 0, hopY: 0, hopV: 0, body: 0, pitch: 0, steerIn: 0, steerV: 0,
       item: null, itemN: 0, itemT: 0, roll: 0, slip: 0, slipOn: false, lane: 0, dodge: 0, skill: 1, band: 1, stuck: 0, wrongT: 0, padCd: 0, bumpCd: 0, driftHeld: false,
-      net: null, heard: false, gone: false, parked: false, local: false };
+      net: null, trk: null, smp: [], heard: false, gone: false, parked: false, local: false };
   }
   const present = () => karts.filter(k => !k.gone);
   const standings = () => present().sort((a, b) => (b.done - a.done) || (a.done ? a.finT - b.finT : b.prog - a.prog));
@@ -854,11 +855,13 @@ export function createKart({ scene, camera, audio, ui }) {
       k.skill = .93 + R() * .06; k.lane = (R() - .5) * 3;
       k.local = k.me || (k.bot && botOwner === meId);
       k.heard = !k.human || k.me;
+      // the others' karts: replayed ~100 ms late from their states, a jump of 10 m is a respawn
+      if (!k.local) k.trk = netTrack({ angles: [2], cut: (a, b) => (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 > 100 });
       // on the grid already, for whoever looks before the first frame (the game menu's preview)
       k.g.position.set(k.x, k.y, k.z); k.g.rotation.set(0, k.yaw, 0); k.g.visible = true;
     });
     me = karts.find(k => k.me);
-    camYaw = me.yaw; baseFov = fovSet = fov = camera.fov;
+    camYaw = me.yaw; baseFov = fovSet = fov = camera.fov; eyeSet = false;
     try { vol = JSON.parse(localStorage.getItem('a-hole-settings') || '{}').volume ?? .7; } catch { vol = .7; }
     for (const b of deco.boxes) { b.off = 0; b.g.visible = true; }
     for (const l of deco.lights) l.lamps.forEach(m => { m.material = l.off; });
@@ -926,7 +929,9 @@ export function createKart({ scene, camera, audio, ui }) {
       const dx = k.x - o.x, dz = k.z - o.z, d2 = dx * dx + dz * dz;
       if (d2 > 3.6 || d2 < 1e-6 || Math.abs(k.y - o.y) > 1.5) continue;
       const d = Math.sqrt(d2), nx = dx / d, nz = dz / d, ov = 1.9 - d;
-      k.x += nx * ov * .6; k.z += nz * ov * .6;
+      // a kart someone else drives is a replay a little late: eased apart, never a jolt backwards
+      const push = o.local ? ov * .6 : Math.min(ov * .6, 4 * dt);
+      k.x += nx * push; k.z += nz * push;
       const into = -(Math.sin(k.vh) * nx + Math.cos(k.vh) * nz) * k.speed;
       if (into > 0) { k.speed -= into * .35; if (k === me && into > 3 && k.bumpCd <= 0) { audio.bonk(); shake = .25; k.bumpCd = .4; } }
     }
@@ -1097,7 +1102,7 @@ export function createKart({ scene, camera, audio, ui }) {
   function flags(k) { return (k.spin > 0 ? 1 : 0) | (k.boost > 0 ? 2 : 0) | (k.drift > 0 ? 4 : 0) | (k.drift < 0 ? 8 : 0) | (k.done ? 16 : 0) | (k.dlvl << 5) | (k.ghost > 0 ? 128 : 0); }
   function sendState() {
     const a = karts.filter(k => k.local && !k.gone).map(k => [k.n, r2(k.x), r2(k.z), Math.round(k.yaw * 1000) / 1000, Math.round(k.speed * 10) / 10, Math.round(k.prog * 10) / 10, flags(k), r2(k.steerV)]);
-    if (a.length) send({ t: 's', a });
+    if (a.length) send({ t: 's', ts: netStamp(), a });
   }
   function onFx(peerId, fx) {
     if (state === 'off' || !fx) return;
@@ -1106,6 +1111,7 @@ export function createKart({ scene, camera, audio, ui }) {
       if (!k || k.local || k.gone) continue;
       const fl = e[6];
       if (!k.heard) { k.x = e[1]; k.z = e[2]; k.yaw = e[3]; }
+      if (!k.trk.push(fx.ts ?? netNow(), [e[1], e[2], e[3], e[4]], peerId)) continue;   // older than what we have
       k.net = { x: e[1], z: e[2], yaw: e[3], speed: e[4], t: clock }; k.prog = e[5]; k.heard = true;
       const d = fl & 4 ? 1 : fl & 8 ? -1 : 0;
       if (d && !k.drift) k.hopV = 3.4;
@@ -1130,11 +1136,9 @@ export function createKart({ scene, camera, audio, ui }) {
     }
   }
   function follow(k, dt) {
-    if (!k.net) return;
-    const a = Math.min(.35, clock - k.net.t), px = k.net.x + Math.sin(k.net.yaw) * k.net.speed * a, pz = k.net.z + Math.cos(k.net.yaw) * k.net.speed * a;
-    if ((px - k.x) ** 2 + (pz - k.z) ** 2 > 144) { k.x = px; k.z = pz; }
-    else { const f = Math.min(1, dt * 10); k.x += (px - k.x) * f; k.z += (pz - k.z) * f; }
-    k.yaw += wrapA(k.net.yaw - k.yaw) * Math.min(1, dt * 10); k.vh = k.yaw; k.speed = k.net.speed;
+    const s = k.trk?.sample(k.smp);
+    if (!s) return;
+    k.x = s[0]; k.z = s[1]; k.yaw = k.vh = s[2]; k.speed = s[3];
     locate(k); k.y = trackY(k);
     k.hopY += k.hopV * dt; k.hopV -= 24 * dt; if (k.hopY <= 0) { k.hopY = 0; k.hopV = 0; }
     k.spinA = k.spin > 0 ? k.spinA + dt * 14 : 0;
@@ -1232,10 +1236,14 @@ export function createKart({ scene, camera, audio, ui }) {
       if (k === me && k.slipOn && Math.random() < .7) { const a = Math.random() * Math.PI * 2; spark(k.x + Math.cos(a) * 1.4 + sy * 3, k.y + .8 + Math.sin(a) * .9, k.z - Math.sin(a) * 1.4 + cy * 3, -sy * 25, 0, -cy * 25, 'white', .1, .2); }
     }
   }
+  // our own eye: main puts the camera back on the (frozen) walker every frame, so smoothing from
+  // camera.position lerped from the walker's head whenever the kart came within 30 m of it
+  const eye = new THREE.Vector3();
+  let eyeSet = false;
   function view(dt) {
     // settings changed while racing: follow them
     if (Math.abs(camera.fov - fovSet) > .01) baseFov += camera.fov - fovSet;
-    const k = me, cw = camera.position, wx = k.x + KART_ORIGIN.x, wy = k.y + KART_ORIGIN.y, wz = k.z + KART_ORIGIN.z;
+    const k = me, cw = eye, wx = k.x + KART_ORIGIN.x, wy = k.y + KART_ORIGIN.y, wz = k.z + KART_ORIGIN.z;
     let want, look;
     if (state === 'finished') {
       const a = clock * .35;
@@ -1252,10 +1260,13 @@ export function createKart({ scene, camera, audio, ui }) {
         cw.copy(want);
       }
     }
-    if (cw.distanceTo(want) > 30) cw.copy(want);
-    cw.lerp(want, Math.min(1, dt * (state === 'finished' ? 2 : 9)));
-    if (shake > 0) { shake = Math.max(0, shake - dt * 1.5); cw.x += (Math.random() - .5) * shake; cw.y += (Math.random() - .5) * shake * .6; }
+    // rigid behind the kart while racing (the heading is smoothed); eased round it at the end
+    if (!eyeSet || state !== 'finished' || cw.distanceTo(want) > 30) cw.copy(want);
+    else cw.lerp(want, Math.min(1, dt * 2));
+    eyeSet = true;
     camClip(wx, wy + 1.3, wz, cw);
+    camera.position.copy(cw);
+    if (shake > 0) { shake = Math.max(0, shake - dt * 1.5); camera.position.x += (Math.random() - .5) * shake; camera.position.y += (Math.random() - .5) * shake * .6; }
     camera.up.set(0, 1, 0); camera.lookAt(look);
     const target = baseFov + clamp(Math.abs(k.speed) / TOP, 0, 1.3) * 6 + (k.boost > 0 ? 12 : 0);
     fov += (target - fov) * Math.min(1, dt * 4);

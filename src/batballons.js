@@ -12,6 +12,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import * as V from './vehicles.js';
 import { mergeStatic } from './merge.js';
+import { netTrack, netNow, netStamp } from './netlerp.js';
 import { hostOf, createChip, fmt, ord, hexOf } from './retro.js';
 
 const PI = Math.PI, TAU = PI * 2;
@@ -642,13 +643,14 @@ export function createBatballons({ scene, camera, audio, ui, at }) {
     c.speed *= 1 - Math.min(.6, vn * .7);
     if (vn > .5 && c.bumpT <= 0) { c.bumpT = .3; burst(c.x, c.y + .03, c.z, 5, 0xe8e0d0, .3, .005, 1); if (c === me) { audio.bonk(); shake = Math.max(shake, Math.min(.12, vn * .08)); } }
   }
-  function collide() {
+  function collide(dt) {
     for (let a = 0; a < karts.length; a++) for (let b = a + 1; b < karts.length; b++) {
       const p = karts[a], q = karts[b];
       if (p.out || q.out) continue;
       const dx = q.x - p.x, dz = q.z - p.z, d = Math.hypot(dx, dz);
       if (d > R * 2 || d < 1e-4 || Math.abs(p.y - q.y) > .06) continue;
-      const nx = dx / d, nz = dz / d, push = (R * 2 - d) / 2;
+      // against a kart someone else drives (a replay a little late): eased apart, never a jolt backwards
+      const nx = dx / d, nz = dz / d, push = mine(p) && mine(q) ? (R * 2 - d) / 2 : Math.min(R * 2 - d, dt * .5);
       if (mine(p) && !blocked(p.x - nx * push, p.z - nz * push, p.y)) { p.x -= nx * push; p.z -= nz * push; p.speed *= .9; }
       if (mine(q) && !blocked(q.x + nx * push, q.z + nz * push, q.y)) { q.x += nx * push; q.z += nz * push; q.speed *= .9; }
       if ((p === me || q === me) && Math.random() < .1) audio.bonk();
@@ -722,9 +724,12 @@ export function createBatballons({ scene, camera, audio, ui, at }) {
   // ---------- network ----------
   const pack = (c) => [r3(c.x), r3(c.y), r3(c.z), r3(c.yaw), r3(c.vx), r3(c.vz), c.balloons,
     (c.air ? 1 : 0) | (c.drift ? 2 : 0) | (c.drift < 0 ? 4 : 0) | (c.boostT > 0 ? 8 : 0) | (c.out ? 16 : 0) | (c.spinT > 0 ? 32 : 0) | (c.invT > 0 ? 64 : 0), Math.round(c.outAt * 100) / 100, r3(c.steer)];
-  function unpack(c, a) {
+  // the others' karts: replayed ~100 ms late from their stamped states; a .6 m jump is a respawn
+  function unpack(c, a, ts, src) {
     if (!a) return;
     const [x, y, z, yaw, vx, vz, b, fl, oa, steer] = a;
+    c.trk ??= netTrack({ angles: [3], cut: (p, q) => Math.hypot(p[0] - q[0], p[2] - q[2]) > .6 });
+    if (!c.trk.push(ts ?? netNow(), [x, y, z, yaw, vx, vz], src)) return;   // older than what we have
     c.net = { x, y, z, yaw, vx, vz, t: 0 }; c.seen = clock; c.steer = steer || 0;
     setBalloons(c, b);
     if (fl & 16) goOut(c, oa);
@@ -734,16 +739,14 @@ export function createBatballons({ scene, camera, audio, ui, at }) {
   function follow(c, dt) {
     const n = c.net; if (!n) return;
     n.t += dt;
-    const k = Math.min(n.t, .25), tx = n.x + n.vx * k, tz = n.z + n.vz * k, a = Math.min(1, dt * 14);
-    if (Math.hypot(tx - c.x, tz - c.z) > .6) { c.x = tx; c.z = tz; c.y = n.y; }
-    c.x += (tx - c.x) * a; c.z += (tz - c.z) * a; c.y += (n.y - c.y) * a; c.yaw += wrap(n.yaw - c.yaw) * a;
-    c.vx = n.vx; c.vz = n.vz; c.speed = c.vx * Math.sin(c.yaw) + c.vz * Math.cos(c.yaw);
+    [c.x, c.y, c.z, c.yaw, c.vx, c.vz] = c.trk.sample(c.smp ??= []);
+    c.speed = c.vx * Math.sin(c.yaw) + c.vz * Math.cos(c.yaw);
     c.spinT -= dt; c.invT -= dt; c.boostT -= dt;
   }
   function onFx(pid, fx) {
     if (state === 'off' || !fx) return;
-    if (fx.t === 's') { const c = byKey(pid); if (c && !mine(c)) unpack(c, fx.c); }
-    else if (fx.t === 'b') { if (!isHost) for (const [k, a] of fx.l) { const c = byKey(k); if (c) unpack(c, a); } }
+    if (fx.t === 's') { const c = byKey(pid); if (c && !mine(c)) unpack(c, fx.c, fx.ts, pid); }
+    else if (fx.t === 'b') { if (!isHost) for (const [k, a] of fx.l) { const c = byKey(k); if (c) unpack(c, a, fx.ts, pid); } }
     else if (fx.t === 'w') spawn(fx);
     else if (fx.t === 'x') for (const id of fx.l) kill(id);
     else if (fx.t === 'h') {
@@ -802,7 +805,7 @@ export function createBatballons({ scene, camera, audio, ui, at }) {
         stepKart(c, inp, DT);
         if (playing) pickups(c);
       }
-      collide();
+      collide(DT);
       stepShots(DT);
       if (playing) checkHits();
     }
@@ -821,8 +824,9 @@ export function createBatballons({ scene, camera, audio, ui, at }) {
     sendT -= dt;
     if (sendT <= 0) {
       sendT = .075;
-      if (me) send({ t: 's', c: pack(me) });
-      if (isHost) { const l = karts.filter(c => c.bot).map(c => [c.key, pack(c)]); if (l.length) send({ t: 'b', l }); }
+      const ts = netStamp();
+      if (me) send({ t: 's', ts, c: pack(me) });
+      if (isHost) { const l = karts.filter(c => c.bot).map(c => [c.key, pack(c)]); if (l.length) send({ t: 'b', ts, l }); }
     }
     if (playing && me) {
       const alive = karts.filter(c => !c.out);

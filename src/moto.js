@@ -9,6 +9,7 @@ import * as THREE from 'three';
 import * as V from './vehicles.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { mergeStatic } from './merge.js';
+import { netTrack, netNow, netStamp } from './netlerp.js';
 import { rng, hostOf, createChip, fmt, ord, hexOf } from './retro.js';
 
 const LAPS = 3, SEATS = 4, SC = .075, STEP = 1 / 60, MAX_T = 180, CRASH_T = 3;
@@ -615,9 +616,12 @@ export function createMoto({ scene, camera, audio, ui, at }) {
   const r3 = (v) => Math.round(v * 1000) / 1000, r2 = (v) => Math.round(v * 100) / 100;
   const pack = (c) => [r3(c.s), r3(c.l), r3(c.y), r3(c.v), r3(c.vy), r2(c.pitch), r2(c.heat), (c.air ? 1 : 0) | (c.done ? 2 : 0) | (c.hot > 0 ? 4 : 0) | (c.turbo ? 8 : 0) | (c.thr ? 16 : 0),
     r2(c.time), c.crash ? [r3(c.crash.s), r3(c.crash.l), r2(c.crash.v), r2(c.crash.t)] : 0, c.laps];
-  function unpack(c, a) {
+  // the others' bikes: replayed ~100 ms late from their stamped states; a 3 m jump is a respawn
+  function unpack(c, a, ts, src) {
     if (!a) return;
     const [s, l, y, v, vy, pitch, heat, f, time, cr, laps] = a;
+    c.trk ??= netTrack({ cut: (p, q) => Math.abs(p[0] - q[0]) > 3 });
+    if (!c.trk.push(ts ?? netNow(), [s, l, y, v], src)) return;   // older than what we have
     c.net = { s, l, y, v, vy, t: 0 }; c.pitch = pitch; c.heat = heat; c.air = !!(f & 1); c.hot = f & 4 ? 1 : 0; c.turbo = !!(f & 8); c.thr = f & 16 ? 1 : 0; c.laps = laps; c.seen = clock;
     if (!c.done) c.time = time;
     if (f & 2 && !c.done) { c.done = true; c.time = time; }
@@ -628,16 +632,14 @@ export function createMoto({ scene, camera, audio, ui, at }) {
     const n = c.net; if (!n) return;
     n.t += dt;
     if (c.crash) { c.crash.t = Math.min(CRASH_T, c.crash.t + dt); c.s = c.crash.s + bikeD(c.crash); c.l = c.crash.l; c.y = hB(c.s, c.l); c.v = 0; return; }
-    const k = Math.min(n.t, .3), ts = n.s + n.v * k, a = Math.min(1, dt * 12);
-    if (Math.abs(ts - c.s) > 1) c.s = ts;
-    c.s += (ts - c.s) * a; c.l += (n.l - c.l) * a; c.v = n.v;
-    const ty = c.air ? n.y + n.vy * k - .5 * G * k * k : hB(c.s, c.l);
-    c.y += (Math.max(ty, hB(c.s, c.l)) - c.y) * Math.min(1, dt * 20);
+    const r = c.trk.sample(c.smp ??= []);
+    c.s = r[0]; c.l = r[1]; c.v = r[3];
+    c.y = Math.max(c.air ? r[2] : hB(c.s, c.l), hB(c.s, c.l));
   }
   function onFx(pid, fx) {
     if (state === 'off' || !fx) return;
-    if (fx.t === 's') { const c = byKey(pid); if (c && !mine(c)) unpack(c, fx.c); }
-    else if (fx.t === 'b' && !isHost) for (const [k, a] of fx.l) { const c = byKey(k); if (c && c.bot) unpack(c, a); }
+    if (fx.t === 's') { const c = byKey(pid); if (c && !mine(c)) unpack(c, fx.c, fx.ts, pid); }
+    else if (fx.t === 'b' && !isHost) for (const [k, a] of fx.l) { const c = byKey(k); if (c && c.bot) unpack(c, a, fx.ts, pid); }
   }
   function peerLeft(id) {
     const c = byKey(id);
@@ -700,8 +702,9 @@ export function createMoto({ scene, camera, audio, ui, at }) {
     sendT -= dt;
     if (sendT <= 0) {
       sendT = .075;
-      if (me) send({ t: 's', c: pack(me) });
-      if (isHost) { const l = riders.filter(c => c.bot).map(c => [c.key, pack(c)]); if (l.length) send({ t: 'b', l }); }
+      const ts = netStamp();
+      if (me) send({ t: 's', ts, c: pack(me) });
+      if (isHost) { const l = riders.filter(c => c.bot).map(c => [c.key, pack(c)]); if (l.length) send({ t: 'b', ts, l }); }
     }
     if (racing && !result && clock - goAt > MAX_T) finish();
     if (endT > 0) { endT -= dt; if (endT <= 0 && !ended) { ended = true; onEnd(result); } }

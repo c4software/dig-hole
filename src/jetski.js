@@ -7,6 +7,7 @@
 // riders, and a time trial alone on the water.
 import * as THREE from 'three';
 import * as V from './vehicles.js';
+import { netTrack, netNow, netStamp } from './netlerp.js';
 
 const LAPS = 3, N = 360, GRID = 6, SC = .06, MAX_MISS = 5, MAX_POW = 5;
 const MODES = [
@@ -360,11 +361,12 @@ export function createJetski({ scene, camera, audio, ui, world }) {
       else if (c.jetHit && Math.hypot(c.x - jx, c.z - jz) > .3) c.jetHit = false;
     }
   }
-  function collide() {
+  function collide(dt) {
     for (let a = 0; a < riders.length; a++) for (let b = a + 1; b < riders.length; b++) {
       const p = riders[a], q = riders[b], dx = q.x - p.x, dz = q.z - p.z, d = Math.hypot(dx, dz);
       if (d > .13 || d < 1e-4 || Math.abs(p.y - q.y) > .08) continue;
-      const nx = dx / d, nz = dz / d, push = (.13 - d) / 2;
+      // against a ski someone else rides (a replay a little late): eased apart, never a jolt backwards
+      const nx = dx / d, nz = dz / d, push = mine(p) && mine(q) ? (.13 - d) / 2 : Math.min(.13 - d, dt * .5);
       if (mine(p)) { p.x -= nx * push; p.z -= nz * push; p.speed *= .97; }
       if (mine(q)) { q.x += nx * push; q.z += nz * push; q.speed *= .97; }
       if ((p === me || q === me) && Math.random() < .2) audio.bonk();
@@ -413,27 +415,26 @@ export function createJetski({ scene, camera, audio, ui, world }) {
   // ---------- network ----------
   const r3 = (v) => Math.round(v * 1000) / 1000;
   const pack = (c) => [r3(c.x), r3(c.y), r3(c.z), r3(c.yaw), r3(c.vx), r3(c.vz), c.k, c.done ? 1 : 0, r3(c.steer), r3(c.lean), r3(c.time), c.pow, c.miss, c.out ? 1 : 0, c.air ? 1 : 0];
-  function unpack(c, a) {
+  // the others' skis: replayed ~100 ms late from their stamped states; a 1 m jump is a respawn
+  function unpack(c, a, ts, src) {
     if (!a) return;
     const [x, y, z, yaw, vx, vz, k, done, steer, lean, time, pow, miss, out, air] = a;
+    c.trk ??= netTrack({ angles: [3], cut: (p, q) => Math.hypot(p[0] - q[0], p[2] - q[2]) > 1 });
+    if (!c.trk.push(ts ?? netNow(), [x, y, z, yaw, vx, vz], src)) return;   // older than what we have
     c.net = { x, y, z, yaw, vx, vz, t: 0 }; c.k = k; c.steer = steer; c.lean = lean; c.pow = pow; c.miss = miss; c.out = !!out; c.air = !!air; c.seen = clock;
     if (time != null && !c.bot) c.time = time;
     if (done && !c.done) { c.done = true; c.doneAt = clock; }
   }
   function follow(c, dt) {
-    const n = c.net; if (!n) return;
-    n.t += dt;
-    const k = Math.min(n.t, .25), tx = n.x + n.vx * k, tz = n.z + n.vz * k;
-    const a = Math.min(1, dt * 14);
-    if (Math.hypot(tx - c.x, tz - c.z) > 1) { c.x = tx; c.z = tz; }
-    c.x += (tx - c.x) * a; c.z += (tz - c.z) * a; c.y += (n.y - c.y) * a; c.yaw += wrap(n.yaw - c.yaw) * a;
-    c.vx = n.vx; c.vz = n.vz; c.speed = Math.hypot(c.vx, c.vz);
+    const s = c.trk?.sample(c.smp ??= []); if (!s) return;
+    [c.x, c.y, c.z, c.yaw, c.vx, c.vz] = s;
+    c.speed = Math.hypot(c.vx, c.vz);
     c.idx = nearest(c.x, c.z, c.idx);
   }
   function onFx(pid, fx) {
     if (state === 'off' || !fx) return;
-    if (fx.t === 's') { const c = byKey(pid); if (c && !mine(c)) unpack(c, fx.c); }
-    else if (fx.t === 'b' && !isHost) for (const [k, a] of fx.l) { const c = byKey(k); if (c) unpack(c, a); }
+    if (fx.t === 's') { const c = byKey(pid); if (c && !mine(c)) unpack(c, fx.c, fx.ts, pid); }
+    else if (fx.t === 'b' && !isHost) for (const [k, a] of fx.l) { const c = byKey(k); if (c) unpack(c, a, fx.ts, pid); }
   }
   function peerLeft(id) {
     const c = byKey(id);
@@ -476,7 +477,7 @@ export function createJetski({ scene, camera, audio, ui, world }) {
       if (racing) { track(c, dt); if (!c.done && !c.out) c.time = clock - goAt; }
       if (c === me) motorTick(c, i2.thr);
     }
-    collide();
+    collide(dt);
     // show every rider: bobbing, leaning into the turn, nose up on the swell
     for (const c of riders) {
       const fx = Math.sin(c.yaw), fz = Math.cos(c.yaw);
@@ -517,8 +518,9 @@ export function createJetski({ scene, camera, audio, ui, world }) {
     sendT -= dt;
     if (sendT <= 0) {
       sendT = .075;
-      if (me) send({ t: 's', c: pack(me) });
-      if (isHost) { const l = riders.filter(c => c.bot).map(c => [c.key, pack(c)]); if (l.length) send({ t: 'b', l }); }
+      const ts = netStamp();
+      if (me) send({ t: 's', ts, c: pack(me) });
+      if (isHost) { const l = riders.filter(c => c.bot).map(c => [c.key, pack(c)]); if (l.length) send({ t: 'b', ts, l }); }
     }
     if (endT > 0) { endT -= dt; if (endT <= 0) { const r = result; endT = -1; onEnd(r); } }
     cam(dt);
