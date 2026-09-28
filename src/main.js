@@ -3074,7 +3074,7 @@ function loop(ts) {
       moonP.update(playing ? dt : 0, playing ? down : new Set());
       player.pos.copy(moonP.pos); player.vel.copy(moonP.vel);
       player.stats.jetting = moonP.stats.jetting;
-    } else if (state === 'reveal') reveal.update(dt);
+    } else if (state === 'reveal' || reveal.playing) reveal.update(dt);
     else player.update(playing ? dt : 0);
     elevator.update(dt, player);
     updateLaunch(dt);

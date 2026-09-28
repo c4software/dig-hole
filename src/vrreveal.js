@@ -83,6 +83,10 @@ export function createReveal({ scene, camera, renderer, world, audio }) {
     prevBefore?.call(scene, r, s, cam, rt);
     if (!swapped || cam !== camera) return;
     applied = true;
+    try { apply(r, cam); } catch (e) { console.warn('vr reveal', e); after(r, s, cam); abort(); }
+  }
+  function apply(r, cam) {
+    K.vis.length = 0;
     K.p.copy(cam.position); K.q.copy(cam.quaternion); K.e = [cam.rotation._x, cam.rotation._y, cam.rotation._z, cam.rotation._order];
     K.fov = cam.fov; K.near = cam.near; K.far = cam.far;
     cam.position.copy(view.p); cam.quaternion.copy(view.q); cam.fov = view.fov; cam.near = .5; cam.far = 2400;
@@ -100,7 +104,6 @@ export function createReveal({ scene, camera, renderer, world, audio }) {
     hemi.color.copy(HEMI_SKY); hemi.groundColor.copy(HEMI_GROUND); hemi.intensity = .75;
     if (ambient) { K.aI = ambient.intensity; ambient.intensity = .12; }
     K.lI = lamp.intensity; lamp.intensity = 0;
-    K.vis.length = 0;
     for (const o of [sky, fall, ...cam.children]) if (o && !o.isLight && o.visible) { o.visible = false; K.vis.push(o); }
     r.shadowMap.needsUpdate = true;
   }
@@ -121,6 +124,7 @@ export function createReveal({ scene, camera, renderer, world, audio }) {
     if (ambient) ambient.intensity = K.aI;
     lamp.intensity = K.lI;
     for (const o of K.vis) o.visible = true;
+    K.vis.length = 0;
   }
 
   // the world is cut to the board: every material of the scene gets the box's planes
@@ -170,6 +174,7 @@ export function createReveal({ scene, camera, renderer, world, audio }) {
   }
   function swapOut() {
     if (!swapped) return;
+    if (applied) after(renderer, scene, camera);
     swapped = false; ready = true; queue = [];
     for (const [m, planes, cs] of mats) { m.clippingPlanes = planes; m.clipShadows = cs; }
     mats = [];
@@ -251,20 +256,31 @@ export function createReveal({ scene, camera, renderer, world, audio }) {
   };
   const onDown = (e) => { if (!playing) return; e.stopImmediatePropagation(); e.preventDefault(); if (e.type === 'mousedown') skip(); };
 
+  // the one way out, whatever happened: every step runs even if another throws, and twice is harmless
   function finish() {
-    swapOut();
-    playing = false;
-    removeEventListener('keydown', onKey, true); removeEventListener('mousedown', onDown, true); removeEventListener('pointerdown', onDown, true); removeEventListener('mousemove', onMove);
-    for (const [n, v] of hudKeep) n.style.visibility = v;
-    hudKeep = [];
-    const cv = renderer.domElement; cv.style.filter = canvasKeep.filter; cv.style.transform = canvasKeep.transform; cv.style.transformOrigin = canvasKeep.origin;
-    ov.remove(); ov = null;
+    if (!playing && !ov) return;
+    playing = false; ready = true; queue = [];
+    const steps = [
+      swapOut,
+      () => { removeEventListener('keydown', onKey, true); removeEventListener('mousedown', onDown, true); removeEventListener('pointerdown', onDown, true); removeEventListener('mousemove', onMove); },
+      () => { for (const [n, v] of hudKeep) n.style.visibility = v; hudKeep = []; },
+      () => { const cv = renderer.domElement; cv.style.filter = canvasKeep?.filter ?? ''; cv.style.transform = canvasKeep?.transform ?? ''; cv.style.transformOrigin = canvasKeep?.origin ?? ''; },
+      () => { ov?.remove(); ov = null; },
+    ];
+    for (const step of steps) try { step(); } catch (e) { console.warn('vr reveal', e); }
     const f = done; done = null; promise = null;
     f?.();
   }
+  // something went wrong mid-show: straight back to the game
+  function abort() { if (playing) finish(); }
+  // a lost gpu takes the board's shaders and textures with it: no show without them
+  renderer.domElement.addEventListener('webglcontextlost', abort);
 
   function update(dt) {
     if (!playing) return;
+    try { step(dt); } catch (e) { console.warn('vr reveal', e); abort(); }
+  }
+  function step(dt) {
     t += Math.min(dt, .1);
     const cv = renderer.domElement;
     // 1. off: the headset closes in, the game fizzles out
@@ -351,7 +367,10 @@ export function createReveal({ scene, camera, renderer, world, audio }) {
     update,
     get playing() { return playing; },
     // the game's draws wait while the board's shaders compile (the lenses are black then)
-    get frozen() { return playing && !ready; },
+    // (never for more than 10 s, whatever becomes of the compile)
+    get frozen() { return playing && !ready && performance.now() - since < 10000; },
+    // leave now, cleaned up (a context loss, another screen taking over)
+    stop: abort,
     // for tests: jump in the timeline
     seek(s) { t = s; },
     get time() { return t; },
