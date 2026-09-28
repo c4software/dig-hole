@@ -44,7 +44,7 @@ export function createLooks(game) {
     for (const s of [1, -1]) {
       const h = new THREE.Group();
       const add = (geo, m, x, y, z, rx = 0, rz = 0) => { const o = new THREE.Mesh(geo, m); o.position.set(x, y, z); o.rotation.set(rx, 0, rz); o.renderOrder = 999; h.add(o); return o; };
-      add(new THREE.CylinderGeometry(.042, .05, .36, 16), slM, 0, -.2, 0);
+      add(new THREE.CylinderGeometry(.042, .056, 1.1, 16), slM, 0, -.57, 0);   // long: its end is always below the screen
       if (long) add(new THREE.TorusGeometry(.043, .01, 6, 18), cuffM, 0, -.03, 0, Math.PI / 2);
       const palm = add(new THREE.SphereGeometry(.05, 16, 12), skinM, 0, .045, 0); palm.scale.set(1, 1.15, .42);
       for (let k = 0; k < 4; k++) add(new THREE.CapsuleGeometry(.0125, k === 3 ? .04 : .055, 3, 8), skinM, (-.03 + k * .02) * s, .12 - (k === 3 ? .012 : 0) - Math.abs(k - 1.5) * .004, 0, 0, (k - 1.5) * -.06 * s);
@@ -54,7 +54,7 @@ export function createLooks(game) {
     }
   }
   // where the right hand is at each level (camera space); the left one mirrors it
-  const POSES = [[.3, -.36, -.48, -.35, 0, .3], [.2, -.2, -.52, .1, 0, .12], [.28, .17, -.58, .05, 0, -.12]];
+  const POSES = [[.3, -.36, -.48, -.35, 0, .3], [.2, -.2, -.52, .1, 0, .12], [.26, .06, -.6, .22, 0, -.1]];
   // each hand on its own: 0 down, 1 forward, 2 up in the air; a held button raises it, letting go lowers it
   const hand = { L: 0, R: 0 }, held = { L: false, R: false };
   const RAISE = 1.4, LOWER = 1.1;   // levels per second
@@ -358,8 +358,16 @@ export function createLooks(game) {
       });
     }
     // the shop people near you
+    // while you try things on, the shop people near you get out of the picture
+    const trying = blend > 0 && (mode === 'boutique' || mode === 'wardrobe');
     for (const p of PEOPLE) {
-      if (p.w !== here || (p.vis && !p.vis())) continue;
+      p.group.getWorldPosition(probe);
+      const hide = trying && probe.distanceToSquared(player.pos) < 36;
+      if (hide && p.group.visible) { p.group.visible = false; p.hid = true; }
+      else if (!hide && p.hid) { p.group.visible = true; p.hid = false; }
+    }
+    for (const p of PEOPLE) {
+      if (p.still || p.w !== here || (p.vis && !p.vis())) continue;
       p.group.getWorldPosition(probe);
       if (probe.distanceToSquared(camera.position) < 900) p.rig.update(dt);
     }

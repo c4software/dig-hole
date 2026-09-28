@@ -7,7 +7,7 @@ import * as THREE from 'three';
 import { createRig } from './rig.js';
 import { DEFAULT, SHOPS } from './outfits.js';
 
-export const PEOPLE = [];   // { rig, w, group, vis() }: the living ones get update()d
+export const PEOPLE = [];   // { rig, w, group, vis(), still }: the living ones get update()d
 export const SPOTS = [];    // counters on the planets (not in world.interactables): { w, pos, shop }
 
 const lam = (c, extra = {}) => new THREE.MeshLambertMaterial({ color: c, ...extra });
@@ -28,7 +28,9 @@ function person(parent, outfit, x, y, z, rot, w, { still = false, mannequin = fa
   g.position.set(x, y, z); g.rotation.y = rot;
   g.add(rig.root); parent.add(g);
   rig.root.traverse(o => { o.userData.keep = true; });
-  if (still) rig.freeze(); else PEOPLE.push({ rig, w, group: g, vis });
+  // everyone is listed (the try-on camera hides them); only the living ones get update()d
+  if (still) rig.freeze();
+  PEOPLE.push({ rig, w, group: g, vis, still });
   return rig;
 }
 // a window figure's stand: a round foot and a pole
