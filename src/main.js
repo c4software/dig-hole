@@ -66,6 +66,7 @@ import { createSpaceArcade, spaceWorld, HALL_DIR } from './spacearcade.js';
 import { createSpaceRace, DECK_DIR } from './spacerace.js';
 import { createPodrace } from './podrace.js';
 import { createLooks } from './looks.js';
+import { createEvents } from './events.js';
 
 const REACH = 3.2;
 const params = new URLSearchParams(location.search);
@@ -344,7 +345,7 @@ const SEASONS = [
   { name: 'hiver', sub: 'il gèle · on ne guérit plus dehors' },
 ];
 const GRASS_HOME = [0x78ac4c, 0x9cb44c, 0xb09c4a, 0xeef2f6], GRASS_CHINA = [0x98a462, 0xa2a85c, 0xb0a062, 0xeef2f6];
-let seasonNow = -1, clockTxt = '', lootDay = -1;
+let seasonNow = -1, clockTxt = '', lootDay = -1, hourNow = 12;
 const clockEl = document.getElementById('clock'), clockTxtEl = document.getElementById('clock-txt');
 // the host may change the clock's pace: then it turns from where it was (clockAnchor: [ms, s, speed])
 function clockNow() {
@@ -357,7 +358,9 @@ function updateClock(dt) {
   const c = clockNow();
   const hour = tun.get('hour') >= 0 ? tun.get('hour') : (c % DAY) / DAY * 24;
   const day = Math.floor(c / DAY);
-  const season = tun.get('season') >= 0 ? tun.get('season') : Math.floor(day / 2) % 4;
+  // a feast may bring its own season (noël: snow), unless the host forces one
+  const season = tun.get('season') >= 0 ? tun.get('season') : events?.season ?? Math.floor(day / 2) % 4;
+  hourNow = hour;
   if (season !== seasonNow) {
     world.setSeason(season);
     setGrassColors(GRASS_HOME[season], GRASS_CHINA[season]);
@@ -390,6 +393,7 @@ if (!MULTI) drops.load(eco.s.drops);
 
 // ---------- ground changes: every one goes through here, and out to the room ----------
 let net = null;
+let events = null;    // the feasts of the calendar (events.js), made once everything else is
 function applyOp(op, local = true) {
   const t = terrains[op.w];
   let out = null;
@@ -403,6 +407,7 @@ function applyOp(op, local = true) {
   else if (op.k === 'unladder') ladders.remove(op.id);
   else if (op.k === 'drop') drops.add(op);
   else if (op.k === 'take') drops.taken(op);
+  else if (op.k === 'ev') events?.onOp(op, local);
   else if (op.k === 'find') {
     const f = finds[op.w].remove(op.key);
     if (!local && f && !(eco.s.finds[op.w] = eco.s.finds[op.w] || []).includes(op.key)) eco.s.finds[op.w].push(op.key);
@@ -699,6 +704,7 @@ function updateAim() {
     else if (near.id === 'updoor') p = house.room.locked ? 'la porte de l\'étage · fermée à clef' : house.room.doorOpen ? '<b>e</b> fermer la porte' : '<b>e</b> ouvrir la porte';
     else if (near.id === 'vr') p = '<b>e</b> mettre le casque… ?';
     else if (near.id === 'egg') p = '<b>e</b> l\'œuf d\'or';
+    else if (near.id === 'ev') p = events.prompt(near);
     else if (near.id === 'sdoor') p = doorOf(near)?.open ? '<b>e</b> fermer la porte' : '<b>e</b> ouvrir la porte';
     else if (near.id === 'dgun') p = !reliquary.ready ? 'le reliquaire est vide · il en revient un bientôt' : eco.s.discs ? '<b>e</b> le lance-disques · tu as déjà le tien' : '<b>e</b> prendre le lance-disques chasse-vampire';
     else if (near.id === 'organ') p = `<b>e</b> ${organ.playing ? 'morceau suivant' : 'jouer de l\'orgue'} · ${SONGS[(organSong + 1) % SONGS.length].name} · <b>t</b> orgue héros`;
@@ -2256,6 +2262,7 @@ function interact(it) {
       house.room.toggleDoor(); audio.step();
       return;
     case 'vr': startReveal(); return;
+    case 'ev': events.act(it); return;
     case 'trapdoor': goCave(true); return;
     case 'caveup': goCave(false); return;
     case 'pgun': takeGun(); return;
@@ -2609,6 +2616,7 @@ function renderPanel(quip) {
   const k = panelKind;
   if (looks.render(k, quip)) return;
   if (k === 'drop') ui.panel(drops.panel(quip, hotSlots()));
+  else if (k === 'ev') ui.panel(events.panel(quip));
   else if (k === 'shop') {
     const rows = ORDER.map(id => upgradeRow(id, false));
     for (const id of ['ladder', 'med', 'cell']) rows.push({ id: 'item:' + id, kind: 'objet', name: ITEMS[id].name, lvl: `×${eco.s.items[id]}`, sub: ITEMS[id].sub, price: ITEMS[id].price, poor: eco.s.money < ITEMS[id].price });
@@ -2694,6 +2702,12 @@ ui.el.shopItems.addEventListener('click', (e) => {
     if (r === 'deny') return deny();
     if (r === 'put') { closePanel(); ui.toast('paquet posé · qui passe dessus le ramasse'); return; }
     audio.tick(); renderPanel(); return;
+  }
+  if (panelKind === 'ev') {
+    const r = events.click(id);
+    if (r === 'deny') return deny();
+    renderPanel(r); ui.flashItem(id, 'bought');
+    return;
   }
   if (panelKind === 'cshop' && id.startsWith('kgood:')) {
     const k = KONBINI[id.slice(6)];
@@ -3314,12 +3328,26 @@ function loop(ts) {
   terrains.mars.group.visible = w === 'mars'; marsDecor.visible = w === 'mars';
   space.show(w); orbit.show(w);
   if (onPlanet()) { space.update(dt, here, t); orbit.update(dt, here); }
+  // the feasts: their decor, their hunt, their fireworks (and halloween's fog, over the world's)
+  events.update(dt);
   // shadows: redrawn when the eye moves, or a few times a second for the sun and the critters
   shadowT += dt;
   if (shadowT > .25 || camera.position.distanceToSquared(shadowAt) > .04) { renderer.shadowMap.needsUpdate = true; shadowT = 0; shadowAt.copy(camera.position); }
   if (state !== 'attract') looks.update(dt);
   if ((!race?.screen || race.onScreen) && !reveal.frozen) { portals.render(myId()); world.render(); }
 }
+// ---------- the feasts of the calendar (events.js): by the server's date, or the host's word ----------
+events = createEvents({ world, terrains, eco, ui, audio, tun, moles, organ, songs: SONGS, CHINA, ACH_LIST, hooks: {
+  multi: MULTI, unlock, save: () => save(), sendOp: (op) => applyOp(op), myName: () => myName(),
+  here: () => here, view: () => state === 'attract' ? 'home' : viewNow(), state: () => state,
+  pos: () => onPlanet() ? moonP.pos : player.pos, eye: () => camera.position, hour: () => hourNow,
+  heal: (n) => { eco.s.health = Math.min(100, eco.s.health + n); },
+  battery: () => { eco.s.battery = eco.batteryMax; audio.charge(); },
+  speed: (sec) => { speedT = Math.max(speedT, sec); },
+  grav: (sec) => { if (onPlanet()) return; gravT = sec; player.stats.grav = .35; },
+  openPanel: (k) => openPanel(k), hintOnce, redrawBoard: () => house.drawBoard(eco.s.ach),
+  cardOk: () => ['play', 'panel', 'paused', 'read', 'drive'].includes(state) && !mg.active && !race,
+} });
 renderer.setAnimationLoop(loop);
 
 // a change of mode on the title screen reloads the page: the new mode then starts straight away
@@ -3396,6 +3424,7 @@ if (params.has('go')) {
 window.__dig = {
   world, terrains, player, eco, ui, camera, renderer, scene, heart, shovel, delivery, elevator, moles, finds, bombs, plane, animals, hologram, moonP, rocket, gainPart, launch, get landerPos() { return landerPos; }, MOON, MARS, marsRocket, MARS_PAD,
   get net() { return net; },
+  get events() { return events; },
   looks, mg, kart, startKart, quitKart, RACES, space, orbit, startWatch, stopWatch, get race() { return race; }, startRace, quitRace, launchGame, offerGame, stepMenu: (dt) => updateGameMenu(dt), openGameMenu, gameMenuPlay, gameMenuBack, pickMode, get gm() { return gm; }, get lobby() { return lobby; }, setReady, stepLobby: (dt) => updateLobby(dt),
   steal, get alarm() { return alarm; }, stepAlarm: (dt) => updateAlarm(dt),
   stepLaunch(dt) { updateLaunch(dt); },

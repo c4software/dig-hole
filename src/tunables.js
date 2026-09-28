@@ -4,6 +4,7 @@
 //   tun.get(key)      the value now
 //   tun.set(key, v)   (the host) one value; tun.load(obj) all overrides at once (the guests)
 //   tun.on(fn)        fn(key|null) after any change
+import { EVENT_OPTIONS } from './events-calendar.js';
 
 export const DEFS = [
   // group, key, label, default, min, max, step, (options)
@@ -20,6 +21,7 @@ export const DEFS = [
   { g: 'temps', k: 'timeSpeed', label: 'vitesse du temps', def: 1, min: 0, max: 30, step: .5, unit: '×', note: '0 : le temps est figé' },
   { g: 'temps', k: 'hour', label: 'heure forcée', def: -1, min: -1, max: 23.5, step: .5, unit: 'h', note: '-1 : l\'horloge tourne' },
   { g: 'temps', k: 'season', label: 'saison forcée', def: -1, options: [[-1, 'auto'], [0, 'printemps'], [1, 'été'], [2, 'automne'], [3, 'hiver']] },
+  { g: 'temps', k: 'event', label: 'fête du calendrier', def: -1, options: EVENT_OPTIONS, note: 'auto : selon la date du serveur' },
   { g: 'dangers', k: 'raids', label: 'raids du bombardier', def: 1, options: [[1, 'oui'], [0, 'non']] },
   { g: 'dangers', k: 'raidEvery', label: 'temps entre deux raids', def: 1, min: .05, max: 4, step: .05, unit: '×', note: '1 : de 10 à 15 min' },
   { g: 'dangers', k: 'moleRate', label: 'taupes qui surgissent', def: 1, min: 0, max: 6, step: .1, unit: '×' },
