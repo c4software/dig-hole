@@ -7,6 +7,7 @@ import { getTurn, setTurn, parseTurn, turnText } from './rtc.js';
 import { roomKey } from './signal.js';
 import { serverless } from './mode.js';
 import { CONFIG } from './config.js';
+import { esc } from './lib/fmt.js';
 
 const CSS = `
 .p2p-card { position: fixed; z-index: 70; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(460px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto;
@@ -39,7 +40,6 @@ const CSS = `
 .p2p-more button { flex: 1; cursor: pointer; border: 0; border-radius: 12px; padding: 8px 10px; font: 800 13px/1 'Rubik', system-ui, sans-serif; color: #fff; background: rgba(26,19,13,.8); box-shadow: inset 0 0 0 2px rgba(255,255,255,.12); }
 .p2p-more button:hover { box-shadow: inset 0 0 0 2px #ffb020; }
 `;
-const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 function css() { if (!document.getElementById('p2p-css')) { const st = document.createElement('style'); st.id = 'p2p-css'; st.textContent = CSS; document.head.appendChild(st); } }
 function card(html) {
   css();

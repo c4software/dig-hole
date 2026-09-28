@@ -1,0 +1,31 @@
+// games.js, where each game's code lives: fetched with import() the first time the game is needed
+// (main.js: loadGame), so the page starts without the ~1.5 MB of mini-games. Each gives its factory,
+// create…({ … }) → a race module (start, stop, update, hud, onFx, peerLeft, respawn, onEnd…).
+// Plain literal import() calls: the deploy scripts version them like the static imports.
+export const GAME_CODE = {
+  kart: () => import('./kart.js').then(m => m.createKart),
+  rc: () => import('./rcrace.js').then(m => m.createRC),
+  jetski: () => import('./jetski.js').then(m => m.createJetski),
+  bomber: () => import('./bomber.js').then(m => m.createBomber),
+  canards: () => import('./canards.js').then(m => m.createCanards),
+  moto: () => import('./moto.js').then(m => m.createMoto),
+  ballons: () => import('./ballons.js').then(m => m.createBallons),
+  empile: () => import('./empile.js').then(m => m.createEmpile),
+  bagarre: () => import('./bagarre.js').then(m => m.createBagarre),
+  batballons: () => import('./batballons.js').then(m => m.createBatballons),
+  painkiller: () => import('./painkiller.js').then(m => m.createPainkiller),
+  nes: () => import('./nes.js').then(m => m.createNes),
+  worms: () => import('./worms.js').then(m => m.createWorms),
+  encre: () => import('./encre.js').then(m => m.createEncre),
+  podrace: () => import('./podrace.js').then(m => m.createPodrace),
+  potato: () => import('./potato.js').then(m => m.createPotato),
+  survie: () => import('./survie.js').then(m => m.createSurvie),
+  tycoon: () => import('./tycoon.js').then(m => m.createTycoon),
+  invaders: () => import('./invaders.js').then(m => m.createInvaders),
+  shooter: () => import('./spaceshooter.js').then(m => m.createShooter),
+  orgue: () => import('./orgue.js').then(m => m.createOrgue),
+  worms3d: () => import('./worms3d.js').then(m => m.createWorms3d),
+  comic: () => import('./comic.js').then(m => m.createComic),
+  pvz: () => import('./pvz.js').then(m => m.createPvz),
+  marioportal: () => import('./marioportal.js').then(m => m.createMarioPortal),
+};

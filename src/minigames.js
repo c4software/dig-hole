@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { createPaint, PAINT_COLORS } from './paint.js';
 import { createLaser, houseSpot } from './laser.js';
 import { createBlaster } from './tool.js';
+import { fmtTime as fmt } from './lib/fmt.js';
 
 // unit: how the record reads. lower: a smaller value is a better record.
 export const GAMES = {
@@ -52,7 +53,6 @@ const ARENA = new Set(['peinture', 'laser']);
 const RACE = new Set(['course', 'plongeon', 'anneaux', 'tresor']);
 const SCORE = new Set(['chrono', 'ruee', 'taupe', 'pile']);
 
-const fmt = (s) => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, '0')}`;
 export function fmtRecord(unit, v) {
   if (unit === 'time') return fmt(v);
   if (unit === 'speed') return `${v.toFixed(2)} m/s`;

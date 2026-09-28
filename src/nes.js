@@ -3,6 +3,7 @@
 import { buildArt, hero, text, textW, PAL, canvas, hexOf, shade } from './nes-art.js';
 import { buildLevel, rng, TS, ROWS, GROUND, SOLID, EMPTY, DIRT, BRICK, QBLK, USED, STONE, PIPE_TL, PIPE_TR, PIPE_L, PIPE_R, COIN } from './nes-level.js';
 import { createSfx } from './nes-sfx.js';
+import { ord, fmtTime as fmt } from './lib/fmt.js';
 
 const W = 256, H = 240, STEP = 1 / 60, COUNT = 3, UNITS = 300, UNIT = .6, SEND = 1 / 15, DONE = 10;
 const RIVALS = [
@@ -10,8 +11,6 @@ const RIVALS = [
   { name: 'bêche', color: 0xf878f8, speed: 1.06 },
   { name: 'râteau', color: 0x80d010, speed: .86 },
 ];
-const fmt = (s) => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, '0')}`;
-const ord = (n) => n === 1 ? '1re' : n + 'e';
 
 export function createNes() {
   let onEnd = () => {}, running = false, ended = true;

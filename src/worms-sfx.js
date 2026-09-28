@@ -1,33 +1,13 @@
-// worms-sfx.js: the tiny synth of « taupes de guerre » — its own WebAudio context, quiet master.
+// worms-sfx.js: the sounds of « taupes de guerre », on the shared synth (lib/sfx.js), its own context, quiet master.
+import { createSynth } from './lib/sfx.js';
 export function createSfx() {
-  let ctx = null, master = null, noise = null;
-  const last = {};
-  function init() {
-    if (ctx) { if (ctx.state === 'suspended') ctx.resume().catch(() => {}); return; }
-    try {
-      ctx = new (window.AudioContext || window.webkitAudioContext)();
-      master = ctx.createGain(); master.gain.value = .12; master.connect(ctx.destination);
-      noise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
-      const d = noise.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-    } catch { ctx = null; }
-  }
-  const ok = (k, gap) => { if (!ctx || ctx.state !== 'running') return false; const t = performance.now(); if (last[k] && t - last[k] < gap) return false; last[k] = t; return true; };
-  function tone(f, dur, type = 'sine', vol = .5, to = f, delay = 0) {
-    const t = ctx.currentTime + delay, o = ctx.createOscillator(), g = ctx.createGain();
-    o.type = type; o.frequency.setValueAtTime(f, t); o.frequency.exponentialRampToValueAtTime(Math.max(20, to), t + dur);
-    g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t + .008); g.gain.exponentialRampToValueAtTime(.001, t + dur);
-    o.connect(g); g.connect(master); o.start(t); o.stop(t + dur + .02);
-  }
-  function hiss(dur, f, vol = .5, to = f, type = 'lowpass', delay = 0, q = 1) {
-    const t = ctx.currentTime + delay, s = ctx.createBufferSource(), fl = ctx.createBiquadFilter(), g = ctx.createGain();
-    s.buffer = noise; fl.type = type; fl.Q.value = q;
-    fl.frequency.setValueAtTime(f, t); fl.frequency.exponentialRampToValueAtTime(Math.max(40, to), t + dur);
-    g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(.001, t + dur);
-    s.connect(fl); fl.connect(g); g.connect(master); s.start(t, Math.random() * .5); s.stop(t + dur + .02);
-  }
+  const S = createSynth({ vol: .12 });
+  const ok = S.ok;
+  const tone = (f, dur, type = 'sine', vol = .5, to = f, delay = 0) => S.blip(f, dur, { type, vol, to, at: delay });
+  const hiss = (dur, f, vol = .5, to = f, type = 'lowpass', delay = 0, q = 1) => S.hiss(dur, f, { vol, to, type, at: delay, q });
   return {
-    init,
-    pause() { if (ctx && ctx.state === 'running') ctx.suspend().catch(() => {}); },
+    init: S.init,
+    pause: S.pause,
     boom(v = 1) { if (!ok('boom', 60) || v < .04) return; hiss(.9 * Math.min(1.3, .6 + v * .5), 1100, .9 * Math.min(1, v), 50); tone(95, .6, 'sine', .8 * Math.min(1, v), 30); tone(60, .5, 'triangle', .4 * Math.min(1, v), 25, .03); },
     launch() { if (!ok('launch', 80)) return; hiss(.35, 3000, .5, 400, 'bandpass', 0, 1.5); tone(180, .25, 'sawtooth', .12, 90); },
     throw() { if (!ok('throw', 80)) return; hiss(.18, 1800, .35, 600, 'bandpass', 0, 2); },

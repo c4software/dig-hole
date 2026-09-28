@@ -10,6 +10,7 @@ import * as THREE from 'three';
 import { mergeStatic } from './merge.js';
 import { paintTex } from './vehicles.js';
 import { rng, hostOf, createChip, hexOf, ord } from './retro.js';
+import { tagTex } from './lib/tex.js';
 
 const STEP = 1 / 60, SC = .19, SEATS = 4, STOCKS = 3;
 // the arena, in metres from the plinth's top: the island's lawn, its edges, the blast zones
@@ -167,13 +168,6 @@ function fighterModel(ch, color) {
   return { g, body, torso, head, arms, legs, tail };
 }
 
-function tagTex(text, color) {
-  return paintTex(256, 64, (g, w, h) => {
-    g.fillStyle = 'rgba(20,14,10,.72)'; g.beginPath(); g.roundRect(4, 8, w - 8, h - 16, 20); g.fill();
-    g.fillStyle = hexOf(color); g.beginPath(); g.arc(30, h / 2, 10, 0, TAU); g.fill();
-    g.fillStyle = '#fff'; g.font = '600 30px Rubik, sans-serif'; g.textBaseline = 'middle'; g.fillText(text.slice(0, 12), 50, h / 2 + 1);
-  });
-}
 
 export function createBagarre({ scene, camera, audio, ui, at }) {
   const deco = new THREE.Group(); deco.position.copy(at); scene.add(deco);

@@ -11,6 +11,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { mergeStatic } from './merge.js';
 import { netTrack, netNow, netStamp } from './netlerp.js';
 import { rng, hostOf, createChip, fmt, ord, hexOf } from './retro.js';
+import { tagTex } from './lib/tex.js';
 
 const LAPS = 3, SEATS = 4, SC = .075, STEP = 1 / 60, MAX_T = 180, CRASH_T = 3;
 const PI = Math.PI, TAU = PI * 2;
@@ -75,13 +76,6 @@ const hAt = (s, l) => Y0 + hRaw(s) + bankAt(s) * (clamp(l, -W / 2, W / 2) + W / 
 const hB = (s, l) => (hAt(s - .035, l) + hAt(s + .035, l)) * .5;
 const slopeAt = (s) => (hRaw(s + .07) - hRaw(s - .07)) / .14;
 
-function tagTex(text, color) {
-  return V.paintTex(256, 64, (g, w, h) => {
-    g.fillStyle = 'rgba(20,14,10,.72)'; g.beginPath(); g.roundRect(4, 8, w - 8, h - 16, 20); g.fill();
-    g.fillStyle = hexOf(color); g.beginPath(); g.arc(30, h / 2, 10, 0, TAU); g.fill();
-    g.fillStyle = '#fff'; g.font = '600 30px Rubik, sans-serif'; g.textBaseline = 'middle'; g.fillText(text.slice(0, 12), 50, h / 2 + 1);
-  });
-}
 
 // ---------- a dirt bike and its rider, built at full size (2 m, nose to +z), shrunk ----------
 let wheelGeos = null;

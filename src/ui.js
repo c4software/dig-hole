@@ -1,11 +1,11 @@
 // ui.js, the HUD and the panels.
 import { ITEMS, SLOTS } from './economy.js';
 import { padGlyphs } from './gamepad.js';
+import { esc } from './lib/fmt.js';
 
 const $ = (id) => document.getElementById(id);
 const restart = (el, cls) => { el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); };
 const fmt = (n) => Math.round(n).toLocaleString('fr-FR');
-const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 export function createUI() {
   const el = {

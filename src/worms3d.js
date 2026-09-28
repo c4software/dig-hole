@@ -9,11 +9,11 @@ import * as THREE from 'three';
 import { createLand, makeField, VS, HALF, TOP, WATER0, rng } from './worms3d-land.js';
 import { wormModel, heldModel, projModel, crateModel, graveModel, tagSprite, popSprite, bubbleSprite, particlePool, flashTex, seaModel, M, GLOW, put, hex } from './worms3d-art.js';
 import { createSfx } from './worms3d-sfx.js';
+import { clamp } from './lib/math.js';
 
 export const W3D_AT = new THREE.Vector3(-700, 0, 700);
 const PI = Math.PI, TAU = PI * 2, STEP = 1 / 60;
 const G = 12, WIND_MAX = 5, TURN_T = 45, RETREAT_T = 5, HP0 = 100, WALK = 1.7;
-const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 const r2 = (v) => Math.round(v * 100) / 100;
 const pick = (a, r = Math.random) => a[Math.floor(r() * a.length)];
 

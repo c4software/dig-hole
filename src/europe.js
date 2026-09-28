@@ -9,19 +9,13 @@ import { createBlossoms, createCars, createContact, createLamps, createWalkers, 
 import * as V from './vehicles.js';
 import { createInteriors } from './interiors.js';
 import { europeBoutique } from './boutiques.js';
+import { canvasTex } from './lib/tex.js';
 
 const ROAD_Z = -13.1;
 const NORTH_FRONT = -16.2;          // house fronts on our side of the street
 const SOUTH_FRONT = -10.6;          // and across it
 const SANS = '"Helvetica Neue", Arial, sans-serif', SERIF = 'Georgia, "Times New Roman", serif';
 
-function canvasTex(w, h, draw, repeat) {
-  const c = document.createElement('canvas'); c.width = w; c.height = h;
-  draw(c.getContext('2d'), w, h);
-  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
-  if (repeat) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(...repeat); }
-  return t;
-}
 function lettering(text, { w = 1024, h = 128, bg = null, color = '#1a1a1a', size = 80, font = SERIF, weight = 700, spacing = 6 } = {}) {
   return canvasTex(w, h, (c) => {
     if (bg) { c.fillStyle = bg; c.fillRect(0, 0, w, h); } else c.clearRect(0, 0, w, h);

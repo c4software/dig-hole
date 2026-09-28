@@ -27,37 +27,14 @@ import { createMaps } from './map.js';
 import { createMoonPlayer } from './moonplayer.js';
 import { createRocket, PARTS } from './rocket.js';
 import { createMiniGames, GAMES, fmtRecord } from './minigames.js';
-import { createKart } from './kart.js';
-import { createRC } from './rcrace.js';
-import { createJetski } from './jetski.js';
+import { GAME_CODE } from './games.js';
 import { createCave, createTrapGuide, GUN_REGEN, slotAt } from './cave.js';
 import { createPartCompass } from './compass.js';
-import { createBatballons } from './batballons.js';
-import { createCanards } from './canards.js';
-import { createBagarre } from './bagarre.js';
-import { createEmpile } from './empile.js';
-import { createBallons } from './ballons.js';
-import { createMoto } from './moto.js';
-import { createBomber } from './bomber.js';
 import { createPortals } from './portal.js';
 import { createOrgan, createDiscLauncher, createBats, createReliquary, SONGS } from './church.js';
-import { createNes } from './nes.js';
-import { createEncre } from './encre.js';
-import { createWorms } from './worms.js';
-import { createPotato } from './potato.js';
-import { createSurvie } from './survie.js';
-import { createTycoon } from './tycoon.js';
-import { createInvaders } from './invaders.js';
-import { createShooter } from './spaceshooter.js';
-import { createOrgue } from './orgue.js';
-import { createWorms3d } from './worms3d.js';
 import { createCrypt, inChurchDig, DIG, cutDig } from './crypt.js';
 import { createHoly } from './holy.js';
-import { createComic } from './comic.js';
-import { createPvz } from './pvz.js';
-import { createMarioPortal } from './marioportal.js';
 import { createMarioCabinet } from './marioportal-cab.js';
-import { createPainkiller } from './painkiller.js';
 import { initMenus } from './menufx.js';
 import { createGamepad } from './gamepad.js';
 import { createTouch } from './touch.js';
@@ -65,9 +42,9 @@ import { createKeyQuest } from './gameroom.js';
 import { createReveal } from './vrreveal.js';
 import { createSpaceArcade, spaceWorld, HALL_DIR } from './spacearcade.js';
 import { createSpaceRace, DECK_DIR } from './spacerace.js';
-import { createPodrace } from './podrace.js';
 import { createLooks } from './looks.js';
 import { createEvents } from './events.js';
+import { esc, esc as escH } from './lib/fmt.js';
 
 const REACH = 3.2;
 const params = new URLSearchParams(location.search);
@@ -1525,42 +1502,43 @@ mg.onEnd = (id, r) => {
 // ---------- the races, kart and rc: one frame for both ----------
 // A race module: start({ seed, humans, hostId, meId, send }), update(dt, keys), stop(), respawn(),
 // onFx(peerId, fx), peerLeft(id), hud(), onEnd({ place, time, of }). The host runs the bots.
+// make(create) builds it from its factory once the code is fetched (games.js, loadGame below).
 const RACES = {
-  kart: { mod: createKart({ scene, camera, audio, ui }), help: '4 tours · zqsd pour piloter · shift pour déraper · espace pour l\'objet · r pour revenir sur la piste', prizes: [1500, 800, 400, 100] },
-  rc: { mod: createRC({ scene, camera, audio, ui, world, terrain: terrains.home }), help: 'petites voitures dans la ville · zqsd · espace pour l\'objet · r pour revenir sur la piste', prizes: [2000, 1100, 600, 300, 150, 80] },
-  jetski: { mod: createJetski({ scene, camera, audio, ui, world }), help: 'mini jet-skis dans la fontaine · zqsd · shift pour se pencher · bouée rouge à sa droite, jaune à sa gauche · r pour revenir', prizes: [1800, 900, 450, 200, 100, 50] },
+  kart: { make: (create) => create({ scene, camera, audio, ui }), help: '4 tours · zqsd pour piloter · shift pour déraper · espace pour l\'objet · r pour revenir sur la piste', prizes: [1500, 800, 400, 100] },
+  rc: { make: (create) => create({ scene, camera, audio, ui, world, terrain: terrains.home }), help: 'petites voitures dans la ville · zqsd · espace pour l\'objet · r pour revenir sur la piste', prizes: [2000, 1100, 600, 300, 150, 80] },
+  jetski: { make: (create) => create({ scene, camera, audio, ui, world }), help: 'mini jet-skis dans la fontaine · zqsd · shift pour se pencher · bouée rouge à sa droite, jaune à sa gauche · r pour revenir', prizes: [1800, 900, 450, 200, 100, 50] },
   // the secret cave's games: dioramas you shrink into
-  bomber: { mod: createBomber({ scene: homeRoot, camera, audio, ui, at: slotAt('bomber') }), help: 'zqsd : bouger · espace : poser une bombe · le dernier debout gagne la manche', prizes: [1500, 700, 350, 150] },
-  canards: { mod: createCanards({ scene: homeRoot, camera, audio, ui, at: slotAt('canards') }), help: 'souris : viser · clic : tirer · 3 cartouches par vague · canard doré : 300 points', prizes: [1500, 700, 350, 150] },
-  moto: { mod: createMoto({ scene: homeRoot, camera, audio, ui, at: slotAt('moto') }), help: 'z ou k : gaz · espace : turbo, ça chauffe · q d : couloir · en l\'air z s : pencher la moto, atterris parallèle à la pente', prizes: [1500, 700, 350, 150] },
-  ballons: { mod: createBallons({ scene: homeRoot, camera, audio, ui, at: slotAt('ballons') }), help: 'espace : battre des bras · q d : dériver · tombe sur les ballons des autres · évite l\'eau et les étincelles', prizes: [1500, 700, 350, 150] },
-  empile: { mod: createEmpile({ scene: homeRoot, camera, audio, ui, at: slotAt('empile') }), help: 'q d : déplacer · z : tourner · s : descendre · espace : lâcher · 2, 3 ou 4 lignes d\'un coup envoient des gravats', prizes: [1500, 700, 350, 150] },
-  bagarre: { mod: createBagarre({ scene: homeRoot, camera, audio, ui, at: slotAt('bagarre') }), help: '3 vies · j : attaque (+ direction) · k : spécial · z + k : remontée · shift : bouclier · éjecte-les hors de l\'arène', prizes: [1500, 700, 350, 150] },
-  batballons: { mod: createBatballons({ scene: homeRoot, camera, audio, ui, at: slotAt('batballons') }), help: 'zqsd · shift : saut et dérapage · fonce en dérapage ou en turbo sur un kart : tu lui voles un ballon · espace : objet (s + espace : vers l\'arrière) · r : retour au fort', prizes: [1500, 700, 350, 150] },
+  bomber: { make: (create) => create({ scene: homeRoot, camera, audio, ui, at: slotAt('bomber') }), help: 'zqsd : bouger · espace : poser une bombe · le dernier debout gagne la manche', prizes: [1500, 700, 350, 150] },
+  canards: { make: (create) => create({ scene: homeRoot, camera, audio, ui, at: slotAt('canards') }), help: 'souris : viser · clic : tirer · 3 cartouches par vague · canard doré : 300 points', prizes: [1500, 700, 350, 150] },
+  moto: { make: (create) => create({ scene: homeRoot, camera, audio, ui, at: slotAt('moto') }), help: 'z ou k : gaz · espace : turbo, ça chauffe · q d : couloir · en l\'air z s : pencher la moto, atterris parallèle à la pente', prizes: [1500, 700, 350, 150] },
+  ballons: { make: (create) => create({ scene: homeRoot, camera, audio, ui, at: slotAt('ballons') }), help: 'espace : battre des bras · q d : dériver · tombe sur les ballons des autres · évite l\'eau et les étincelles', prizes: [1500, 700, 350, 150] },
+  empile: { make: (create) => create({ scene: homeRoot, camera, audio, ui, at: slotAt('empile') }), help: 'q d : déplacer · z : tourner · s : descendre · espace : lâcher · 2, 3 ou 4 lignes d\'un coup envoient des gravats', prizes: [1500, 700, 350, 150] },
+  bagarre: { make: (create) => create({ scene: homeRoot, camera, audio, ui, at: slotAt('bagarre') }), help: '3 vies · j : attaque (+ direction) · k : spécial · z + k : remontée · shift : bouclier · éjecte-les hors de l\'arène', prizes: [1500, 700, 350, 150] },
+  batballons: { make: (create) => create({ scene: homeRoot, camera, audio, ui, at: slotAt('batballons') }), help: 'zqsd · shift : saut et dérapage · fonce en dérapage ou en turbo sur un kart : tu lui voles un ballon · espace : objet (s + espace : vers l\'arrière) · r : retour au fort', prizes: [1500, 700, 350, 150] },
   // under the church: the cursed nave, in first person
-  painkiller: { mod: createPainkiller({ scene: homeRoot, camera, audio, ui }), where: 'dans la crypte sous l\'église', help: 'zqsd · espace (garde-le : bunny hop) · clic : tir · clic droit : secondaire · 1 2 3 : armes', prizes: [2500, 1200, 600, 300] },
+  painkiller: { make: (create) => create({ scene: homeRoot, camera, audio, ui }), where: 'dans la crypte sous l\'église', help: 'zqsd · espace (garde-le : bunny hop) · clic : tir · clic droit : secondaire · 1 2 3 : armes', prizes: [2500, 1200, 600, 300] },
   // the 2D games draw on their own canvas over the world: no mouse to hold
-  nes: { mod: createNes({ audio, ui }), screen: true, help: 'flèches / zqsd · espace pour sauter · shift pour courir', prizes: [1800, 900, 450, 200] },
-  worms: { mod: createWorms({ audio, ui }), screen: true, help: 'au tour par tour · chaque taupe a son tour', prizes: [1500, 700, 350, 150] },
-  encre: { mod: createEncre({ audio, ui }), screen: true, help: 'zqsd · espace pour sauter · clic ou j pour tirer · shift pour nager', prizes: [1600, 600], value: (r) => r.pct },
+  nes: { make: (create) => create({ audio, ui }), screen: true, help: 'flèches / zqsd · espace pour sauter · shift pour courir', prizes: [1800, 900, 450, 200] },
+  worms: { make: (create) => create({ audio, ui }), screen: true, help: 'au tour par tour · chaque taupe a son tour', prizes: [1500, 700, 350, 150] },
+  encre: { make: (create) => create({ audio, ui }), screen: true, help: 'zqsd · espace pour sauter · clic ou j pour tirer · shift pour nager', prizes: [1600, 600], value: (r) => r.pct },
   // mars: the pod race, in its own canyon (the terminal is in the martian hall)
-  podrace: { mod: createPodrace({ scene, camera, audio, ui }), help: '3 tours · z : gaz · q d : piloter · shift : boost (ça chauffe) · r : revenir sur la piste', prizes: [2500, 1300, 700, 350, 150, 80] },
+  podrace: { make: (create) => create({ scene, camera, audio, ui }), help: '3 tours · z : gaz · q d : piloter · shift : boost (ça chauffe) · r : revenir sur la piste', prizes: [2500, 1300, 700, 350, 150, 80] },
   // mars: potatoes in the hab
-  potato: { mod: createPotato({ audio, ui }), screen: true, help: 'zqsd · e pour agir · x pour lâcher · tiens jusqu\'au sauvetage', prizes: [2200, 1200, 700, 300] },
-  survie: { mod: createSurvie({ audio, ui }), screen: true, help: 'zqsd · e sortir, monter, fouiller · espace panneaux · f réparer · m carte', prizes: [2500, 1300, 600, 250] },
-  tycoon: { mod: createTycoon({ audio, ui, eco, pay: (v, text) => reward(v, text), save: () => save() }), screen: true, help: 'souris · la colonie tourne même sans toi', prizes: [0] },
-  invaders: { mod: createInvaders({ audio, ui }), screen: true, help: 'q d ou ← → : bouger · espace : tirer · abats la vague avant qu\'elle ne touche la lune', prizes: [1500, 700, 350, 150] },
-  shooter: { mod: createShooter({ audio, ui }), screen: true, help: 'zqsd ou flèches : voler · espace : tirer · e : bombe · ramasse les capsules', prizes: [1800, 900, 450, 200] },
+  potato: { make: (create) => create({ audio, ui }), screen: true, help: 'zqsd · e pour agir · x pour lâcher · tiens jusqu\'au sauvetage', prizes: [2200, 1200, 700, 300] },
+  survie: { make: (create) => create({ audio, ui }), screen: true, help: 'zqsd · e sortir, monter, fouiller · espace panneaux · f réparer · m carte', prizes: [2500, 1300, 600, 250] },
+  tycoon: { make: (create) => create({ audio, ui, eco, pay: (v, text) => reward(v, text), save: () => save() }), screen: true, help: 'souris · la colonie tourne même sans toi', prizes: [0] },
+  invaders: { make: (create) => create({ audio, ui }), screen: true, help: 'q d ou ← → : bouger · espace : tirer · abats la vague avant qu\'elle ne touche la lune', prizes: [1500, 700, 350, 150] },
+  shooter: { make: (create) => create({ audio, ui }), screen: true, help: 'zqsd ou flèches : voler · espace : tirer · e : bombe · ramasse les capsules', prizes: [1800, 900, 450, 200] },
   // the church organ's rhythm game, at the console
-  orgue: { noBanner: true, mod: createOrgue({ scene: homeRoot, camera, audio, ui, organ, church: CH }), help: 'les notes au passage de la ligne · maintenir les longues · shift : grand jeu', prizes: [1500, 700, 350, 150] },
+  orgue: { noBanner: true, make: (create) => create({ scene: homeRoot, camera, audio, ui, organ, church: CH }), help: 'les notes au passage de la ligne · maintenir les longues · shift : grand jeu', prizes: [1500, 700, 350, 150] },
   // the crypt's secret: an island far off, reached from the table under the nave
-  worms3d: { mod: createWorms3d({ scene, camera, ui }), help: 'zqsd : ramper · espace : sauter · souris : viser · clic maintenu : tirer · 1…0, molette : armes', prizes: [2500, 1000, 500, 200] },
+  worms3d: { make: (create) => create({ scene, camera, ui }), help: 'zqsd : ramper · espace : sauter · souris : viser · clic maintenu : tirer · 1…0, molette : armes', prizes: [2500, 1000, 500, 200] },
   // the moon arcade
-  comic: { mod: createComic({ audio, ui }), screen: true, help: 'flèches / zqsd · espace pour sauter · j pour tirer · e pour les portes · k pour la baguette', prizes: [2000, 900, 450, 200] },
-  pvz: { mod: createPvz({ audio, ui }), screen: true, help: 'souris : ramasser les étoiles, choisir une carte, planter · 1 à 9 : cartes · clic droit : annuler', prizes: [1800, 800, 400, 150] },
-  marioportal: { mod: createMarioPortal({ audio, ui }), screen: true, where: 'sur la borne de la cave secrète', help: 'q d · espace pour sauter · shift pour courir · souris et clics pour les portails', prizes: [2000, 1000, 500, 200] },
+  comic: { make: (create) => create({ audio, ui }), screen: true, help: 'flèches / zqsd · espace pour sauter · j pour tirer · e pour les portes · k pour la baguette', prizes: [2000, 900, 450, 200] },
+  pvz: { make: (create) => create({ audio, ui }), screen: true, help: 'souris : ramasser les étoiles, choisir une carte, planter · 1 à 9 : cartes · clic droit : annuler', prizes: [1800, 800, 400, 150] },
+  marioportal: { make: (create) => create({ audio, ui }), screen: true, where: 'sur la borne de la cave secrète', help: 'q d · espace pour sauter · shift pour courir · souris et clics pour les portails', prizes: [2000, 1000, 500, 200] },
 };
-let race = null;
+let race = null, raceQueue = null;
 const raceReturn = { pos: new THREE.Vector3(), yaw: 0 };
 // ---------- the moon and mars: a game hall, a grandstand, the orbital grand prix ----------
 const space = createSpaceArcade({ has: (id) => !!RACES[id] && !!GAMES[id], name: (id) => GAMES[id]?.name || id });
@@ -1606,6 +1584,15 @@ function raceHumans(roster = null) {
   return hs.sort((a, b) => String(a.id).localeCompare(String(b.id)));
 }
 function startRace(id, { seed = Math.floor(Math.random() * 1e9), hostId = myId(), roster = null, opts = null } = {}) {
+  if (!gameReady(id)) {
+    // the others may start sending before the code is here: kept, then played back
+    const q = raceQueue = { id, fx: [] };
+    return withGame(id, () => {
+      if (raceQueue === q) raceQueue = null;
+      startRace(id, { seed, hostId, roster, opts });
+      if (race?.id === id) for (const [pid, f] of q.fx) race.mod.onFx(pid, f);
+    });
+  }
   if (race) quitRace(null, true);
   else { raceReturn.pos.copy(onPlanet() ? moonP.pos : player.pos); raceReturn.yaw = player.yaw; }
   mg.stop(false);
@@ -1660,7 +1647,46 @@ function quitRace(result, silent = false) {
   if (result.place === 1 && r.id === 'worms3d') unlock('lombrics');
   save();
 }
-for (const r of Object.values(RACES)) r.mod.onEnd = (res) => quitRace(res);
+// A game's code comes on demand, the first time it's needed: its title screen, the lobby's countdown,
+// its terminal close by (preloaded when the page is idle). Until then RACES[id].mod is null.
+for (const r of Object.values(RACES)) r.mod = null;
+const gameLoads = new Map(), gameFailed = new Map();   // id → when its code last failed to come
+function loadGame(id) {
+  const r = RACES[id];
+  if (!r || r.mod) return Promise.resolve(r?.mod ?? null);
+  if (!gameLoads.has(id)) gameLoads.set(id, GAME_CODE[id]().then(create => r.make(create)).then(mod => { r.mod = mod; mod.onEnd = (res) => quitRace(res); return mod; })
+    .catch(e => { gameLoads.delete(id); gameFailed.set(id, performance.now()); console.warn('jeu', id, e); throw e; }));
+  return gameLoads.get(id);
+}
+const gameReady = (id) => !RACES[id] || !!RACES[id].mod;
+// run `then` once the game is here; a small « chargement… » if it takes a moment
+function withGame(id, then) {
+  if (gameReady(id)) return Promise.resolve(then());
+  const t = setTimeout(() => ui.toast('chargement…', false, 2000), 150);
+  return loadGame(id).then(() => { clearTimeout(t); return then(); }, () => { clearTimeout(t); ui.toast('le jeu n\'a pas pu se charger', true); });
+}
+// in idle time, the games whose terminal is near (and the whole cave once you're down there)
+const idle = (f) => window.requestIdleCallback ? requestIdleCallback(f, { timeout: 2000 }) : setTimeout(f, 200);
+let preloadAt = 0, preloading = false;
+function preloadNear() {
+  const now = performance.now();
+  if (now < preloadAt || preloading) return;
+  preloadAt = now + 1000;
+  const at = onPlanet() ? moonP.pos : player.pos, want = [];
+  const its = onPlanet() ? space.terminals?.(here) || [] : world.interactables;
+  for (const it of its) {
+    const gs = it.game ? [it.game] : it.id === 'organ' ? ['orgue'] : it.id === 'pkdoor' ? ['painkiller'] : it.id === 'trapdoor' ? [...CAVE_GAMES] : null;
+    if (!gs || !it.pos) continue;
+    const d = onPlanet() ? at.distanceTo(it.pos) : Math.hypot(at.x - it.pos.x, at.z - it.pos.z);
+    if (d < (onPlanet() ? 8 : 6) && (onPlanet() || Math.abs(at.y + 1 - it.pos.y) < 2.5)) for (const g of gs) if (!gameReady(g) && !(now - gameFailed.get(g) < 30000)) want.push([d, g]);
+  }
+  if (here === 'home' && cave.inside(player.pos)) for (const g of CAVE_GAMES) if (!gameReady(g) && !(now - gameFailed.get(g) < 30000)) loadGame(g).catch(() => {});   // the dioramas all around
+  if (lobby && !gameReady(lobby.g) && !(now - gameFailed.get(lobby.g) < 5000)) want.push([-1, lobby.g]);
+  if (!want.length) return;
+  want.sort((a, b) => a[0] - b[0]);
+  preloading = true;
+  idle(() => { loadGame(want[0][1]).catch(() => {}).finally(() => { preloading = false; preloadAt = 0; }); });
+}
 // the sky of the world being looked at: a game's own (the kart from the moon is raced under the garden's sky)
 const viewNow = () => race?.view || gm?.prev?.view || here;
 function applyView() { const v = viewNow(); world.setSpace(onPlanet(v) ? v : false); }
@@ -1699,7 +1725,6 @@ function placeOnScreen(scr, mod, t, frame = null) {
 }
 
 // kept for the tests and the curious
-const kart = RACES.kart.mod;
 const startKart = () => startRace('kart'), quitKart = (res) => quitRace(res);
 function raceHud() {
   const h = race.mod.hud(), el = document.getElementById('mg');
@@ -1737,6 +1762,7 @@ function offerGame(g) { openGameMenu(g, { host: true }); }
 function openLobby(g, opts) {
   if (lobby && lobby.host === myId()) net.sendFx({ k: 'lobby', t: 'cancel', seed: lobby.seed });
   lobby = { g, opts, seed: Math.floor(Math.random() * 1e9), host: myId(), ready: new Map([[myId(), myName()]]), count: null };
+  loadGame(g).catch(() => {});
   net.sendFx({ k: 'lobby', t: 'open', g, opts, seed: lobby.seed });
   showLobby();
   ui.toast('partie proposée à tout le monde', false, 1800);
@@ -1765,11 +1791,11 @@ const GAME_KEYS = {
 };
 const DEFAULT_KEYS = [['z q s d', 'marcher'], ['clic', 'creuser'], ['espace', 'sauter'], ['r', 'remonter']];
 const gmEl = document.getElementById('gamemenu'), $g = (id) => document.getElementById(id);
-const escH = (t) => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 let gm = null;   // { g, host, opts, prev, t }
-const defaultOpts = (g) => { const m = RACES[g]?.mod.modes; return m?.length ? { mode: m[0].id } : {}; };
+const defaultOpts = (g) => { const m = RACES[g]?.mod?.modes; return m?.length ? { mode: m[0].id } : {}; };
 function openGameMenu(g, { host = true } = {}) {
   if (!GAMES[g]) return;
+  if (!gameReady(g)) { const was = state; return withGame(g, () => { if (state === was && !gm) openGameMenu(g, { host }); }); }
   if (gm) closeGameMenu(true);
   if (state === 'panel' || state === 'read') { ui.el.shop.classList.add('hidden'); ui.el.reader.classList.add('hidden'); panelKind = null; }
   gm = { g, host, opts: host ? defaultOpts(g) : (lobby?.opts || defaultOpts(g)), t: 0 };
@@ -1815,7 +1841,7 @@ function pickMode(id) {
 }
 function renderGameMenu(fresh = false) {
   if (!gm) return;
-  const g = gm.g, mods = RACES[g]?.mod.modes || [], me = myId();
+  const g = gm.g, mods = RACES[g]?.mod?.modes || [], me = myId();
   const multi = !!lobby && lobby.g === g, ready = multi && lobby.ready.has(me);
   $g('gm-title').textContent = GAMES[g].name;
   document.querySelector('.gm-head').classList.toggle('long', GAMES[g].name.length > 14);
@@ -1826,7 +1852,7 @@ function renderGameMenu(fresh = false) {
     box.innerHTML = mods.map((m, i) => `<button type="button" class="btn btn--menu m-opt in" style="--i:${i + 2};--tilt:${i % 2 ? .5 : -.5}deg" data-mode="${m.id}" data-desc="${escH(m.sub)}"${gm.host ? '' : ' disabled'}>` +
       `<span class="btn__text"><span class="btn__label">${escH(m.name)}</span></span><span class="m-check"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg></span></button>`).join('');
     box.querySelectorAll('.btn').forEach(b => b.insertAdjacentHTML('afterbegin', '<span class="btn__blob"></span>'));
-    $g('gm-keys').innerHTML = (RACES[g]?.mod.keys || GAME_KEYS[g] || DEFAULT_KEYS).map(([k, what]) => `<div class="krow"><span class="kk">${k.split(' ').map(x => `<b${x.length > 2 ? ' class="wide"' : ''}>${escH(x)}</b>`).join('')}</span><span>${escH(what)}</span></div>`).join('');
+    $g('gm-keys').innerHTML = (RACES[g]?.mod?.keys || GAME_KEYS[g] || DEFAULT_KEYS).map(([k, what]) => `<div class="krow"><span class="kk">${k.split(' ').map(x => `<b${x.length > 2 ? ' class="wide"' : ''}>${escH(x)}</b>`).join('')}</span><span>${escH(what)}</span></div>`).join('');
     $g('gm-play').dataset.desc = GAMES[g].sub;
     $g('main-desc-text2').textContent = GAMES[g].sub;
   }
@@ -1927,7 +1953,7 @@ function renderLobby() {
   if (gm) renderGameMenu();
   if (!lobby) return;
   const me = myId(), host = lobby.host === me, ready = lobby.ready.has(me);
-  const mode = lobby.opts?.mode && RACES[lobby.g]?.mod.modes?.find(m => m.id === lobby.opts.mode);
+  const mode = lobby.opts?.mode && RACES[lobby.g]?.mod?.modes?.find(m => m.id === lobby.opts.mode);
   $l('lobby-game').textContent = GAMES[lobby.g].name + (mode ? ' · ' + mode.name : '');
   $l('lobby-kicker').textContent = host ? 'ta partie' : `${net.peers.get(lobby.host)?.name ?? '?'} propose`;
   const n = lobby.ready.size;
@@ -1968,6 +1994,7 @@ function onLobby(id, peer, fx) {
   if (fx.t === 'out') { race?.mod.peerLeft(id); mg.rivalLeft(id); return; }
   if (fx.t === 'open') {
     lobby = { g: fx.g, opts: fx.opts || null, seed: fx.seed, host: id, ready: new Map([[id, peer.name]]), count: null };
+    loadGame(fx.g).catch(() => {});   // its code arrives during the countdown
     if (state !== 'attract') { showLobby(); audio.pickup(1); }
     return;
   }
@@ -2358,6 +2385,7 @@ function interact(it) {
 
 // ---------- the secret cave, and the portal gun ----------
 function goCave(down) {
+  if (down) for (const g of CAVE_GAMES) loadGame(g).catch(() => {});   // the dioramas down there
   ui.veil(1); audio.step();
   setTimeout(() => {
     player.pos.copy(down ? cave.entry : cave.exit); player.vel.set(0, 0, 0); player.stats.away = down;
@@ -2696,7 +2724,7 @@ function renderPanel(quip) {
     ui.panel({ title: 'la borne d\'arcade', quip, rows, note: MULTI ? 'la partie est proposée à tout le monde · départ dès deux joueurs prêts' : 'les mini-jeux rapportent des pièces', close: 'fermer' });
   } else if (k === 'modes') {
     // a game with several modes: the one who starts it picks
-    const g = modesFor, mods = RACES[g].mod.modes;
+    const g = modesFor, mods = RACES[g]?.mod?.modes || [];
     const rec = eco.s.records || {};
     const rows = mods.map(m => {
       const r = rec[g + (m.id === mods[0].id ? '' : ':' + m.id)];
@@ -2931,7 +2959,7 @@ if (MULTI) {
       if (fx.k === 'lobby') onLobby(id, peer, fx);
       else if (fx.k === 'mgp') { if (mg.active === fx.g) mg.onRival(id, fx); }
       // a game's own message rides whole in f: its keys can't clash with the routing
-      else if (fx.k === 'race') { if (race && race.id === fx.race) race.mod.onFx(id, fx.f); }
+      else if (fx.k === 'race') { if (race && race.id === fx.race) race.mod.onFx(id, fx.f); else if (raceQueue?.id === fx.race && raceQueue.fx.length < 2000) raceQueue.fx.push([id, fx.f]); }
       else if (fx.k === 'portal') portals.set(id, fx.i, fx.a, fx.w);
       else if (fx.k === 'pgun') cave.takeGun(fx.left);
       else if (fx.k === 'dgun') { reliquary.take(fx.left); ui.toast(`${peer?.name ?? 'quelqu\'un'} a trouvé le lance-disques`, false, 2600); }
@@ -2983,7 +3011,6 @@ function updateNetList(dt) {
   netListT = 1;
   if (!net.online) return;
   const hex = (c) => '#' + c.toString(16).padStart(6, '0');
-  const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   ui.setNet(`<div class="t">${esc(net.title || 'le jardin commun')}</div>` + net.list().map(p => `<div><i style="background:${hex(p.color)}"></i>${esc(p.name)}${p.me ? ' (toi)' : ''}</div>`).join(''));
 }
 
@@ -3302,6 +3329,7 @@ function loop(ts) {
   player.stats.away = inCave;
   world.setIndoor(inCave || (here === 'home' && crypt.inside(player.pos)));
   cave.update(dt, inCave, here === 'home' ? player.pos : null);
+  if (state !== 'attract') preloadNear();
   crypt.update(dt, here === 'home' ? player : null);
   holy.update(dt, { here, pos: onPlanet() ? moonP.pos : player.pos, live: bombs.live });
   launcher.held = eco.s.tool === 'disc' && eco.s.discs && holding && !mg.armed;
@@ -3462,7 +3490,7 @@ window.__dig = {
   world, terrains, player, eco, ui, camera, renderer, scene, heart, shovel, delivery, elevator, moles, finds, bombs, plane, animals, hologram, moonP, rocket, gainPart, launch, get landerPos() { return landerPos; }, MOON, MARS, marsRocket, MARS_PAD,
   get net() { return net; },
   get events() { return events; },
-  looks, mg, kart, startKart, quitKart, RACES, space, orbit, startWatch, stopWatch, get race() { return race; }, startRace, quitRace, launchGame, offerGame, stepMenu: (dt) => updateGameMenu(dt), openGameMenu, gameMenuPlay, gameMenuBack, pickMode, get gm() { return gm; }, get lobby() { return lobby; }, setReady, stepLobby: (dt) => updateLobby(dt),
+  looks, mg, get kart() { return RACES.kart.mod; }, loadGame, loadAllGames: () => Promise.all(Object.keys(RACES).map(loadGame)), startKart, quitKart, RACES, space, orbit, startWatch, stopWatch, get race() { return race; }, startRace, quitRace, launchGame, offerGame, stepMenu: (dt) => updateGameMenu(dt), openGameMenu, gameMenuPlay, gameMenuBack, pickMode, get gm() { return gm; }, get lobby() { return lobby; }, setReady, stepLobby: (dt) => updateLobby(dt),
   steal, get alarm() { return alarm; }, stepAlarm: (dt) => updateAlarm(dt),
   stepLaunch(dt) { updateLaunch(dt); },
   get state() { return state; },

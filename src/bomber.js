@@ -10,6 +10,9 @@ import * as THREE from 'three';
 import * as V from './vehicles.js';
 import { mergeStatic } from './merge.js';
 import { rng, hostOf, createChip, hexOf, ord } from './retro.js';
+import { wrapAngle as wrap } from './lib/math.js';
+import { tagTex } from './lib/tex.js';
+import { esc } from './lib/fmt.js';
 
 const W = 13, H = 11, C = .4, NC = W * H;
 const FUSE = 2.5, FLAME = .55, COUNT = 3, SD = 55, SD_STEP = .2, SD_LEFT = 5, ROUND_MAX = 95, SCORE_T = 4, FINAL_T = 3.2;
@@ -26,8 +29,6 @@ const MODES = [{ id: 'bataille', name: 'bataille', sub: 'quatre bombardiers dans
 const PH = ['count', 'play', 'score', 'final'];
 const PI = Math.PI, TAU = PI * 2;
 const clamp = THREE.MathUtils.clamp;
-const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
-const esc = (s) => String(s).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
 const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
 // the sudden death: blocks fall on every cell from the rim inward, clockwise
@@ -46,13 +47,6 @@ const SPIRAL = (() => {
 })();
 
 // ---------- the painted bits ----------
-function tagTex(text, color) {
-  return V.paintTex(256, 64, (g, w, h) => {
-    g.fillStyle = 'rgba(20,14,10,.72)'; g.beginPath(); g.roundRect(4, 8, w - 8, h - 16, 20); g.fill();
-    g.fillStyle = hexOf(color); g.beginPath(); g.arc(30, h / 2, 10, 0, TAU); g.fill();
-    g.fillStyle = '#fff'; g.font = '600 30px Rubik, sans-serif'; g.textBaseline = 'middle'; g.fillText(text.slice(0, 12), 50, h / 2 + 1);
-  });
-}
 function iconTex(k) {
   return V.paintTex(64, 64, (g) => {
     g.fillStyle = hexOf(ITEM_COL[k]); g.fillRect(0, 0, 64, 64);

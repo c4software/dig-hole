@@ -1,49 +1,18 @@
-// arcade-sfx.js, a small chip synth for the Moon arcade (invaders, shooter): pulses, a triangle, noise, and two loops.
+// arcade-sfx.js, the sounds of the Moon arcade (invaders, shooter) on the shared synth (lib/sfx.js): pulses, a triangle, noise, and two loops.
+import { createSynth, hz } from './lib/sfx.js';
 export function createArcadeSfx() {
-  let ctx = null, master = null, musicG = null, noiseBuf = null, pulses = {};
+  const S = createSynth({ vol: .12, music: .5 });
   let nextT = 0, step = 0, tempo = 1, song = null, ufo = null;
-  const hz = (m) => 440 * Math.pow(2, (m - 69) / 12);
-  function init() {
-    if (ctx) return;
-    const AC = window.AudioContext || window.webkitAudioContext;
-    if (!AC) return;
-    try { ctx = new AC(); } catch { ctx = null; return; }
-    master = ctx.createGain(); master.gain.value = .12; master.connect(ctx.destination);
-    musicG = ctx.createGain(); musicG.gain.value = .5; musicG.connect(master);
-    noiseBuf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
-    const d = noiseBuf.getChannelData(0); for (let n = 0; n < d.length; n++) d[n] = Math.random() * 2 - 1;
-    for (const duty of [.125, .25, .5]) {
-      const N = 32, re = new Float32Array(N), im = new Float32Array(N);
-      for (let k = 1; k < N; k++) re[k] = (2 / (k * Math.PI)) * Math.sin(k * Math.PI * duty);
-      pulses[duty] = ctx.createPeriodicWave(re, im);
-    }
-  }
-  function tone(f0, f1, dur, { type = .5, vol = .5, at = 0, out = master, slide = 'exp' } = {}) {
-    if (!ctx) return;
-    const t = (at || ctx.currentTime) + .005;
-    const o = ctx.createOscillator(), g = ctx.createGain();
-    if (type === 'tri') o.type = 'triangle'; else if (type === 'saw') o.type = 'sawtooth'; else o.setPeriodicWave(pulses[type]);
-    o.frequency.setValueAtTime(f0, t);
-    if (f1 !== f0) slide === 'lin' ? o.frequency.linearRampToValueAtTime(f1, t + dur) : o.frequency.exponentialRampToValueAtTime(f1, t + dur);
-    g.gain.setValueAtTime(vol, t); g.gain.setValueAtTime(vol, t + dur * .7); g.gain.linearRampToValueAtTime(0, t + dur);
-    o.connect(g); g.connect(out); o.start(t); o.stop(t + dur + .02);
-  }
-  function noise(dur, { vol = .4, at = 0, f = 3000, out = master, q = .7, f1 = 0 } = {}) {
-    if (!ctx) return;
-    const t = (at || ctx.currentTime) + .005;
-    const s = ctx.createBufferSource(); s.buffer = noiseBuf; s.loop = dur > .9;
-    const fl = ctx.createBiquadFilter(); fl.type = 'bandpass'; fl.frequency.setValueAtTime(f, t); fl.Q.value = q;
-    if (f1) fl.frequency.exponentialRampToValueAtTime(f1, t + dur);
-    const g = ctx.createGain(); g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(.001, t + dur);
-    s.connect(fl); fl.connect(g); g.connect(out); s.start(t); s.stop(t + dur + .02);
-  }
-  const seq = (notes, len, opts = {}) => { if (!ctx) return; const t0 = ctx.currentTime; notes.forEach((m, i) => { if (m > 0) tone(hz(m), hz(m), len * .95, { ...opts, at: t0 + i * len }); }); };
+  const tone = (f0, f1, dur, o = {}) => S.chip(f0, f1, dur, o);
+  const noise = (dur, o = {}) => S.noise(dur, o);
+  const seq = S.seq;
 
   // the shooter's loop: Am, F, C, G in sixteenths, a pumping bass and an arpeggio
   const ROOTS = [45, 41, 48, 43], ARP = [0, 7, 12, 15, 12, 7, 0, 12];
   const LEAD = [81, 0, 0, 79, 76, 0, 74, 0, 76, 0, 0, 0, 72, 0, 74, 0, 77, 0, 0, 76, 72, 0, 69, 0, 72, 0, 0, 0, 0, 0, 0, 0,
     84, 0, 0, 83, 79, 0, 76, 0, 79, 0, 0, 0, 76, 0, 79, 0, 83, 0, 81, 0, 79, 0, 74, 0, 71, 0, 0, 0, 74, 0, 79, 0];
   function music() {
+    const ctx = S.ctx, musicG = S.musicBus;
     if (!ctx || !song) return;
     const now = ctx.currentTime;
     if (nextT < now - .1) nextT = now + .05;
@@ -72,16 +41,16 @@ export function createArcadeSfx() {
   }
   let ufoT = 0;
   return {
-    init() { init(); if (ctx?.state === 'suspended') ctx.resume(); },
-    close() { song = null; ufo = null; if (ctx) { try { ctx.close(); } catch {} } ctx = null; },
-    music(s) { if (s !== song) { song = s; step = 0; if (ctx) nextT = ctx.currentTime + .05; } },
+    init: S.init,
+    close() { song = null; ufo = null; S.close(); },
+    music(s) { if (s !== song) { song = s; step = 0; if (S.ctx) nextT = S.ctx.currentTime + .05; } },
     tempo(v) { tempo = v; },
     tick: music,
     // the saucer's warble while it flies
     saucer(on) {
       if (!on) { ufo = null; return; }
       if (ufo) return;
-      ufo = () => { if (!ctx) return; const n = ctx.currentTime; if (n < ufoT) return; ufoT = n + .16; tone(1400, 900, .15, { type: .25, vol: .12 }); };
+      ufo = () => { if (!S.ctx) return; const n = S.ctx.currentTime; if (n < ufoT) return; ufoT = n + .16; tone(1400, 900, .15, { type: .25, vol: .12 }); };
     },
     march: (n) => { const f = hz([41, 39, 37, 36][n & 3]); tone(f, f * .92, .1, { type: .5, vol: .45 }); },
     shot: () => tone(1500, 300, .09, { type: .125, vol: .22 }),

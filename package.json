@@ -4,7 +4,8 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --test test/*.test.mjs",
+    "vendor:three": "esbuild node_modules/three/build/three.module.js --bundle --format=esm --minify --target=es2022 --outfile=vendor/three.module.min.js"
   },
   "keywords": [],
   "author": "",
@@ -13,5 +14,8 @@
   "dependencies": {
     "three": "^0.186.0",
     "ws": "^8.21.3"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2"
   }
 }

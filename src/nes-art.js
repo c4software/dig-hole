@@ -1,4 +1,5 @@
 // nes-art.js, the pixels of "super creuseur": a small NES-like palette, sprites from string maps, a 5×7 font.
+import { hexOf } from './lib/fmt.js';
 export const PAL = {
   K: '#000000', W: '#fcfcfc', w: '#bcbcbc', g: '#7c7c7c', q: '#404040',
   S: '#fcb890', D: '#503000', d: '#b0643a', n: '#f0a860', B: '#7c2c08',
@@ -15,7 +16,7 @@ export const shade = (hex, f) => {
   const c = (s) => Math.max(0, Math.min(255, Math.round(((n >> s) & 255) * f)));
   return `rgb(${c(16)},${c(8)},${c(0)})`;
 };
-export const hexOf = (n) => '#' + (n >>> 0).toString(16).padStart(6, '0');
+export { hexOf };
 
 export function canvas(w, h) {
   const c = document.createElement('canvas'); c.width = w; c.height = h;

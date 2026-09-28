@@ -6,6 +6,9 @@
 // from the planet (its own ground, under the martian sky). The host runs the bots.
 import * as THREE from 'three';
 import * as V from './vehicles.js';
+import { wrapAngle as wrap } from './lib/math.js';
+import { hexOf, fmtTime as fmt } from './lib/fmt.js';
+import { tagTex } from './lib/tex.js';
 
 export const PODRACE_AT = new THREE.Vector3(0, 0, -2600);
 const LAPS = 3, N = 1600, GRID = 6, HOVER = 1.1;
@@ -16,10 +19,7 @@ const MODES = [
 ];
 const BOTS = [['sebulbo', 0xe8742a], ['ratts', 0x3a8ef0], ['gasgano', 0x45c060], ['mawhonic', 0xd05aff], ['teemto', 0xf2c230], ['ody', 0xe8384f]];
 const PI = Math.PI, TAU = PI * 2;
-const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 const clamp = THREE.MathUtils.clamp;
-const fmt = (s) => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, '0')}`;
-const hexOf = (c) => '#' + c.toString(16).padStart(6, '0');
 const ord = (n) => n === 1 ? '1er' : n + 'e';
 
 // the canyon's line, in metres from PODRACE_AT: a long start straight, then the loop
@@ -65,13 +65,6 @@ function podModel(color) {
   return { g, body, engines, binder, cock, cables };
 }
 
-function tagTex(text, color) {
-  return V.paintTex(256, 64, (g, w, h) => {
-    g.fillStyle = 'rgba(20,14,10,.72)'; g.beginPath(); g.roundRect(4, 8, w - 8, h - 16, 20); g.fill();
-    g.fillStyle = hexOf(color); g.beginPath(); g.arc(30, h / 2, 10, 0, TAU); g.fill();
-    g.fillStyle = '#fff'; g.font = '600 30px Rubik, sans-serif'; g.textBaseline = 'middle'; g.fillText(text.slice(0, 12), 50, h / 2 + 1);
-  });
-}
 
 export function createPodrace({ scene, camera, audio, ui }) {
   const O = PODRACE_AT;

@@ -8,6 +8,9 @@
 import * as THREE from 'three';
 import * as V from './vehicles.js';
 import { netTrack, netNow, netStamp } from './netlerp.js';
+import { wrapAngle as wrap } from './lib/math.js';
+import { fmtTime as fmt } from './lib/fmt.js';
+import { tagTex } from './lib/tex.js';
 
 const LAPS = 3, N = 360, GRID = 6, SC = .06, MAX_MISS = 5, MAX_POW = 5;
 const MODES = [
@@ -17,17 +20,8 @@ const MODES = [
 const BOTS = [['ryota', 0xe8384f], ['ayumi', 0xf2c230], ['miles', 0x3a8ef0], ['dave', 0x45c060], ['lola', 0xb05ae0], ['kiki', 0xf08a2a]];
 const RED = 0xe8303a, YELLOW = 0xffd21f;
 const PI = Math.PI, TAU = PI * 2;
-const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 const clamp = THREE.MathUtils.clamp;
-const fmt = (s) => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, '0')}`;
 
-function tagTex(text, color) {
-  return V.paintTex(256, 64, (g, w, h) => {
-    g.fillStyle = 'rgba(20,14,10,.72)'; g.beginPath(); g.roundRect(4, 8, w - 8, h - 16, 20); g.fill();
-    g.fillStyle = '#' + color.toString(16).padStart(6, '0'); g.beginPath(); g.arc(30, h / 2, 10, 0, TAU); g.fill();
-    g.fillStyle = '#fff'; g.font = '600 30px Rubik, sans-serif'; g.textBaseline = 'middle'; g.fillText(text.slice(0, 12), 50, h / 2 + 1);
-  });
-}
 
 // a jet-ski and its rider, built at full size (2.8 m long, nose to +z), shrunk to toy scale
 function skiModel(color, suit) {

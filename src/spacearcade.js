@@ -210,6 +210,8 @@ export function createSpaceArcade({ has = () => false, name = (id) => id } = {})
   return {
     SPACE_GAMES, build,
     group: (w) => halls[w]?.group || null,
+    // the terminals' spots (to fetch their games' code before anyone asks)
+    terminals: (w) => (halls[w]?.terminals || []).map(t => t.it).filter(Boolean),
     // a lit terminal within reach of where you stand
     near(w, pos) {
       const h = halls[w];

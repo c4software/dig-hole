@@ -11,6 +11,7 @@ import * as V from './vehicles.js';
 import { mergeStatic } from './merge.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { rng, hostOf, createChip, hexOf, ord } from './retro.js';
+import { tagTex as tagPill } from './lib/tex.js';
 
 const ROUND = 120, STEP = 1 / 60, LIVES = 3, FIGHTERS = 4;
 const WATER = .28, CEIL = 3.52, XW = 2.8, LAKE = 2.02;
@@ -33,13 +34,7 @@ const CLOUDS = [{ x: -.95, y: 3.02 }, { x: 1.2, y: 3.08 }];
 const FLIPS = [{ x: 1.3, y: 1.86 }, { x: -.45, y: .92 }];
 const SPAWNS = [[-2.1, 2.42], [2.12, 2.5], [-1.2, 1.3], [1.1, 1.08], [.05, 2.02]].map(([x, t]) => [x, t + FOOT + .002]);
 
-function tagTex(text, color) {
-  return V.paintTex(256, 64, (g, w, h) => {
-    g.fillStyle = 'rgba(20,14,30,.72)'; g.beginPath(); g.roundRect(4, 8, w - 8, h - 16, 20); g.fill();
-    g.fillStyle = hexOf(color); g.beginPath(); g.arc(30, h / 2, 10, 0, TAU); g.fill();
-    g.fillStyle = '#fff'; g.font = '600 30px Rubik, sans-serif'; g.textBaseline = 'middle'; g.fillText(text.slice(0, 12), 50, h / 2 + 1);
-  });
-}
+const tagTex = (text, color) => tagPill(text, color, 'rgba(20,14,30,.72)');
 
 // ---------- the fighters: vertex-coloured parts merged, so each is a few draw calls ----------
 const tm = new THREE.Matrix4(), tq = new THREE.Quaternion(), te = new THREE.Euler(), tv = new THREE.Vector3(), ts = new THREE.Vector3();

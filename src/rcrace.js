@@ -11,6 +11,8 @@
 import * as THREE from 'three';
 import * as V from './vehicles.js';
 import { netTrack, netNow, netStamp } from './netlerp.js';
+import { wrapAngle as wrap } from './lib/math.js';
+import { fmtTime as fmt, esc } from './lib/fmt.js';
 
 const LAPS = 3, GRID = 6, SP = .25, CP_M = 20, BATTLE_T = 180, STUNT_T = 360;
 const ROAD_Z = -13.1, G = 15, R = .19;
@@ -75,7 +77,6 @@ const TABLE = [
   ['fw', 1.5, 3], ['tb', 1, 3], ['star', 0, .7],
 ];
 
-const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
 const clamp = THREE.MathUtils.clamp;
 
 function canvasTex(w, h, draw) { return V.paintTex(w, h, draw); }
@@ -223,7 +224,6 @@ function starTex() {
     g.fillStyle = 'rgba(255,255,255,.55)'; g.beginPath(); g.ellipse(52, 50, 10, 6, -.6, 0, 7); g.fill();
   });
 }
-const fmt = (s) => `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, '0')}`;
 const BLOCKC = [0xe8384f, 0xf2c230, 0x3a8ef0, 0x45c060, 0xf08a2a, 0xb05ae0, 0xf6f2ea];
 
 export function createRC({ scene, camera, audio, ui, world, terrain }) {
@@ -1828,7 +1828,6 @@ background:linear-gradient(170deg,rgba(52,39,28,.9),rgba(22,16,12,.93));border-r
     if (hudEl._h !== html) { hudEl.innerHTML = html; hudEl._h = html; }
   }
   const hex = (c) => '#' + (c ?? 0xffffff).toString(16).padStart(6, '0');
-  const esc = (s) => String(s).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
   const board = (list, val) => list.length > 1 ? `<div class="board">${list.map((c, n) => `<span style="color:${hex(c.color)}">${n + 1}. ${c === me ? '<em>toi</em>' : esc(c.name)} ${val(c)}</span>`).join('')}</div>` : '';
   function hudHtml() {
     const o = order();
