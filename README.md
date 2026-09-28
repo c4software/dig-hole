@@ -126,17 +126,20 @@ Sans ce drapeau, le jeu le devine tout seul : si `/api/notes` ne répond pas, il
 node test/net.test.mjs
 ```
 
-## l'image docker (version statique)
+## l'image docker (serveur + client)
 
-La version sans serveur (`build-static.sh`) servie par nginx (gzip, cache, `/healthz`) :
+Tout le jeu dans une image : le serveur node (jardin commun, livre d'or, `/sig`, `/admin`) et le client
+construit comme par `deploy.sh`. Les données (salles, livre d'or, jeton admin) sont dans `/app/data` :
 
 ```sh
-docker build -f docker/static/Dockerfile -t dig-hole-static .
-docker run --rm -p 8080:8080 dig-hole-static      # → http://localhost:8080
+docker build -f docker/Dockerfile -t dig-hole .
+docker run -d -p 8765:8765 -v dig-hole-data:/app/data --name dig-hole dig-hole   # → http://localhost:8765
+docker exec dig-hole cat data/admin-token          # le jeton de la console admin (ou -e DIG_ADMIN_TOKEN=…)
+docker exec -it dig-hole node admin.mjs            # la console en ligne de commande
 ```
 
-Le CI (`.github/workflows/docker-static.yml`) publie l'image (amd64 et arm64) sur
-`ghcr.io/c4software/dig-hole-static:latest` seulement quand on pousse un tag `v*`
+Le CI (`.github/workflows/ci.yml`) publie l'image (amd64 et arm64) sur
+`ghcr.io/c4software/dig-hole:latest` seulement quand on pousse un tag `v*`
 (`git tag v1.2.0 && git push origin v1.2.0`) ; les tests tournent à chaque push.
 
 ## github pages

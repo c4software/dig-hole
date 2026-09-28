@@ -1,9 +1,8 @@
-# The static game (no node server):
 #   - tests on every push and pull request
-#   - GitHub Pages on every push on main, when the repository variable PAGES_ENABLED is 'true'
-#     (settings → pages → source: « GitHub Actions »; a private repository needs a paid plan for pages)
-#   - the docker image (nginx) only on a v* tag: ghcr.io/<owner>/<repo>-static:latest
-name: image statique
+#   - the static game (no node server) on GitHub Pages on every push on main, when the repository
+#     variable PAGES_ENABLED is 'true' (settings → pages → source: « GitHub Actions »)
+#   - the whole game as a docker image (node server + client) only on a v* tag: ghcr.io/<owner>/<repo>:latest
+name: ci
 
 on:
   push:
@@ -46,13 +45,13 @@ jobs:
       - id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository }}-static
+          images: ghcr.io/${{ github.repository }}
           tags: |
             type=raw,value=latest
       - uses: docker/build-push-action@v6
         with:
           context: .
-          file: docker/static/Dockerfile
+          file: docker/Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
