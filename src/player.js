@@ -2,9 +2,10 @@
 // steps on its own, and flies a little once the jetpack is bought.
 import * as THREE from 'three';
 import { S } from './terrain.js';
+import { tun } from './tunables.js';
 
 const R = 0.28, H = 1.7, EYE = 1.56;
-const G = 22;
+const G0 = 22;   // times the host's gravity (tunables.js)
 const EPS = 1e-4;
 
 export function createPlayer(camera, getTerrain, colliders) {
@@ -99,7 +100,8 @@ export function createPlayer(camera, getTerrain, colliders) {
     if (keys.has('KeyA') || keys.has('ArrowLeft')) wish.x -= 1;
     if (keys.has('KeyD') || keys.has('ArrowRight')) wish.x += 1;
     if (wish.lengthSq()) wish.normalize().applyAxisAngle(THREE.Object3D.DEFAULT_UP, yaw);
-    const speed = (keys.has('ShiftLeft') || keys.has('ShiftRight') ? 6.2 : 4.3) * (stats.inWater ? 0.55 : 1) * (stats.speed || 1);
+    const speed = (keys.has('ShiftLeft') || keys.has('ShiftRight') ? 6.2 : 4.3) * (stats.inWater ? 0.55 : 1) * (stats.speed || 1) * tun.get('walk');
+    const G = G0 * tun.get('gravity');
     const accel = onGround ? 14 : 5;
     vel.x += (wish.x * speed - vel.x) * Math.min(1, accel * dt);
     vel.z += (wish.z * speed - vel.z) * Math.min(1, accel * dt);
@@ -109,7 +111,7 @@ export function createPlayer(camera, getTerrain, colliders) {
       // on a ladder: forward or space climbs, back climbs down, nothing holds you there
       const up = space || keys.has('KeyW') || keys.has('ArrowUp'), down = keys.has('KeyS') || keys.has('ArrowDown');
       vel.y = up ? 3.2 : down ? -3 : 0;
-    } else if (space && onGround) { vel.y = Math.sqrt(2 * G * stats.jump); onGround = false; }
+    } else if (space && onGround) { vel.y = Math.sqrt(2 * G * stats.jump * tun.get('jump')); onGround = false; }
     stats.jetting = false;
     if (space && !onGround && stats.canJet && stats.fuelMax > 0 && stats.fuel > 0 && vel.y < 6) {
       vel.y += 40 * dt;

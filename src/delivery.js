@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { mergeStatic } from './merge.js';
 import * as V from './vehicles.js';
+import { tun } from './tunables.js';
 
 // parody shops. Prices are multiplied, eta in seconds, fake = chance of a counterfeit,
 // shoddy = what arrives is a gamble (dead, explodes in your hands, too fast, or much stronger)
@@ -291,7 +292,7 @@ export function createDelivery({ scene, label, interactables, getTerrain }) {
       const st = STORES[store];
       // one delivery: what's ordered while a parcel from the same shop is on its way rides with it
       const pend = S.orders.filter(o => o.store === store);
-      const eta = pend.length ? Math.min(...pend.map(o => o.eta)) : st.eta;
+      const eta = pend.length ? Math.min(...pend.map(o => o.eta)) : st.eta * tun.get('deliveryEta');
       for (let n = 0; n < count; n++) S.orders.push({ store, item, eta, fake: Math.random() < st.fake });
     },
     // hand every parcel over, the counterfeits flagged

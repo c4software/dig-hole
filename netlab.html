@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A Hole | labo réseau</title>
+<link rel="icon" href="./favicon.svg" type="image/svg+xml">
+<style>
+  :root { --k: #1a130d; --p: #261c14; --a: #ffb020; --t: #fff; }
+  body { margin: 0; padding: 16px; background: var(--k); color: var(--t); font: 500 13px/1.4 ui-monospace, monospace; }
+  h1 { font: 800 18px system-ui, sans-serif; margin: 0 0 8px; }
+  .box { background: var(--p); border-radius: 12px; padding: 10px 12px; margin: 8px 0; max-width: 900px; }
+  textarea { width: 100%; min-height: 60px; background: var(--k); color: #ffdc8f; border: 0; border-radius: 8px; padding: 8px; font: inherit; box-sizing: border-box; }
+  button { cursor: pointer; border: 0; border-radius: 8px; padding: 7px 10px; background: var(--a); color: var(--k); font: 800 12px system-ui, sans-serif; }
+  #log { white-space: pre-wrap; max-height: 50vh; overflow: auto; }
+</style>
+</head>
+<body>
+<!-- a guest without the game (no webgl): joins a hosted room, walks in circles, digs a little,
+     prints what the room says. ?join=<code or @room>&name=bot · window.__lab for scripts -->
+<h1>labo réseau · invité sans le jeu</h1>
+<div class="box" id="stat">…</div>
+<div class="box" id="ans" hidden>réponse à coller chez l'hôte :<textarea readonly id="ans-code"></textarea><button id="copy">copier</button></div>
+<div class="box" id="form" hidden>code ou lien de l'hôte :<textarea id="code"></textarea><button id="go">rejoindre</button></div>
+<div class="box">réglages reçus de l'hôte : <span id="tun">{}</span></div>
+<div class="box" id="log"></div>
+<script type="module" src="./src/netlab.js"></script>
+</body>
+</html>
