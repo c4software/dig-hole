@@ -126,7 +126,7 @@ export function createSpaceArcade({ has = () => false, name = (id) => id } = {})
     const look = LOOK[w];
     const group = new THREE.Group();
     group.position.copy(at); group.quaternion.copy(frameAt(center, at, face));
-    const wallM = V.mat(look.wall, { roughness: .55 }), trimM = V.mat(look.trim, { roughness: .6 }), neon = V.lamp(look.neon, 2.2), neon2 = V.lamp(look.neon2, 2.2);
+    const wallM = V.mat(look.wall, { roughness: .55, emissive: look.wall, emissiveIntensity: w === 'moon' ? .22 : .08 }), trimM = V.mat(look.trim, { roughness: .6 }), neon = V.lamp(look.neon, 2.2), neon2 = V.lamp(look.neon2, 2.2);
     // the foundation hides the ground's bumps under the floor
     box(HW * 2 + 1.2, 3, HD * 2 + 1.2, V.mat(w === 'mars' ? 0x6a3a2a : 0x8a8a90, { roughness: .95 }), 0, -1.5, 0, group, true);
     box(HW * 2, .06, HD * 2, V.mat(look.floor, { roughness: .35, metalness: .3 }), 0, .03, 0, group);

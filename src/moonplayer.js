@@ -180,6 +180,8 @@ export function createMoonPlayer(scene, camera, getTerrain) {
     // never leave the eye inside the rock: slide it in towards the astronaut until it's clear
     const inRock = (p) => { const [i, j, k] = t0.cellOf(p.x, p.y, p.z); return t0.solidCell(i, j, k) || (extra && extra(p, .12)); };
     for (let n = 0; n < 12 && dist > .25 && inRock(camera.position); n++) { dist -= .15; camera.position.copy(target).addScaledVector(back, dist); }
+    // a wall of a hall between the astronaut and the eye: come in front of it
+    if (extra) for (let s = .3; s < dist; s += .2) if (extra(tmp2.copy(target).addScaledVector(back, s), .15)) { dist = Math.max(.25, s - .3); camera.position.copy(target).addScaledVector(back, dist); break; }
     camera.up.copy(up);
     // the crosshair lands on the ground a few metres ahead; the mouse slides it nearer or further
     camera.lookAt(tmp.copy(target).addScaledVector(view, 2.4).addScaledVector(up, -2.5 + (.3 - camPitch) * 2.6));
