@@ -2456,6 +2456,9 @@ function superReset(seed) {
   ui.layer('super reset', 'tous les mondes ont été détruits, puis refaits');
 }
 
+const ORDER_QTY = [1, 5, 10, 20];
+let orderQty = 1;
+
 function openParcels() {
   const ps = delivery.open();
   if (!ps.length) return;
@@ -2551,13 +2554,17 @@ function renderPanel(quip) {
     ui.panel({ title: 'le konbini · いらっしゃいませ', quip, rows, note: 'les produits du konbini se consomment tout de suite', close: 'sortir' });
   } else if (k === 'computer') {
     const st = STORES[panelTab];
-    const rows = ['dyn', 'sup', 'med', 'cell'].map(id => {
-      const price = Math.round(ITEMS[id].price * st.mult);
+    // how many of each per click: a row that cycles ×1, ×5, ×10, ×20
+    const rows = [{ id: 'qty', kind: 'quantité', name: `×${orderQty} par commande`, sub: 'clique pour changer · tout part dans la même livraison' }];
+    rows.push(...['dyn', 'sup', 'med', 'cell', 'ladder'].map(id => {
+      const price = Math.round(ITEMS[id].price * st.mult) * orderQty;
       const ali = Math.min(eco.s.ali[id] || 0, eco.s.items[id]);
-      return { id: 'order:' + id, kind: 'colis', name: ITEMS[id].name, lvl: `×${eco.s.items[id]}${ali ? ` (${ali} ali)` : ''}`, sub: ITEMS[id].sub, price, poor: eco.s.money < price };
-    });
+      return { id: 'order:' + id, kind: 'colis', name: `${orderQty > 1 ? orderQty + ' × ' : ''}${ITEMS[id].name}`, lvl: `×${eco.s.items[id]}${ali ? ` (${ali} ali)` : ''}`, sub: ITEMS[id].sub, price, poor: eco.s.money < price };
+    }));
+    const mine = delivery.state.orders.filter(o => o.store === panelTab);
     const pend = delivery.state.orders.length, eta = delivery.eta;
-    const note = pend ? `${pend} colis en route · prochain dans ${Math.ceil(eta)} s` : `${st.sub} · livré devant la porte en ~${st.eta} s`;
+    const note = mine.length ? `${mine.length} article${mine.length > 1 ? 's' : ''} dans le colis ${st.name} · livré dans ${Math.ceil(Math.min(...mine.map(o => o.eta)))} s · ce que tu commandes maintenant part avec`
+      : pend ? `${pend} article${pend > 1 ? 's' : ''} en route · prochain dans ${Math.ceil(eta)} s` : `${st.sub} · livré devant la porte en ~${st.eta} s`;
     ui.panel({ title: 'commander en ligne', quip, tabs: Object.entries(STORES).map(([id, s]) => ({ id, name: s.name, sub: s.sub })), tab: panelTab, rows, note, close: 'se déconnecter' });
   } else if (k === 'lander') {
     const rows = [];
@@ -2642,10 +2649,11 @@ ui.el.shopItems.addEventListener('click', (e) => {
     ui.flashItem(id, 'bought');
     save();
   } else if (panelKind === 'computer') {
+    if (id === 'qty') { orderQty = ORDER_QTY[(ORDER_QTY.indexOf(orderQty) + 1) % ORDER_QTY.length]; audio.tick(); renderPanel(); return; }
     const it = id.slice(6);
-    const price = Math.round(ITEMS[it].price * STORES[panelTab].mult);
+    const price = Math.round(ITEMS[it].price * STORES[panelTab].mult) * orderQty;
     if (!eco.pay(price)) return deny();
-    delivery.order(panelTab, it, 1);
+    delivery.order(panelTab, it, orderQty);
     audio.buy();
     ui.setCoins(eco.s.money, true);
     renderPanel('commandé !');

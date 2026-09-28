@@ -110,12 +110,12 @@ export const CHINA_ORDER = ['shovel', 'drill', 'lamp', 'kite'];
 
 // things you use up: slots on the hotbar, keys 1..5, used with F or right click
 export const ITEMS = {
-  dyn:  { name: 'dynamite',        price: 40,  max: 12, sub: 'casse la roche, pulvérise les minerais' },
-  sup:  { name: 'super bombe',     price: 220, max: 6,  sub: 'perce tout sauf le socle, ramasse les minerais' },
-  fus:  { name: 'fusée-foreuse',   price: 700, max: 6,  sub: 'fore un puits de 14 m sous tes pieds', china: true },
-  med:  { name: 'trousse de soin', price: 50,  max: 9,  sub: 'rend 60 points de vie' },
-  cell: { name: 'pile de secours', price: 60,  max: 9,  sub: 'recharge la batterie, où que tu sois' },
-  ladder: { name: 'échelle',       price: 25,  max: 20, sub: 'se pose contre une paroi, on y grimpe' },
+  dyn:  { name: 'dynamite',        price: 40,  max: 99, sub: 'casse la roche, pulvérise les minerais' },
+  sup:  { name: 'super bombe',     price: 220, max: 99,  sub: 'perce tout sauf le socle, ramasse les minerais' },
+  fus:  { name: 'fusée-foreuse',   price: 700, max: 99,  sub: 'fore un puits de 14 m sous tes pieds', china: true },
+  med:  { name: 'trousse de soin', price: 50,  max: 99,  sub: 'rend 60 points de vie' },
+  cell: { name: 'pile de secours', price: 60,  max: 99,  sub: 'recharge la batterie, où que tu sois' },
+  ladder: { name: 'échelle',       price: 25,  max: 99, sub: 'se pose contre une paroi, on y grimpe' },
   // made from what the moon gives, never sold
   grav: { name: 'gélule anti-gravité', price: 0, max: 6, sub: '20 secondes de gravité lunaire, sur terre', moon: true },
   met:  { name: 'météore de poche',    price: 0, max: 4, sub: 'un cratère énorme, et les minerais avec', moon: true },

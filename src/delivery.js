@@ -289,7 +289,10 @@ export function createDelivery({ scene, label, interactables, getTerrain }) {
     load(s) { S = { orders: s?.orders || [], parcels: s?.parcels || [] }; sync(); },
     order(store, item, count) {
       const st = STORES[store];
-      for (let n = 0; n < count; n++) S.orders.push({ store, item, eta: st.eta, fake: Math.random() < st.fake });
+      // one delivery: what's ordered while a parcel from the same shop is on its way rides with it
+      const pend = S.orders.filter(o => o.store === store);
+      const eta = pend.length ? Math.min(...pend.map(o => o.eta)) : st.eta;
+      for (let n = 0; n < count; n++) S.orders.push({ store, item, eta, fake: Math.random() < st.fake });
     },
     // hand every parcel over, the counterfeits flagged
     open() { const p = S.parcels; S.parcels = []; sync(); return p; },
