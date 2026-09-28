@@ -498,6 +498,22 @@ export function createBatballons({ scene, camera, audio, ui, at }) {
     send({ t: 'h', k: c.key, id, by, b: c.balloons, oa: Math.round(c.outAt * 100) / 100 });
     if (c === me) { shake = .25; audio.bonk(); chip.tone(900, 180, .45, { type: .25, vol: .3 }); if (c.balloons > 0) ui.toast(`aïe ! ${c.balloons} ballon${c.balloons > 1 ? 's' : ''}`, true, 900); }
   }
+  // g drove into c (one of mine) on a drift or a turbo: a balloon changes hands
+  function steal(g, c) {
+    c.spinT = .8; c.invT = 2; c.drift = 0; c.boostT = 0; c.speed *= .4; c.vx *= .5; c.vz *= .5;
+    setBalloons(c, c.balloons - 1);
+    const gb = Math.min(LIVES, g.balloons + 1);
+    if (mine(g)) g.balloons = gb;
+    credit(g.key, c);
+    if (c.balloons <= 0) goOut(c, clock - goAt);
+    send({ t: 'st', g: g.key, k: c.key, b: c.balloons, gb, oa: Math.round(c.outAt * 100) / 100 });
+    stolen(g, c);
+  }
+  function stolen(g, c) {
+    burst(c.x, c.y + .12, c.z, 12, g.color, .5, .007, 1.4);
+    if (c === me) { shake = .2; audio.bonk(); chip.tone(700, 200, .35, { type: .25, vol: .3 }); ui.toast(`${g.name} t'a volé un ballon !`, true, 1100); }
+    if (g === me) { chip.seq([72, 79, 84, 88], .05, { type: .25, vol: .25 }); ui.toast(`ballon volé à ${c.name} !`, false, 1100); }
+  }
   function spinOnly(c) { c.spinT = 1; c.invT = 2; c.drift = 0; c.speed *= .2; c.air = true; c.vy = .6; if (c === me) { shake = .3; audio.boom(); } }
 
   // ---------- items ----------
@@ -574,6 +590,11 @@ export function createBatballons({ scene, camera, audio, ui, at }) {
       if (c.invT <= 0) for (const g of karts) {
         if (!g.out || g.bombCd > 0 || g === c) continue;
         if ((g.x - c.x) ** 2 + (g.z - c.z) ** 2 < .1 ** 2 && Math.abs(g.y - c.y) < .08) { bombHit(g, c); send({ t: 'bb', g: g.key, k: c.key }); break; }
+      }
+      // rammed by a kart on a drift or a turbo (and I'm not on one): it takes one of my balloons
+      if (c.invT <= 0 && c.balloons > 0 && c.boostT <= 0 && !c.out) for (const g of karts) {
+        if (g === c || g.out || g.balloons <= 0 || !(g.boostT > 0 || g.drift)) continue;
+        if ((g.x - c.x) ** 2 + (g.z - c.z) ** 2 < .1 ** 2 && Math.abs(g.y - c.y) < .08) { steal(g, c); break; }
       }
     }
     for (const s of shots) {
@@ -755,6 +776,13 @@ export function createBatballons({ scene, camera, audio, ui, at }) {
       credit(fx.by, c); setBalloons(c, fx.b); c.spinT = 1;
       if (fx.b <= 0) goOut(c, fx.oa);
     }
+    else if (fx.t === 'st') {
+      const g = byKey(fx.g), c = byKey(fx.k); if (!g || !c || mine(c)) return;
+      setBalloons(c, fx.b); c.spinT = .8;
+      if (fx.b <= 0) goOut(c, fx.oa);
+      if (mine(g)) g.balloons = Math.min(LIVES, g.balloons + 1); else g.balloons = fx.gb;
+      credit(fx.g, c); stolen(g, c);
+    }
     else if (fx.t === 'bb') { const g = byKey(fx.g), c = byKey(fx.k); if (g) bombHit(g, c && !mine(c) ? c : null); }
     else if (fx.t === 'pk') { const b = boxes[fx.i]; if (b && b.on) { b.on = false; b.offT = BOX_BACK; b.grow = 0; burst(b.x, b.gy + .07, b.z, 10, 0xffffff, .5, .006, 1.8); } }
     else if (fx.t === 'bo') { const b = boxes[fx.i]; if (b) b.on = true; }
@@ -861,6 +889,8 @@ export function createBatballons({ scene, camera, audio, ui, at }) {
       if (!c.out) for (let k = 0; k < c.balloons; k++) {
         const p = c.bp[k];
         balloonTarget(c, k, _v); _v.y += Math.sin(clock * 3 + k * 2 + c.slot) * .006;
+        // a balloon that just appeared (a steal) starts on its string, not where the last one popped
+        if (k >= (c.bShown || 0)) p.copy(_v);
         p.lerp(_v, Math.min(1, dt * 9));
         dm.position.copy(p); dm.rotation.set(0, 0, (p.x - _v.x) * 8); dm.scale.setScalar(.022); dm.updateMatrix();
         bMesh.setMatrixAt(bi, dm.matrix); bMesh.setColorAt(bi, tc.setHex(c.color));
@@ -869,6 +899,7 @@ export function createBatballons({ scene, camera, audio, ui, at }) {
         sPos[n + 3] = p.x; sPos[n + 4] = p.y - .025; sPos[n + 5] = p.z;
         bi++;
       }
+      c.bShown = c.out ? 0 : c.balloons;
       // sparks from a drift, flames from a boost, a fizzing fuse
       if (c.drift && !c.air && Math.random() < .6) {
         const col = c.driftCh > 1.3 ? 0xff7a1a : c.driftCh > .7 ? 0x4ab8ff : 0xfff0c0;
@@ -944,7 +975,7 @@ export function createBatballons({ scene, camera, audio, ui, at }) {
 
   return {
     modes: MODES,
-    keys: [['z q s d', 'piloter'], ['shift', 'saut · tenir en virage : dérapage turbo'], ['espace', 'utiliser l\'objet'], ['s + espace', 'lancer vers l\'arrière'], ['r', 'revenir à ton fort']],
+    keys: [['z q s d', 'piloter'], ['shift', 'saut · tenir en virage : dérapage turbo'], ['dérapage / turbo', 'fonce sur un kart : vole-lui un ballon'], ['espace', 'utiliser l\'objet'], ['s + espace', 'lancer vers l\'arrière'], ['r', 'revenir à ton fort']],
     start, update, stop, onFx, peerLeft,
     respawn() { if (state === 'play' && me && respawnCd <= clock && me.spinT <= 0) { respawnCd = clock + 3; placeAt(me, me.slot); camYaw = me.yaw; } },
     hud() {

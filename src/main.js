@@ -1461,7 +1461,7 @@ const RACES = {
   ballons: { mod: createBallons({ scene: homeRoot, camera, audio, ui, at: slotAt('ballons') }), help: 'espace : battre des bras · q d : dériver · tombe sur les ballons des autres · évite l\'eau et les étincelles', prizes: [1500, 700, 350, 150] },
   empile: { mod: createEmpile({ scene: homeRoot, camera, audio, ui, at: slotAt('empile') }), help: 'q d : déplacer · z : tourner · s : descendre · espace : lâcher · 2, 3 ou 4 lignes d\'un coup envoient des gravats', prizes: [1500, 700, 350, 150] },
   bagarre: { mod: createBagarre({ scene: homeRoot, camera, audio, ui, at: slotAt('bagarre') }), help: '3 vies · j : attaque (+ direction) · k : spécial · z + k : remontée · shift : bouclier · éjecte-les hors de l\'arène', prizes: [1500, 700, 350, 150] },
-  batballons: { mod: createBatballons({ scene: homeRoot, camera, audio, ui, at: slotAt('batballons') }), help: 'zqsd · shift : saut et dérapage · espace : objet (s + espace : vers l\'arrière) · r : retour au fort', prizes: [1500, 700, 350, 150] },
+  batballons: { mod: createBatballons({ scene: homeRoot, camera, audio, ui, at: slotAt('batballons') }), help: 'zqsd · shift : saut et dérapage · fonce en dérapage ou en turbo sur un kart : tu lui voles un ballon · espace : objet (s + espace : vers l\'arrière) · r : retour au fort', prizes: [1500, 700, 350, 150] },
   // under the church: the cursed nave, in first person
   painkiller: { mod: createPainkiller({ scene: homeRoot, camera, audio, ui }), where: 'dans la crypte sous l\'église', help: 'zqsd · espace (garde-le : bunny hop) · clic : tir · clic droit : secondaire · 1 2 3 : armes', prizes: [2500, 1200, 600, 300] },
   // the 2D games draw on their own canvas over the world: no mouse to hold
