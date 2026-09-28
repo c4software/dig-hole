@@ -164,8 +164,23 @@ const portals = createPortals({ scene, camera, renderer: world.renderer, audio }
 const gunOut = () => eco.s.tool === 'portal' && eco.s.portal;
 const trapGuide = createTrapGuide();
 const partCompass = createPartCompass();
+// where the next rocket part is when none is left in this world
+const WORLD_NAMES = { home: 'dans le potager', china: 'au japon' };
+function partsElsewhere() {
+  for (const w of ['home', 'china']) if (w !== W() && finds[w].list.some(f => !f.gone && f.def.kind === 'part' && !eco.s.parts[f.id])) return WORLD_NAMES[w];
+  return null;
+}
 // the church: its organ for everyone, the launcher in the reliquary, the bats round the belfry
 const CH = world.church;
+// the nave's flagstones give way over the diggable ground: its own top is the floor there,
+// so a hole dug in it shows (the ground's first layer looks like the flagstones)
+CH.flagstones.onBeforeCompile = (sh) => {
+  sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vDigW;')
+    .replace('#include <project_vertex>', '#include <project_vertex>\nvDigW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+  sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vDigW;')
+    .replace('void main() {', `void main() {\n  if (vDigW.x > ${DIG.x0.toFixed(2)} && vDigW.x < ${DIG.x1.toFixed(2)} && vDigW.z > ${DIG.z0.toFixed(2)} && vDigW.z < ${DIG.z1.toFixed(2)} && vDigW.y < .5) discard;`);
+};
+CH.flagstones.customProgramCacheKey = () => 'church-dig-floor';
 const organ = createOrgan({ parent: homeRoot, at: CH.organ, rot: -Math.PI / 2 });
 world.colliders.push({ min: new THREE.Vector3(CH.organ.x, 0, CH.organ.z - 1.75), max: new THREE.Vector3(CH.organ.x + .9, 5.6, CH.organ.z + 1.75) });
 world.colliders.push({ min: new THREE.Vector3(CH.organ.x - 1, 0, CH.organ.z - .95), max: new THREE.Vector3(CH.organ.x, 1, CH.organ.z + .95) });
@@ -368,6 +383,8 @@ function applyOp(op, local = true) {
   else if (op.k === 'find') {
     const f = finds[op.w].remove(op.key);
     if (!local && f && !(eco.s.finds[op.w] = eco.s.finds[op.w] || []).includes(op.key)) eco.s.finds[op.w].push(op.key);
+    // a rocket part dug up by anyone in the garden is everyone's: one rocket for the room
+    if (!local && f?.def.kind === 'part') gainPart(f.id);
   }
   if (local && net) net.sendOp(op);
   return out;
@@ -3176,11 +3193,10 @@ function loop(ts) {
   house.update(dt);
   // the upper floor is only drawn from inside the house (its windows don't let you see in)
   house.room.group.visible = house.inside(camera.position);
-  quest.update(dt, player, !eco.s.upKey && here === 'home' && !mg.active && !race && ['play', 'panel', 'drive', 'paused', 'read'].includes(state));
-  const trapShow = !!eco.s.upKey && !eco.s.caveSeen && here === 'home' && !cave.inside(player.pos) && !mg.active && !race && ['play', 'panel', 'drive', 'paused', 'read'].includes(state);
-  trapGuide.update(dt, player, trapShow);
-  // the rocket compass takes the card once the key and the trapdoor are found
-  partCompass.update(dt, player, finds[W()]?.list || [], !!eco.s.perks.compass && !!eco.s.upKey && !trapShow && !onPlanet() && !mg.active && !race && ['play', 'panel', 'paused', 'read'].includes(state));
+  // the rocket compass, once made, has the card before the key's and the trapdoor's hints
+  const compassOn = partCompass.update(dt, player, finds[W()]?.list || [], partsElsewhere(), !!eco.s.perks.compass && !onPlanet() && !mg.active && !race && ['play', 'panel', 'paused', 'read'].includes(state));
+  quest.update(dt, player, !compassOn && !eco.s.upKey && here === 'home' && !mg.active && !race && ['play', 'panel', 'drive', 'paused', 'read'].includes(state));
+  trapGuide.update(dt, player, !compassOn && !!eco.s.upKey && !eco.s.caveSeen && here === 'home' && !cave.inside(player.pos) && !mg.active && !race && ['play', 'panel', 'drive', 'paused', 'read'].includes(state));
   // each town only animates while you're in it
   if (here === 'home') world.neighbours.update(dt);
   if (state === 'play') updateAlarm(dt);

@@ -319,7 +319,7 @@ export function createEurope({ scene, addBox }) {
   // inside, the same stone lit softly, and flagstones
   const inStone = (() => { const t = stoneTex.clone(); t.needsUpdate = true; t.repeat.set(4, 2); return new THREE.MeshLambertMaterial({ color: 0xe6dac4, map: t, emissive: 0x4a4436 }); })();
   const NAVE = { x0: -5.5, x1: 5.5, y0: 0, y1: 10, z0: -14, z1: 8 }, TOWER = { x0: -3.25, x1: 3.25, y0: 0, y1: 22, z0: 6.25, z1: 12.75 };
-  const flagstones = I.lit(0xd0c4b0, .36, I.tileTex);
+  const flagstones = I.lit(0xd0c4b0, .36, I.tileTex).clone();   // its own: the crypt's diggable ground cuts it (see main.js)
   const naveR = I.shell(ch, { x0: -5.5, x1: 5.5, z0: -14, z1: 8, y1: 10, t: .5, ext: cStone, ref: NAVE, int: inStone, floor: flagstones, ceil: I.lit(0x6a4a30, .35), door: [-1.1, 1.1, 3.9], skirt: false });
   const nave = new THREE.Shape(); nave.moveTo(-6, 0); nave.lineTo(6, 0); nave.lineTo(0, 5); nave.closePath();
   const ng = new THREE.ExtrudeGeometry(nave, { depth: 22.4, bevelEnabled: false }); ng.translate(0, 10, -14.2); ch.add(new THREE.Mesh(ng, tiles(0x4d5563)));
@@ -609,7 +609,7 @@ export function createEurope({ scene, addBox }) {
     // the fountain's basin, for the mini jet-skis: its centre, the water's radius and height
     fountain: { x: FX, z: FZ, r: FW, y: FY, pool, island: .8 },
     // the church, for what goes inside it: the altar (its front at z 36), the organ's corner, the tower
-    church: { altar: new THREE.Vector3(61, 0, 36.5), organ: new THREE.Vector3(65.3, 0, 33), tower: new THREE.Vector3(FX, 0, 25 - 9.5) },
+    church: { flagstones, altar: new THREE.Vector3(61, 0, 36.5), organ: new THREE.Vector3(65.3, 0, 33), tower: new THREE.Vector3(FX, 0, 25 - 9.5) },
     setNight(n) {
       glassLit.emissiveIntensity = n * 1.3;
       glassDark.emissiveIntensity = n * .08;

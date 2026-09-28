@@ -7,15 +7,18 @@ export function createPartCompass() {
   const last = {};
   const set = (k, v, f) => { if (last[k] !== v) { last[k] = v; f(v); } };
   let shown = false, target = null;
+  // the card's own words, put back when the compass lets go of it (the key's hint uses them)
+  const orig = { label: card.querySelector('.seclabel span').textContent, title: $('quest-title').textContent, sub: $('quest-sub').textContent };
   return {
-    // list: the finds of the world you're in; show: nothing else is using the card
-    update(dt, player, list, show) {
+    // list: the finds of the world you're in; away: where the next part is when none is left here
+    update(dt, player, list, away, show) {
       target = null;
       if (show) {
         let bd = Infinity;
         for (const f of list) if (!f.gone && f.def.kind === 'part') { const d = f.center.distanceTo(player.pos); if (d < bd) { bd = d; target = f; } }
       }
-      show = show && !!target;
+      const far = show && !target && away;
+      show = show && (!!target || !!far);
       if (show !== shown) {
         shown = show;
         if (show) {
@@ -23,9 +26,20 @@ export function createPartCompass() {
           card.querySelector('.seclabel span').textContent = 'boussole de fusée';
           card.classList.remove('hidden', 'got', 'out');
           card.style.animation = 'none'; void card.offsetWidth; card.style.animation = '';
-        } else card.classList.add('hidden');
+        } else {
+          card.classList.add('hidden');
+          card.querySelector('.seclabel span').textContent = orig.label; $('quest-title').textContent = orig.title; $('quest-sub').textContent = orig.sub;
+        }
       }
-      if (!show) return;
+      if (!show) return false;
+      if (far) {
+        set('t', 'far:' + far, () => { $('quest-title').textContent = 'plus rien ici'; $('quest-sub').textContent = 'la prochaine pièce de fusée est ' + far; });
+        set('w', 'ailleurs', (v) => { word.textContent = v; });
+        set('f', 0, (v) => { fill.style.width = v + '%'; });
+        set('a', 'down', () => { arrow.classList.add('down'); });
+        set('d', 'la prochaine pièce est ' + far, (v) => { depthEl.textContent = v; });
+        return true;
+      }
       const p = target.center;
       set('t', target.def.name, (v) => { $('quest-title').textContent = v; $('quest-sub').textContent = 'la pièce de fusée la plus proche'; });
       const dx = p.x - player.pos.x, dz = p.z - player.pos.z, flat = Math.hypot(dx, dz);
@@ -42,6 +56,7 @@ export function createPartCompass() {
       set('d', `${side} · ${vert}`, (v) => { depthEl.textContent = v; });
       const lob = $('lobby');
       set('l', lob && !lob.classList.contains('hidden') ? lob.offsetHeight + 12 : 0, (v) => card.style.setProperty('--lift', v + 'px'));
+      return true;
     },
   };
 }
