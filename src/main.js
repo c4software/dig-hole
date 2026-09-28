@@ -109,6 +109,17 @@ const ui = createUI();
 try { await Promise.race([document.fonts.load('700 40px "Noto Sans JP"', '桜ひ'), new Promise(r => setTimeout(r, 3000))]); } catch {}
 const world = createWorld(document.getElementById('app'));
 const { renderer, scene, camera } = world;
+// the graphics context lost and given back (a driver reset, a heavy frame): three rebuilds its
+// programs, but the painted textures must be sent again or they come back black
+renderer.domElement.addEventListener('webglcontextrestored', () => {
+  const seen = new Set();
+  scene.traverse((o) => {
+    for (const m of [].concat(o.material || [])) for (const k in m) {
+      const t = m[k];
+      if (t && t.isTexture && !seen.has(t)) { seen.add(t); t.needsUpdate = true; }
+    }
+  });
+});
 world.shadows(scene);
 loadBar.style.width = '20%';
 await frame();
