@@ -208,13 +208,15 @@ test('events.js: every feast builds its decor, its uses answer, and it leaves no
   const pos = new THREE.Vector3(0, 0, 0);
   const ev = createEvents({ world, terrains, eco, ui, audio, tun, moles: { list: [] }, organ: { playing: false, play() {} }, songs: [1], CHINA, ACH_LIST: ACH, hooks: {
     multi: false, unlock: (k) => got.push(k), save() {}, sendOp() {}, myName: () => 'moi', here: () => here, view: () => here, state: () => 'play',
-    pos: () => pos, eye: () => pos, hour: () => 23.9, heal() {}, battery() {}, speed() {}, grav() {}, openPanel() {}, hintOnce() {}, redrawBoard() {}, cardOk: () => true,
+    pos: () => pos, eye: () => pos, hour: () => 23.9, buildDelay: 0, heal() {}, battery() {}, speed() {}, grav() {}, openPanel() {}, hintOnce() {}, redrawBoard() {}, cardOk: () => true,
   } });
   const base = { c: colliders.length, i: interactables.length, h: homeDecor.children.length, j: chinaG.children.length };
   for (const id of EVENT_IDS) {
     tun.set('event', overrideToTun(id)); ev.refresh(); ev.update(.016);
     assert.deepEqual(ev.active, [id], id);
     assert.deepEqual(ev.built, [kindOf(id)], id);
+    const want = { noel: 12, valentin: 14, paques: 19, hanami: 10, juillet: 10, halloween: 13 }[id] || 0;
+    assert.equal(ev.spotsOf(id).length, want, id + ' hunt spots');
     for (let k = 0; k < 30; k++) ev.update(.1);          // its updates run (fireworks at 23:54, bats at night…)
     for (const it of interactables.filter(i => i.id === 'ev' && !i.off)) {
       assert.equal(typeof ev.prompt(it), 'string', id + ' ' + it.kind);

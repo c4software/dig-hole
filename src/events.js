@@ -53,8 +53,9 @@ export function createEvents({ world, terrains, eco, ui, audio, tun, moles, orga
   const built = new Map();    // kind → { d: what the decor gave, roots, boxes, uses, bulbs, fw }
   const taken = new Map();    // key → Set of hunted things gone (the room's word, or our save)
   let active = [];            // [{ id, key, year, from, to, forced }]
-  let sig = '', checkT = 0, t = 0, bannerFor = null;
-  const HALLOWEEN_FOG = new THREE.Color(0x2a2438);
+  let sig = '', checkT = 0, t = 0, bannerFor = null, pending = [];
+  const buildDelay = hooks.buildDelay ?? 1;
+  const HALLOWEEN_FOG = new THREE.Color(0x2a2438), HALLOWEEN_DAY = new THREE.Color(0xb8a4d0), HAZE = new THREE.Color();
 
   // ---------- the card, under the clock ----------
   const style = document.createElement('style'); style.textContent = CARD_CSS; document.head.appendChild(style);
@@ -83,7 +84,8 @@ export function createEvents({ world, terrains, eco, ui, audio, tun, moles, orga
     active = list; sig = s;
     const kinds = new Set(active.map(e => kindOf(e.id)));
     for (const k of [...built.keys()]) if (!kinds.has(k)) teardown(k);
-    for (const k of kinds) if (!built.has(k) && DECOR[k]) build(k);
+    // built a frame at a time, once the world is on screen (never a stall at load)
+    pending = [...kinds].filter(k => !built.has(k) && DECOR[k]);
     // the feats of the feasts on now (and those already won) go on the board
     let added = false;
     for (const [k, name] of EV_ACH) if ((active.some(e => ACH_OF[e.id]?.includes(k)) || eco.s.ach[k]) && !ACH_LIST.some(a => a[0] === k)) { ACH_LIST.push([k, name]); added = true; }
@@ -117,6 +119,14 @@ export function createEvents({ world, terrains, eco, ui, audio, tun, moles, orga
     for (const s of b.d.spots || []) s.obj.userData.keep = true;
     for (const r of b.roots) { r.traverse(o => { if (o.isSprite || o.isPoints || o.isLineSegments) o.userData.keep = true; }); keepMoving(r); mergeStatic(r, (o) => !!o.userData.keep); }
     built.set(kind, b);
+    // its shaders compiled off the frame (where the driver can), shown once ready
+    const R = world.renderer;
+    if (R?.compileAsync) for (const r of b.roots) {
+      r.visible = false;
+      const show = () => { r.visible = true; };
+      R.compileAsync(r, world.camera, world.scene).then(show, show);
+      setTimeout(show, 1500);
+    }
   }
   // anything animated by a decor's update is a direct child group with children of its own:
   // those keep their own meshes (mergeStatic leaves groups marked keep alone)
@@ -393,9 +403,10 @@ export function createEvents({ world, terrains, eco, ui, audio, tun, moles, orga
   function fog(view, eye) {
     if (!built.get('halloween') || view !== 'home' || eye.y < -2 || world.space) return;
     const f = world.scene.fog, n = world.env.night;
-    f.near *= .3;
-    f.far = Math.min(f.far, 48 + 70 * world.env.day);
-    f.color.lerp(HALLOWEEN_FOG, .25 + n * .5);
+    f.near *= .2;
+    f.far = Math.min(f.far, 34 + 46 * world.env.day);
+    HAZE.copy(HALLOWEEN_DAY).lerp(HALLOWEEN_FOG, n);
+    f.color.lerp(HAZE, .55 + n * .3);
     world.scene.background.copy(f.color);
   }
 
@@ -487,6 +498,7 @@ export function createEvents({ world, terrains, eco, ui, audio, tun, moles, orga
       t += dt;
       checkT -= dt;
       if (checkT <= 0) { checkT = 20; apply(resolve()); }
+      if (pending.length && t > buildDelay) { const k = pending.shift(); if (!built.has(k) && active.some(e => kindOf(e.id) === k)) build(k); }
       const here = hooks.here(), view = hooks.view(), state = hooks.state();
       const pos = hooks.pos(), eye = hooks.eye();
       const playing = state === 'play';
@@ -508,7 +520,7 @@ export function createEvents({ world, terrains, eco, ui, audio, tun, moles, orga
     },
     // for tests and the curious
     get built() { return [...built.keys()]; },
-    spotsOf: (id) => built.get(kindOf(id))?.d.spots || [],
+    spotsOf: (id) => built.get(kindOf(parseOverride(id) || id))?.d.spots || [],
     taken, resolve, apply: (l) => apply(l),
     refresh() { checkT = 0; },
   };
