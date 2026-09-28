@@ -2815,7 +2815,7 @@ function loop(ts) {
     else player.update(playing ? dt : 0);
     elevator.update(dt, player);
     updateLaunch(dt);
-    if (state === 'kart' && race) { race.mod.update(dt, down); raceHud(); if (race?.screen) screenView(dt); }
+    if (state === 'kart' && race) { race.mod.update(dt, down); if (race) raceHud(); if (race?.screen) screenView(dt); }
     if (state === 'gamemenu') updateGameMenu(dt);
     if (state === 'drive') {
       const input = {

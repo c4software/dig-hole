@@ -237,9 +237,9 @@ export function createOrgue({ scene, camera, audio, ui, organ, church }) {
       const k = state === 'pick' ? 0 : clamp(1 - (-songT - .6) / (LEAD_IN - .6), 0, 1), e = k * k * (3 - 2 * k);
       camP.lerpVectors(wideP, camP, e); camL.lerpVectors(wideL, camL, e);
       if (state === 'pick') camP.x += Math.sin(clock * .3) * .3;
-    } else if (state === 'end') {
+    } else if (state === 'end' || failed) {
       // turning round to the congregation
-      const k = clamp((clock - endT) / 1.6, 0, 1), e = k * k * (3 - 2 * k);
+      const k = clamp((clock - (failed ? failT + .4 : endT)) / 1.6, 0, 1), e = k * k * (3 - 2 * k);
       scene.localToWorld(endL.set(church.altar.x, 1.1, church.altar.z - 9));
       camL.lerp(endL, e); camP.y += e * .5;
     } else {
@@ -298,7 +298,6 @@ export function createOrgue({ scene, camera, audio, ui, organ, church }) {
     accIdx = 0; newBus();
     for (const s of seats) { s.score = 0; s.combo = 0; s.failed = false; s.done = false; if (s.bot) s.sim = simulate(s); }
     state = 'count';
-    ui.toast(chart.name, false, 2600);
     audio.tick();
   }
   // a parish bot's run, worked out ahead from the seed: its score at each note
@@ -429,7 +428,6 @@ export function createOrgue({ scene, camera, audio, ui, organ, church }) {
     for (const p of faithful) p.mood = -1;
     flee(16);
     shake = .8; gj = false;
-    ui.toast('l\'assemblée te hue · les chauves-souris s\'enfuient', true, 3200);
     send({ t: 's', sc: score, cb: 0, f: 1 });
   }
   function pipeFx(lane, k) {
@@ -543,9 +541,10 @@ export function createOrgue({ scene, camera, audio, ui, organ, church }) {
   const order = () => [...seats].sort((a, b) => (a.failed - b.failed) || b.score - a.score);
   const placeOf = () => me ? 1 + order().indexOf(me) : 1;
   function outcome() {
-    const place = placeOf();
+    // booed off: behind everyone, a coin for the effort
+    const place = failed ? seats.length + 1 : placeOf();
     return { place, of: seats.length, value: Math.round(score), time: chart ? chart.length : 0,
-      text: `${ord(place)} place · ${fmtN(score)} pts · ${pct()} % des notes${failed ? ' · hué' : maxCombo >= 30 ? ' · série de ' + maxCombo : ''}` };
+      text: `${failed ? 'hué par l\'assemblée' : ord(place) + ' place'} · ${fmtN(score)} pts · ${pct()} % des notes${failed ? '' : maxCombo >= 30 ? ' · série de ' + maxCombo : ''}` };
   }
   function fx(dt) {
     const t = clock;
@@ -599,7 +598,7 @@ export function createOrgue({ scene, camera, audio, ui, organ, church }) {
     g.fillStyle = color; g.fillText(s, x, y);
   }
   function drawPick(g, W, H) {
-    const w = Math.min(560, W - 40), rowH = Math.min(42, (H - 260) / SETLIST.length), h = 120 + rowH * SETLIST.length, x = (W - w) / 2, y = Math.max(150, (H - h) / 2 + 30);
+    const top = Math.max(280, H * .38), w = Math.min(560, W - 40), rowH = clamp((H - top - 120) / SETLIST.length, 22, 38), h = 110 + rowH * SETLIST.length, x = (W - w) / 2, y = Math.max(top, H - h - 16);
     g.fillStyle = 'rgba(26,19,13,.82)'; round(g, x, y, w, h, 18); g.fill();
     g.strokeStyle = 'rgba(255,176,32,.6)'; g.lineWidth = 3; g.stroke();
     txt(g, 'orgue héros · ' + mode, W / 2, y + 34, 26, '#ffdc8f');
@@ -711,13 +710,13 @@ export function createOrgue({ scene, camera, audio, ui, organ, church }) {
       g.globalAlpha = 1 - k * k; txt(g, p.text, x, y, p.lane >= 0 ? 17 : 24, p.color); g.globalAlpha = 1;
     }
     if (state === 'count') { const n = Math.ceil(-songT); txt(g, n > 0 ? String(n) : '', W / 2, Y(.55), 64, '#ffdc8f'); txt(g, chart.name, W / 2, Y(.95) - 28, 18, '#fff', 'center', 'Rubik', 5); }
-    if (dead) txt(g, 'hué !', W / 2, Y(.5), 52, '#ff6a5a');
+    if (dead) { txt(g, 'hué !', W / 2, Y(.5), 52, '#ff6a5a'); txt(g, 'l\'assemblée te hue · les chauves-souris s\'enfuient', W / 2, Y(.5) + 44, 16, '#ffdc8f', 'center', 'Rubik', 4); }
     if (state === 'end') {
       const bw = Math.min(420, W - 40), bh = 150, bx2 = (W - bw) / 2, by2 = Y(.62) - bh / 2;
       g.fillStyle = 'rgba(26,19,13,.88)'; round(g, bx2, by2, bw, bh, 16); g.fill(); g.strokeStyle = failed ? '#e8384f' : '#ffb020'; g.lineWidth = 3; g.stroke();
       txt(g, failed ? 'l\'assemblée a hué' : pct() >= 95 ? 'standing ovation !' : 'l\'assemblée applaudit', W / 2, by2 + 30, 24, failed ? '#ff8a7a' : '#ffdc8f');
       txt(g, fmtN(score) + ' pts', W / 2, by2 + 72, 34, '#fff');
-      txt(g, `${pct()} % des notes · ${perfN} parfaites · plus longue série ${maxCombo} · ${ord(placeOf())} place`, W / 2, by2 + 116, 14, '#e8d8b8', 'center', 'Rubik', 0);
+      txt(g, `${pct()} % des notes · ${perfN} parfaites · plus longue série ${maxCombo}${failed ? '' : ` · ${ord(placeOf())} place`}`, W / 2, by2 + 116, 14, '#e8d8b8', 'center', 'Rubik', 0);
     }
   }
 
