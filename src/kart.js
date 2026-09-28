@@ -759,12 +759,12 @@ export function createKart({ scene, camera, audio, ui }) {
     });
   }
   let vanHidden = false;
-  function keepVanAway() { const v = window.__dig?.delivery?.van; if (v && v.visible) { v.visible = false; vanHidden = true; } }
+  function keepVanAway() { const d = window.__dig?.delivery; if (d && !vanHidden) { d.hidden = true; vanHidden = true; } }
   function restoreStreets() {
     for (const o of hidden) o.visible = true;
     hidden = [];
     const d = window.__dig?.delivery;
-    if (vanHidden && d?.van) d.van.visible = !!d.busy;
+    if (vanHidden && d) d.hidden = false;
     vanHidden = false;
   }
   // ---------- particles ----------

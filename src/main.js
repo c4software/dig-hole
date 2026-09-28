@@ -227,9 +227,8 @@ const headset = reveal.headset();
 headset.position.set(-3.98, 0, -20.95); headset.rotation.y = Math.PI / 2 - .35;
 house.group.add(headset);
 world.interactables.push({ id: 'vr', pos: new THREE.Vector3(-3.95, .1, -20.95), reach: 1.7, aim: .9 });
-const delivery = createDelivery({ scene: homeRoot, label: world.label, interactables: world.interactables, getTerrain: () => terrains.home });
+const delivery = createDelivery({ scene: homeRoot, label: world.label, interactables: world.interactables, getTerrain: () => terrains.home, shadows: world.shadows });
 delivery.load(eco.s.delivery);
-world.shadows(delivery.van);
 const elevator = createElevator({ scene: homeRoot, terrain: terrains.home, colliders: world.colliders, interactables: world.interactables, label: world.label });
 player.onStep = () => audio.step();
 player.onLand = (v) => { audio.land(v); if (v > 18) hurt((v - 18) * 2.5); };
@@ -602,12 +601,14 @@ const eye = new THREE.Vector3(), dir = new THREE.Vector3();
 const heartRay = new THREE.Raycaster();
 let near = null;
 const VAN = { id: 'van' };
+const VAN_NO = { id: 'vanno', name: '' };
 const LIFT = { id: 'lift' };
 
 function findNear() {
   camera.getWorldDirection(dir);
   if (onPlanet()) return space.near(here, moonP.pos) || orbit.near(here, moonP.pos) || (moonP.pos.distanceTo(LANDERS[here]) < (here === 'mars' ? 6 : 4.5) ? LANDER : null);
   if (here === 'home' && delivery.canSteal(player.pos)) return VAN;
+  if (here === 'home' && (VAN_NO.name = delivery.foreignVan(player.pos))) return VAN_NO;
   if (here === 'home' && elevator.owned && elevator.near(player.pos)) return LIFT;
   let best = null, bd = Infinity;
   for (const it of world.interactables) {
@@ -651,7 +652,9 @@ function updateAim() {
     if (near.id === 'sell') {
       const v = eco.sackValue();
       p = eco.s.sackN ? `<b>e</b> vendre ${eco.s.sackN} trouvaille${eco.s.sackN > 1 ? 's' : ''} · ${ui.fmt(v)} ●` : 'le sac est vide';
-    } else if (near.id === 'door') p = house.doorOpen ? '<b>e</b> fermer la porte' : '<b>e</b> ouvrir la porte';
+    } else if (near.id === 'parcel' && near.owner !== 'me') p = `le colis de ${near.name} · pas touche`;
+    else if (near.id === 'vanno') p = `la camionnette de ${near.name} · pas touche`;
+    else if (near.id === 'door') p = house.doorOpen ? '<b>e</b> fermer la porte' : '<b>e</b> ouvrir la porte';
     else if (near.id === 'lander') p = here === 'mars' ? '<b>e</b> le module martien · vendre, rentrer au japon' : '<b>e</b> le module lunaire · vendre, fabriquer, rentrer';
     else if (near.id === 'marsrocket') p = eco.s.moon || EXPLORE ? '<b>e</b> décoller pour mars' : 'la fusée pour mars · il faut d\'abord être allé sur la lune';
     else if (near.id === 'ndoor') p = near.house.locked ? `chez ${near.house.name} · fermé à clé jusqu'à demain` : near.house.doorOpen ? '<b>e</b> fermer la porte' : `<b>e</b> entrer chez ${near.house.name}`;
@@ -2149,6 +2152,15 @@ delivery.onCrash = (pos, cargo, speed) => {
   hurt(Math.min(35, speed * 0.8));
   ui.toast(cargo ? 'la camionnette est au fond du trou… et les colis avec toi' : 'la camionnette est au fond du trou', false, 3200);
 };
+// someone else's joyride ends in the hole: only the show here, the crash is theirs
+delivery.onRemoteCrash = (pos, name) => {
+  if (here !== 'home') return;
+  const d = pos.distanceTo(player.pos);
+  audio.boom(Math.max(.25, 1.2 - d / 60));
+  if (d < 20) shakeT = Math.max(shakeT, .4);
+  debris.burst(pos, new THREE.Vector3(0, 1, 0), 0xf0e8d6, 30, 2);
+  ui.toast(`la camionnette de ${name} est au fond du trou`, false, 3000);
+};
 delivery.onArrive = (cargo) => {
   if (here !== 'home') return;
   if (cargo.length) ui.toast('un colis vient d\'arriver devant la porte', false, 2600);
@@ -2226,7 +2238,10 @@ function interact(it) {
       audio.tick();
       return;
     case 'well': travel('home', 'well'); return;
-    case 'parcel': openParcels(); return;
+    case 'parcel':
+      if (it.owner !== 'me') { audio.deny(); ui.toast(`c'est le colis de ${it.name} · pas touche`, true); return; }
+      openParcels(); return;
+    case 'vanno': audio.deny(); ui.toast(`c'est la camionnette de ${it.name} · ses colis sont à lui`, true); return;
     case 'reset':
       house.pressReset(); audio.tick();
       if (!resetArmed) {
@@ -2802,6 +2817,8 @@ if (MULTI) {
   net = createNet({
     scene,
     onWelcome(m) {
+      delivery.setMe(m.id, myName(), net.color);
+      for (const fx of delivery.snapshot()) net.sendFx(fx);
       for (const op of m.ops) applyOp(op, false);
       terrains.home.flush(); terrains.china.flush();
       ui.toast(`le jardin commun · ${m.players.length + 1} creuseur${m.players.length ? 's' : ''}`, false, 3000);
@@ -2819,6 +2836,7 @@ if (MULTI) {
       else if (fx.k === 'planedown') ui.toast(`${peer?.name ?? 'quelqu\'un'} a abattu le bombardier !`, false, 3500);
       else if (fx.k === 'organ' && race?.id !== 'orgue') playOrgan(fx.s | 0, false, peer?.name ?? 'quelqu\'un');
       else if (fx.k === 'disc' && fx.p && fx.d) launcher.remote(fx);
+      else if (fx.k === 'dv') delivery.remote(id, fx, peer);
       else mg.onFx(id, peer, fx);
     },
     onSuperReset(m) { startSuperCountdown(m.in, m.seed, m.by); },
@@ -2827,14 +2845,17 @@ if (MULTI) {
       ui.toast(`${name} arrive dans le jardin`);
       // the newcomer learns where my portals are
       for (const [i, a, w] of portals.mine(myId())) net.sendFx({ k: 'portal', i, a, w });
+      // and sees my vans on the road and my parcels at the door
+      for (const fx of delivery.snapshot()) net.sendFx(fx);
     },
     onLeave(name, id) {
       ui.toast(`${name} est parti`);
-      race?.mod.peerLeft(id); mg.rivalLeft(id); portals.clear(id);
+      race?.mod.peerLeft(id); mg.rivalLeft(id); portals.clear(id); delivery.dropPeer(id);
       if (lobby) { if (lobby.host === id) { closeLobby(); if (gm && !gm.host) closeGameMenu(); ui.toast('la partie proposée est annulée'); } else { lobby.ready.delete(id); hostCheck(); renderLobby(); } }
     },
-    onStatus(s) { if (s === 'off') ui.setNet('<span class="t">hors ligne</span>', true); },
+    onStatus(s) { if (s === 'off') { ui.setNet('<span class="t">hors ligne</span>', true); delivery.dropPeer(); } },
   });
+  delivery.link((fx) => net.sendFx(fx));
   net.connect('jardin', params.get('name') || 'creuseur');
 }
 let netListT = 0;
