@@ -969,9 +969,9 @@ function explode(kind, pos, power = 1) {
     const away = chest.sub(pos).normalize();
     player.vel.addScaledVector(away, b.push * k);
     player.vel.y += b.push * k * 0.6;
-    shakeT = Math.max(shakeT, 0.5 * k + 0.2);
+    if (kind !== 'air' || inDigZone()) shakeT = Math.max(shakeT, 0.5 * k + 0.2);
     if (d < b.r + .5) hurt(b.dmg * (1 - d / (b.r + .5)));
-  } else if (d < 25) shakeT = Math.max(shakeT, 0.15);
+  } else if (d < 25 && (kind !== 'air' || inDigZone())) shakeT = Math.max(shakeT, 0.15);
 }
 
 // ---------- moles ----------
@@ -1830,16 +1830,27 @@ pauseQuit.addEventListener('click', () => {
 });
 
 // ---------- the bomber: a random raid over the garden ----------
-let planeHits = 0, raidHp = 100;
+let planeHits = 0, raidHp = 100, raidAlert = false;
+// the raids only concern the plot you dig (and the hole under it): the alert and the shaking stay there
+function inDigZone() {
+  const t = terrains.home;
+  return here === 'home' && Math.abs(player.pos.x) < -t.X0 + 1 && Math.abs(player.pos.z) < -t.Z0 + 1;
+}
+function raidWarn() {
+  raidAlert = false;
+  audio.siren();
+  ui.toast('alerte : un bombardier arrive ! à l\'abri !', true, 6000);
+  hintOnce('plane', 'les bombes tombent sur le potager : la maison est un bon abri', 6000);
+}
 const plane = createPlane({
   scene: homeRoot, audio, getTerrain: () => terrains.home,
   onWarn() {
     planeHits = 0; raidHp = eco.s.health;
-    audio.siren();
-    if (here === 'home') { ui.toast('alerte : un bombardier arrive dans 10 s ! à l\'abri !', true, 6000); hintOnce('plane', 'les bombes tombent sur le potager : la maison est un bon abri', 6000); }
+    raidAlert = true;
+    if (inDigZone()) raidWarn();
   },
   onBomb(p) { if (here === 'home') bombs.boom('air', p); },
-  onEnd() { if (here === 'home' && planeHits && state !== 'faint') unlock('plane'); },
+  onEnd() { raidAlert = false; if (here === 'home' && planeHits && state !== 'faint') unlock('plane'); },
   // it came down in the fields: a far boom, a flash
   onCrash(p) { if (here === 'home') { audio.boom(Math.max(.3, 1 - p.length() / 250)); bombs.boom('air', p); } },
 });
@@ -2882,6 +2893,8 @@ function loop(ts) {
 
     bombs.update(dt);
     plane.update(dt, here === 'home' && playing);
+    // stepping onto the plot while a raid is on its way: the alert, then
+    if (raidAlert && inDigZone()) raidWarn();
     moles.update(dt, player);
     finds[here].update(dt, (f) => { applyOp({ k: 'find', w: here, key: f.key }); eco.s.finds[here].push(f.key); bombs.boom('shell', f.center.clone()); }, () => audio.tick());
 
