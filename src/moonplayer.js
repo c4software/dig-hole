@@ -1,6 +1,7 @@
 // moonplayer.js, third person on a small round world: gravity pulls to the moon's
 // centre, "up" is wherever you stand, the camera orbits behind a little astronaut.
 import * as THREE from 'three';
+import { tun } from './tunables.js';
 
 const G = 3.2;            // weaker than home: long, floaty jumps
 const HALF = 0.34;        // the body is a small box, the world's voxels don't rotate
@@ -123,7 +124,7 @@ export function createMoonPlayer(scene, camera, getTerrain) {
       if (to.lengthSq() > .01) heading.lerp(to.normalize(), Math.min(1, dt * 14)).normalize();
     } else if (want.lengthSq() > .01) heading.lerp(tmp2.copy(want).normalize(), Math.min(1, dt * 10)).normalize();
     flat.lerp(want, Math.min(1, dt * (onGround ? 10 : 2.5)));
-    const g = stats.g || G;             // mars pulls harder than the moon
+    const g = (stats.g || G) * tun.get('moonGravity');   // mars pulls harder than the moon
     let vu = vUp - g * dt;
     if (keys.has('Space') && onGround) vu = Math.sqrt(2 * g * stats.jump);
     stats.jetting = false;

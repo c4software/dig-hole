@@ -15,6 +15,8 @@ import { createBombs, BLAST } from './bombs.js';
 import { createMoles } from './moles.js';
 import { createElevator } from './elevator.js';
 import { createNet } from './net.js';
+import { tun } from './tunables.js';
+import { initP2PMenu, p2pConnect } from './p2p-ui.js';
 import { createPlane } from './plane.js';
 import { createAnimals, ANIMAL } from './animals.js';
 import { createHologram } from './hologram.js';
@@ -65,7 +67,9 @@ import { createPodrace } from './podrace.js';
 
 const REACH = 3.2;
 const params = new URLSearchParams(location.search);
-const MULTI = params.has('room');
+// a tab hosting (?room=…&host=1) or joined to one (?join=…) is multiplayer too
+const P2P = params.has('host') || params.has('join');
+const MULTI = params.has('room') || params.has('join');
 // exploration: solo, and everything unlimited
 const EXPLORE = !MULTI && params.get('mode') === 'explore';
 const MODE = MULTI ? 'multi' : EXPLORE ? 'explore' : 'solo';
@@ -329,13 +333,18 @@ const SEASONS = [
 const GRASS_HOME = [0x78ac4c, 0x9cb44c, 0xb09c4a, 0xeef2f6], GRASS_CHINA = [0x98a462, 0xa2a85c, 0xb0a062, 0xeef2f6];
 let seasonNow = -1, clockTxt = '', lootDay = -1;
 const clockEl = document.getElementById('clock'), clockTxtEl = document.getElementById('clock-txt');
-function clockNow() { return MULTI ? (Date.now() / 1000) % (DAY * 8) : eco.s.clock; }
+// the host may change the clock's pace: then it turns from where it was (clockAnchor: [ms, s, speed])
+function clockNow() {
+  if (!MULTI) return eco.s.clock;
+  const a = tun.get('clockAnchor');
+  return a ? ((a[1] + (Date.now() - a[0]) / 1000 * a[2]) % (DAY * 8) + DAY * 8) % (DAY * 8) : (Date.now() / 1000) % (DAY * 8);
+}
 function updateClock(dt) {
   if (!MULTI && state !== 'attract') eco.s.clock += dt;
   const c = clockNow();
-  const hour = (c % DAY) / DAY * 24;
+  const hour = tun.get('hour') >= 0 ? tun.get('hour') : (c % DAY) / DAY * 24;
   const day = Math.floor(c / DAY);
-  const season = Math.floor(day / 2) % 4;
+  const season = tun.get('season') >= 0 ? tun.get('season') : Math.floor(day / 2) % 4;
   if (season !== seasonNow) {
     world.setSeason(season);
     setGrassColors(GRASS_HOME[season], GRASS_CHINA[season]);
@@ -440,6 +449,8 @@ setMode(MODE);
 modeBtns.forEach(b => b.addEventListener('click', (e) => { e.stopPropagation(); setMode(b.dataset.mode); }));
 multiForm.addEventListener('click', (e) => e.stopPropagation());
 multiForm.addEventListener('submit', (e) => { e.preventDefault(); start(); });
+// playing together without the server: one tab hosts, the others join it (p2p-ui.js)
+initP2PMenu({ form: multiForm, nickIn });
 
 function start() {
   // switching mode reloads into the other world
@@ -570,7 +581,7 @@ function unlock(key) {
 function hurt(n) {
   if (EXPLORE) return;
   if (state === 'faint' || state === 'win' || state === 'travel') return;
-  eco.s.health -= n * (eco.s.perks.helmet ? 0.5 : 1);
+  eco.s.health -= n * (eco.s.perks.helmet ? 0.5 : 1) * tun.get('damage');
   ui.hurt();
   shakeT = Math.max(shakeT, 0.2);
   if (eco.s.health <= 0) faint();
@@ -811,7 +822,7 @@ function doDig() {
     hintOnce('fence', 'le trou, c\'est dans le potager', 2500);
     return;
   }
-  if (eco.s.battery < activeTool().cost) {
+  if (eco.s.battery < activeTool().cost * tun.get('digCost')) {
     audio.deny();
     ui.toast('batterie à plat', true);
     hintOnce('flat', 'batterie à plat : reste immobile un instant, elle remonte toute seule (ou la borne, dans la maison)', 6000);
@@ -826,14 +837,14 @@ function doDig() {
     if (h < 99) hintOnce('hard', here === 'china' ? 'le konbini vend une pelle en jade…' : 'la quincaillerie aura mieux. remonte vendre, puis achète.', 5000);
     return;
   }
-  eco.s.battery -= tool.cost;
+  eco.s.battery -= tool.cost * tun.get('digCost');
   drillBite = .15;
   const m = terrain.get(hit.i, hit.j, hit.k);
   const center = hit.point.clone().addScaledVector(dir, 0.18);
   if (dir.y < -0.7 && Math.hypot(hit.point.x - player.pos.x, hit.point.z - player.pos.z) < 0.7) {
     center.x = player.pos.x; center.z = player.pos.z;
   }
-  const r = tool.r * (eco.s.perks.sharp ? 1.15 : 1) * (eco.s.perks.titan && tool.kind === 'shovel' ? 1.2 : 1);
+  const r = tool.r * (eco.s.perks.sharp ? 1.15 : 1) * (eco.s.perks.titan && tool.kind === 'shovel' ? 1.2 : 1) * tun.get('digRadius');
   const out = applyOp({ k: 'carve', w: W(), c: center.toArray().map(v => +v.toFixed(3)), r, tier: tool.tier, space: eco.space, destroy: false });
   if (here === 'home') mg.onDig(center);
   if (here === 'home' && quest.hits(center, r)) takeKey();
@@ -865,14 +876,14 @@ function moonDig() {
   moonP.dig(inReach ? hit.point : null, activeTool().kind);
   if (!hit) return;
   if (!inReach) { ui.toast('trop loin', true, 900); return; }
-  if (eco.s.battery < activeTool().cost) { audio.deny(); ui.toast('batterie à plat', true); return; }
+  if (eco.s.battery < activeTool().cost * tun.get('digCost')) { audio.deny(); ui.toast('batterie à plat', true); return; }
   const tool = activeTool();
   const h = t.hardness(hit.i, hit.j, hit.k);
   if (h > tool.tier) { audio.clink(); ui.toast('trop dur pour cet outil', true); return; }
-  eco.s.battery -= tool.cost;
+  eco.s.battery -= tool.cost * tun.get('digCost');
   drillBite = .15;
   const m = t.get(hit.i, hit.j, hit.k);
-  const out = applyOp({ k: 'carve', w: here, c: hit.point.clone().addScaledVector(dir, .18).toArray().map(v => +v.toFixed(3)), r: tool.r * 1.1, tier: tool.tier, space: eco.space, destroy: false });
+  const out = applyOp({ k: 'carve', w: here, c: hit.point.clone().addScaledVector(dir, .18).toArray().map(v => +v.toFixed(3)), r: tool.r * 1.1 * tun.get('digRadius'), tier: tool.tier, space: eco.space, destroy: false });
   t.flush();
   audio.dig(h);
   debris.burst(hit.point, hit.normal, isOre(m) ? ORE[m].color : (t.LAYERS.find(l => l.id === m) || t.LAYERS[0]).color, 8);
@@ -910,8 +921,8 @@ let gravT = 0;
 // an aliexpresso unit: mostly fine, sometimes dead, sometimes it goes off as you touch it,
 // sometimes the wick is far too short, and sometimes it's way better than the real thing
 function aliRoll() {
-  const r = Math.random();
-  return r < .15 ? 'dud' : r < .25 ? 'boom' : r < .42 ? 'fast' : r < .57 ? 'strong' : 'ok';
+  const r = Math.random(), d = tun.get('aliDud'), b = d + tun.get('aliBoom'), f = b + tun.get('aliFast'), g = f + tun.get('aliStrong');
+  return r < d ? 'dud' : r < b ? 'boom' : r < f ? 'fast' : r < g ? 'strong' : 'ok';
 }
 // it went off in your hands
 function aliBoom(power) {
@@ -1061,7 +1072,7 @@ function updateMoles(dt) {
   const d = Math.max(0, -player.pos.y);
   const minD = here === 'china' ? 8 : 12;
   if (d > minD) {
-    moleT -= dt;
+    moleT -= dt * tun.get('moleRate');
     const maxN = d > 60 ? 3 : d > 35 ? 2 : 1;
     if (moleT <= 0) {
       moleT = (18 + Math.random() * 25) * (d > 60 ? 0.6 : 1);
@@ -2198,7 +2209,7 @@ function interact(it) {
     case 'sell': {
       if (!eco.s.sackN) { audio.deny(); ui.toast('rien à vendre', true); return; }
       const fair = seasonNow === 2;
-      const { v, n } = eco.sellAll(fair ? 1.25 : 1);
+      const { v, n } = eco.sellAll((fair ? 1.25 : 1) * tun.get('sellMult'));
       if (fair) setTimeout(() => ui.toast('foire d\'automne : +25 %'), 1500);
       audio.sell();
       ui.plus('+' + ui.fmt(v)); ui.wash();
@@ -2586,14 +2597,14 @@ function renderPanel(quip) {
     // how many of each per click: a row that cycles ×1, ×5, ×10, ×20
     const rows = [{ id: 'qty', kind: 'quantité', name: `×${orderQty} par commande`, sub: 'clique pour changer · tout part dans la même livraison' }];
     rows.push(...['dyn', 'sup', 'med', 'cell', 'ladder'].map(id => {
-      const price = Math.round(ITEMS[id].price * st.mult) * orderQty;
+      const price = Math.round(ITEMS[id].price * st.mult * tun.get('parcelPrice')) * orderQty;
       const ali = Math.min(eco.s.ali[id] || 0, eco.s.items[id]);
       return { id: 'order:' + id, kind: 'colis', name: `${orderQty > 1 ? orderQty + ' × ' : ''}${ITEMS[id].name}`, lvl: `×${eco.s.items[id]}${ali ? ` (${ali} ali)` : ''}`, sub: ITEMS[id].sub, price, poor: eco.s.money < price };
     }));
     const mine = delivery.state.orders.filter(o => o.store === panelTab);
     const pend = delivery.state.orders.length, eta = delivery.eta;
     const note = mine.length ? `${mine.length} article${mine.length > 1 ? 's' : ''} dans le colis ${st.name} · livré dans ${Math.ceil(Math.min(...mine.map(o => o.eta)))} s · ce que tu commandes maintenant part avec`
-      : pend ? `${pend} article${pend > 1 ? 's' : ''} en route · prochain dans ${Math.ceil(eta)} s` : `${st.sub} · livré devant la porte en ~${st.eta} s`;
+      : pend ? `${pend} article${pend > 1 ? 's' : ''} en route · prochain dans ${Math.ceil(eta)} s` : `${st.sub} · livré devant la porte en ~${Math.round(st.eta * tun.get('deliveryEta'))} s`;
     ui.panel({ title: 'commander en ligne', quip, tabs: Object.entries(STORES).map(([id, s]) => ({ id, name: s.name, sub: s.sub })), tab: panelTab, rows, note, close: 'se déconnecter' });
   } else if (k === 'lander') {
     const rows = [];
@@ -2680,7 +2691,7 @@ ui.el.shopItems.addEventListener('click', (e) => {
   } else if (panelKind === 'computer') {
     if (id === 'qty') { orderQty = ORDER_QTY[(ORDER_QTY.indexOf(orderQty) + 1) % ORDER_QTY.length]; audio.tick(); renderPanel(); return; }
     const it = id.slice(6);
-    const price = Math.round(ITEMS[it].price * STORES[panelTab].mult) * orderQty;
+    const price = Math.round(ITEMS[it].price * STORES[panelTab].mult * tun.get('parcelPrice')) * orderQty;
     if (!eco.pay(price)) return deny();
     delivery.order(panelTab, it, orderQty);
     audio.buy();
@@ -2734,12 +2745,14 @@ function openReader(n) {
 
 // ---------- the guest book: a word for whoever digs here next ----------
 const NOTES_ROOM = MULTI ? 'jardin' : 'monde';
+// a hosting tab keeps its own guest book: then the two calls go through the room (p2p.js)
+let notesFetch = (...a) => fetch(...a);
 async function openNotes() {
   enterReader();
   ui.read('le livre d\'or', '', readerNav('notes'), true);
   ui.notes(null);
   try {
-    const r = await fetch('api/notes?room=' + encodeURIComponent(NOTES_ROOM));
+    const r = await notesFetch('api/notes?room=' + encodeURIComponent(NOTES_ROOM));
     ui.notes(r.ok ? await r.json() : []);
   } catch { ui.notes([]); }
 }
@@ -2756,7 +2769,7 @@ document.getElementById('note-form').addEventListener('submit', async (e) => {
   btn.disabled = true;
   try {
     const name = params.get('name') || (() => { try { return localStorage.getItem('a-hole-nick'); } catch { return null; } })() || 'anonyme';
-    const r = await fetch('api/notes?room=' + encodeURIComponent(NOTES_ROOM), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, text }) });
+    const r = await notesFetch('api/notes?room=' + encodeURIComponent(NOTES_ROOM), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, text }) });
     if (r.ok) { ta.value = ''; audio.buy(); openNotes(); }
     else ui.toast(r.status === 429 ? 'doucement, un mot à la fois' : 'le mot n\'est pas parti', true);
   } catch { ui.toast('pas de serveur pour le livre d\'or', true); }
@@ -2821,7 +2834,7 @@ if (MULTI) {
       for (const fx of delivery.snapshot()) net.sendFx(fx);
       for (const op of m.ops) applyOp(op, false);
       terrains.home.flush(); terrains.china.flush();
-      ui.toast(`le jardin commun · ${m.players.length + 1} creuseur${m.players.length ? 's' : ''}`, false, 3000);
+      ui.toast(`${net.title || 'le jardin commun'} · ${m.players.length + 1} creuseur${m.players.length ? 's' : ''}`, false, 3000);
     },
     onOp(op) { applyOp(op, false); },
     onFx(id, peer, fx) {
@@ -2853,10 +2866,19 @@ if (MULTI) {
       race?.mod.peerLeft(id); mg.rivalLeft(id); portals.clear(id); delivery.dropPeer(id);
       if (lobby) { if (lobby.host === id) { closeLobby(); if (gm && !gm.host) closeGameMenu(); ui.toast('la partie proposée est annulée'); } else { lobby.ready.delete(id); hostCheck(); renderLobby(); } }
     },
-    onStatus(s) { if (s === 'off') { ui.setNet('<span class="t">hors ligne</span>', true); delivery.dropPeer(); } },
+    onStatus(s, why) {
+      if (s === 'kicked') ui.toast(why || 'renvoyé de la partie', true, 6000);
+      if (s === 'off') { ui.setNet(`<span class="t">${P2P ? 'hors ligne · l\'hôte est parti ?' : 'hors ligne'}</span>`, true); delivery.dropPeer(); }
+    },
+    // the host's word: a raid called in for everyone
+    onAdmin(m) { if (m.a === 'raid') plane.raid(); },
   });
   delivery.link((fx) => net.sendFx(fx));
-  net.connect('jardin', params.get('name') || 'creuseur');
+  if (P2P) p2pConnect(net, { params, hooks: {
+    clock: clockNow, raid: () => plane.raid(), resetMap: () => resetMap(Math.floor(Math.random() * 1e9), true),
+    start: () => { if (state === 'attract') start(); }, toast: (...a) => ui.toast(...a), fetchNotes: (f) => { notesFetch = f; },
+  } });
+  else net.connect('jardin', params.get('name') || 'creuseur');
 }
 let netListT = 0;
 function updateNetList(dt) {
@@ -2867,7 +2889,7 @@ function updateNetList(dt) {
   if (!net.online) return;
   const hex = (c) => '#' + c.toString(16).padStart(6, '0');
   const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-  ui.setNet(`<div class="t">le jardin commun</div>` + net.list().map(p => `<div><i style="background:${hex(p.color)}"></i>${esc(p.name)}${p.me ? ' (toi)' : ''}</div>`).join(''));
+  ui.setNet(`<div class="t">${esc(net.title || 'le jardin commun')}</div>` + net.list().map(p => `<div><i style="background:${hex(p.color)}"></i>${esc(p.name)}${p.me ? ' (toi)' : ''}</div>`).join(''));
 }
 
 // ---------- quality: a switch, and an automatic step down when frames run late ----------
@@ -3060,7 +3082,7 @@ function loop(ts) {
     hologram.update(dt, terrains.home);
 
     bombs.update(dt);
-    plane.update(dt, here === 'home' && playing);
+    plane.update(dt, here === 'home' && playing, !!tun.get('raids'));
     // stepping onto the plot while a raid is on its way: the alert, then
     if (raidAlert && inDigZone()) raidWarn();
     moles.update(dt, player);
@@ -3071,7 +3093,7 @@ function loop(ts) {
       const max = eco.cur('o2').o2;
       const air = moonP.pos.distanceTo(LANDERS[here]) < 6 || (here === 'mars' && moonP.pos.distanceTo(DOME) < 6) || space.breathable(here, moonP.pos);
       if (air) eco.s.oxygen = Math.min(max, eco.s.oxygen + 40 * dt);
-      else if (!EXPLORE) eco.s.oxygen = Math.max(0, eco.s.oxygen - dt * (eco.s.perks.icepack ? .5 : 1));
+      else if (!EXPLORE) eco.s.oxygen = Math.max(0, eco.s.oxygen - dt * (eco.s.perks.icepack ? .5 : 1) * tun.get('o2Drain'));
       if (eco.s.oxygen / max < .25) hintOnce('o2' + here, here === 'mars' ? 'oxygène bas ! retourne au module ou au dôme' : 'oxygène bas ! retourne au module lunaire', 4000);
       if (eco.s.oxygen <= 0) hurt(12 * dt);
       const tr = T(), C = PLANET[here];
@@ -3084,7 +3106,7 @@ function loop(ts) {
     if (playing) {
       if (here === 'home' && quest.touches(player.pos)) takeKey();
       eco.s.time += dt;
-      if (player.stats.jetting) eco.s.battery = Math.max(0, eco.s.battery - 5 * dt);
+      if (player.stats.jetting) eco.s.battery = Math.max(0, eco.s.battery - 5 * dt * tun.get('jetDrain'));
     moonP.stats.fuel = onPlanet() && eco.s.battery <= 0 ? 0 : moonP.stats.fuel;
       if (chargeT > 0) { chargeT -= dt; eco.s.battery = Math.min(eco.batteryMax, eco.s.battery + eco.batteryMax * dt / 1.2); }
       // standing still, the battery catches its breath: full again in ~8 s
@@ -3092,7 +3114,7 @@ function loop(ts) {
       idleT = still ? idleT + dt : 0;
       if (idleT > 0.8 && eco.s.battery < eco.batteryMax) {
         const sunny = seasonNow === 1 && player.pos.y > -1 && world.env.day > .5 ? 1.8 : 1;
-        eco.s.battery = Math.min(eco.batteryMax, eco.s.battery + eco.batteryMax * 0.13 * sunny * dt);
+        eco.s.battery = Math.min(eco.batteryMax, eco.s.battery + eco.batteryMax * 0.13 * sunny * dt * tun.get('batRegen'));
         if (eco.s.battery / eco.batteryMax < 0.9) hintOnce('rest', 'immobile, la batterie se recharge toute seule', 4000);
       }
       regenT += dt;

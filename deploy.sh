@@ -3,8 +3,8 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 V=$(date +%s)
-rsync -a --delete index.html style.css favicon.svg assets vendor src dist/
-sed -i -E "s#(from './[a-z-]+\.js)'#\1?v=$V'#g" dist/src/*.js
+rsync -a --delete index.html serveur.html netlab.html style.css favicon.svg assets vendor src dist/
+sed -i -E "s#(from './[a-z0-9-]+\.js)'#\1?v=$V'#g" dist/src/*.js
 sed -i -E "s#src=\"\./src/main\.js\"#src=\"./src/main.js?v=$V\"#; s#href=\"\./style\.css\"#href=\"./style.css?v=$V\"#" dist/index.html
 PID=$(ss -ltnp | grep ':8765 ' | grep -o 'pid=[0-9]*' | cut -d= -f2 || true)
 [ -n "$PID" ] && kill "$PID" && sleep 0.5

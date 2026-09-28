@@ -1,6 +1,7 @@
 // net.js, digging together: a WebSocket to the room, other diggers drawn as little
 // figures with their name over their head, and every change to the ground shared.
 import * as THREE from 'three';
+import { tun } from './tunables.js';
 
 const COLORS = [0xd9a125, 0x39c07a, 0x4a8fe0, 0xe4183a, 0xb05ae0, 0xf08a2a, 0x2ac0c0, 0xf2a7c3];
 
@@ -45,22 +46,26 @@ export function avatar(name, color) {
   return { g, tool };
 }
 
-export function createNet({ scene, onOp, onJoin, onLeave, onWelcome, onStatus, onFx, onSuperReset, onSuperDenied }) {
-  let ws = null, id = null, room = null, name = '', color = COLORS[0];
+export function createNet({ scene, onOp, onJoin, onLeave, onWelcome, onStatus, onFx, onSuperReset, onSuperDenied, onAdmin }) {
+  let ws = null, id = null, room = null, name = '', color = COLORS[0], hostId = null;
+  const asks = new Map();   // rid → resolve: questions to the room (the guest book, when a tab hosts)
+  let rid = 0;
   const peers = new Map();   // id → { name, color, avatar, from, to, t, w, dig }
   let sendT = 0;
 
-  function connect(roomName, nick) {
+  // socket: a WebSocket look-alike to use instead (a host's tab, a webrtc link: p2p.js)
+  function connect(roomName, nick, socket) {
     room = roomName; name = nick;
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    ws = new WebSocket(`${proto}://${location.host}/ws`);
+    ws = socket ? socket() : new WebSocket(`${proto}://${location.host}/ws`);
     ws.onopen = () => { ws.send(JSON.stringify({ t: 'hello', room, name })); onStatus?.('on'); };
     ws.onclose = () => { onStatus?.('off'); for (const p of peers.values()) scene.remove(p.avatar.g); peers.clear(); };
     ws.onerror = () => onStatus?.('off');
     ws.onmessage = (e) => {
       let m; try { m = JSON.parse(e.data); } catch { return; }
       if (m.t === 'welcome') {
-        id = m.id; color = COLORS[m.color % COLORS.length];
+        id = m.id; color = COLORS[m.color % COLORS.length]; hostId = m.host ?? null;
+        if (m.tun) tun.load(m.tun);
         for (const p of m.players) addPeer(p);
         onWelcome?.(m);
       } else if (m.t === 'join') { addPeer(m); onJoin?.(m.name); }
@@ -76,6 +81,11 @@ export function createNet({ scene, onOp, onJoin, onLeave, onWelcome, onStatus, o
       else if (m.t === 'superreset') onSuperReset?.(m);
       else if (m.t === 'superreset-denied') onSuperDenied?.();
       else if (m.t === 'fx') { const p = peers.get(m.id); if (p) onFx?.(m.id, p, m.fx); }
+      // from a host's tab: its live values, its word (a raid, a kick), the guest book
+      else if (m.t === 'tun') tun.load(m.v);
+      else if (m.t === 'admin') onAdmin?.(m);
+      else if (m.t === 'kicked') { onStatus?.('kicked', m.why); ws.close(); }
+      else if (m.t === 'notes') { asks.get(m.rid)?.(m); asks.delete(m.rid); }
     };
   }
 
@@ -95,6 +105,15 @@ export function createNet({ scene, onOp, onJoin, onLeave, onWelcome, onStatus, o
     get id() { return id; },
     get color() { return color; },
     get room() { return room; },
+    get hostId() { return hostId; },
+    title: null,
+    // a question to the room, answered by a message with the same rid
+    ask(msg, ms = 5000) {
+      if (!open()) return Promise.reject(new Error('hors ligne'));
+      const r = ++rid;
+      ws.send(JSON.stringify({ ...msg, rid: r }));
+      return new Promise((res, rej) => { asks.set(r, res); setTimeout(() => { if (asks.delete(r)) rej(new Error('pas de réponse')); }, ms); });
+    },
     peers,
     sendOp(op) { if (open()) ws.send(JSON.stringify({ t: 'op', op })); },
     // passing effects (a laser shot, a paint blob): relayed to the others, never saved

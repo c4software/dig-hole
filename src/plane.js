@@ -2,6 +2,7 @@
 // its bay on the plot. Bad for the lawn, good for the hole. Stay in the house.
 import * as THREE from 'three';
 import * as V from './vehicles.js';
+import { tun } from './tunables.js';
 
 const ALT = 42, SPEED = 34;
 
@@ -86,6 +87,9 @@ export function createPlane({ scene, getTerrain, onWarn, onBomb, onEnd, onCrash,
   let run = null;
   // raids are rare, and always announced well before: never a boom out of nowhere
   let next = 480 + Math.random() * 240, warned = false;   // first raid after 8 to 12 minutes
+  // the host may space raids out or bring them closer (tunables.js), or call one in
+  let every = tun.get('raidEvery'), forced = false;
+  tun.on(() => { const k = tun.get('raidEvery'); if (k === every) return; if (!warned && !run) next = Math.max(13, next * k / every); every = k; });
 
   const solidAt = (p) => { const t = getTerrain(); const [i, j, k] = t.cellOf(p.x, p.y, p.z); return t.solidCell(i, j, k); };
 
@@ -101,12 +105,12 @@ export function createPlane({ scene, getTerrain, onWarn, onBomb, onEnd, onCrash,
     plane.visible = true;
   }
 
-  function update(dt, active) {
+  function update(dt, active, auto = true) {
     if (!run) {
-      if (!active) return;
+      if (!active || (!auto && !forced)) return;
       next -= dt;
       if (!warned && next <= 12) { warned = true; onWarn?.(); }
-      if (next <= 0) { next = 600 + Math.random() * 300; warned = false; launch(); }
+      if (next <= 0) { next = (600 + Math.random() * 300) * every; warned = false; forced = false; launch(); }
     }
     smoke.update(dt); fire.update(dt);
     if (run && run.down != null) {
@@ -175,5 +179,7 @@ export function createPlane({ scene, getTerrain, onWarn, onBomb, onEnd, onCrash,
     },
     shootDown() { if (run && run.down == null) { run.down = 0; run.vy = 0; run.dropped = 99; audio?.boom?.(.5); } },
     trigger() { if (!run) { onWarn?.(); launch(); } },
+    // called in by the host: announced, then over the garden in 12 s
+    raid() { if (run) return; forced = true; if (next > 12.5) { next = 12.5; warned = false; } },
   };
 }
