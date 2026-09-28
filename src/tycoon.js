@@ -273,7 +273,7 @@ export function createTycoon({ audio, ui, eco, pay, save } = {}) {
       case 'refine': f('#6d5f4a', 2, 7, 16, 10); f('#9a8264', 3, 5, 8, 6); f('#555', 13, 1, 3, 9); f('#e0a0ff', 5, 12, 4, 2); if (on && Math.random() < .2) run.parts.push({ x: x + 14, y: y, vx: (Math.random() - .5) * 4, vy: -8, life: 0, max: 1.2, c: 'rgba(80,70,70,.6)' }); break;
       case 'store': f('#7a6a52', 2, 6, 16, 11); f('#a88c64', 3, 7, 6, 4); f('#a88c64', 11, 7, 6, 4); f('#a88c64', 3, 12, 6, 4); f('#a88c64', 11, 12, 6, 4); f('#5a4a36', 2, 5, 16, 1); break;
       case 'lab': f('#e8e2d6', 2, 5, 16, 12); f('#7fa8ff', 4, 8, 12, 3); f('#b9b0a2', 9, 1, 2, 5); f(on && Math.sin(t * 6) > 0 ? '#ff4d4d' : '#6a1a1a', 9, 0, 2, 2); break;
-      case 'port': { f('#5e6873', 0, 13, 20, 5); f('#ffcc4a', 2, 15, 16, 1); const up = run.launch?.i === o.i ? run.launch.t * run.launch.t * 30 : 0; f('#e8e2d6', 8, 2 - up, 4, 12); f('#d84a3a', 8, 1 - up, 4, 2); f('#888', 7, 11 - up, 1, 3); f('#888', 12, 11 - up, 1, 3); if (up) f(Math.random() < .5 ? '#ffcc4a' : '#ff6a2a', 8, 14 - up, 4, 3 + Math.random() * 3); break; }
+      case 'port': { f('#5e6873', 0, 13, 20, 5); f('#ffcc4a', 2, 15, 16, 1); const up = run.launch && run.launch.i === o.i ? run.launch.t * run.launch.t * 30 : 0; f('#e8e2d6', 8, 2 - up, 4, 12); f('#d84a3a', 8, 1 - up, 4, 2); f('#888', 7, 11 - up, 1, 3); f('#888', 12, 11 - up, 1, 3); if (up) f(Math.random() < .5 ? '#ffcc4a' : '#ff6a2a', 8, 14 - up, 4, 3 + Math.random() * 3); break; }
       case 'rtg': f('#4b5563', 4, 4, 12, 13); for (let i = 0; i < 4; i++) f('#9aa4ad', 3, 5 + i * 3, 14, 1); f(P.gold, 8, 8, 4, 4); f('#222', 9, 9, 2, 2); break;
     }
     if (lv > 1 && !o.ghost) for (let i = 0; i < lv - 1; i++) f(P.gold, 1 + i * 3, 1, 2, 2);
