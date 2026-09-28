@@ -40,6 +40,9 @@ import { createOrgan, createDiscLauncher, createBats, createReliquary, SONGS } f
 import { createNes } from './nes.js';
 import { createEncre } from './encre.js';
 import { createWorms } from './worms.js';
+import { createPotato } from './potato.js';
+import { createSurvie } from './survie.js';
+import { createTycoon } from './tycoon.js';
 import { initMenus } from './menufx.js';
 import { createGamepad } from './gamepad.js';
 import { createTouch } from './touch.js';
@@ -1419,6 +1422,10 @@ const RACES = {
   encre: { mod: createEncre({ audio, ui }), screen: true, help: 'zqsd · espace pour sauter · clic ou j pour tirer · shift pour nager', prizes: [1600, 600], value: (r) => r.pct },
   // mars: the pod race, in its own canyon (the terminal is in the martian hall)
   podrace: { mod: createPodrace({ scene, camera, audio, ui }), help: '3 tours · z : gaz · q d : piloter · shift : boost (ça chauffe) · r : revenir sur la piste', prizes: [2500, 1300, 700, 350, 150, 80] },
+  // mars: potatoes in the hab
+  potato: { mod: createPotato({ audio, ui }), screen: true, help: 'zqsd · e pour agir · x pour lâcher · tiens jusqu\'au sauvetage', prizes: [2200, 1200, 700, 300] },
+  survie: { mod: createSurvie({ audio, ui }), screen: true, help: 'zqsd · e sortir, monter, fouiller · espace panneaux · f réparer · m carte', prizes: [2500, 1300, 600, 250] },
+  tycoon: { mod: createTycoon({ audio, ui, eco, pay: (v, text) => reward(v, text), save: () => save() }), screen: true, help: 'souris · la colonie tourne même sans toi', prizes: [0] },
 };
 let race = null;
 const raceReturn = { pos: new THREE.Vector3(), yaw: 0 };
@@ -1505,6 +1512,8 @@ function quitRace(result, silent = false) {
   if (onPlanet()) { moonP.pos.copy(raceReturn.pos); moonP.vel.set(0, 0, 0); T().setFocus(moonP.pos); }
   player.enable();
   camera.up.set(0, 1, 0);
+  if (!result && r.mod.leave) result = r.mod.leave();   // a long-running game: leaving isn't giving up
+  if (result?.quiet) { if (result.text) ui.hint(result.text, 4000); save(); return; }
   if (!result) { ui.toast(r.screen ? 'partie abandonnée' : 'course abandonnée'); return; }
   const mode = r.opts?.mode && r.mod.modes?.find(m => m.id === r.opts.mode);
   const first = !mode || mode.id === r.mod.modes[0].id;
@@ -1574,7 +1583,7 @@ function raceHud() {
 // Picking a game at the arcade offers it to everyone, wherever they are. Players press « prêt »;
 // from two ready, a 10 s countdown (time to take the teleporter home); at zero the host sends the
 // list of the ready ones and they all start together, on the same seed.
-const SCREEN_GAMES = new Set(['nes', 'encre', 'worms']);   // played on a screen: from anywhere
+const SCREEN_GAMES = new Set(['nes', 'encre', 'worms', 'potato', 'survie', 'tycoon']);   // played on a screen: from anywhere
 const CAVE_GAMES = new Set(['bomber', 'canards', 'empile', 'ballons', 'moto', 'bagarre', 'batballons']);   // dioramas in the secret cave
 // the races (their own scenery) can be joined from a planet too; the garden's games only from the garden
 const playableHere = (g) => here === 'home' || SCREEN_GAMES.has(g) || !!RACES[g]?.screen || (onPlanet() && !!RACES[g]);

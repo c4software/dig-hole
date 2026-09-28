@@ -145,6 +145,7 @@ export function createEconomy(key = 'a-hole-save-v2', { unlimited = false } = {}
     delivery: null,
     clock: 8 / 24 * 360, gifted: false, animals: 0,
     where: 'home', pos: null, yaw: Math.PI, pitch: -0.15,
+    tycoon: null,   // the mars colony (tycoon.js), running while you're away
     upKey: false, mapSeed: 1337,   // the key to upstairs; the seed of the garden's current map
   });
   let s = fresh();
