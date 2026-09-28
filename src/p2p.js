@@ -6,6 +6,14 @@ import { createRoom } from './room.js';
 import { tun } from './tunables.js';
 import { createOffer, answerOffer, pipeSocket, watchIce, decode, candText } from './rtc.js';
 import { roomKey } from './signal.js';
+import { hostRendezvous, guestRendezvous, newSecret, randomId, TRACKERS } from './rendezvous.js';
+
+// the host's secret for a room: in the invite link, it opens the rendezvous on public trackers
+export function roomSecret(name) {
+  const k = 'a-hole-secret:' + name;
+  try { let s = localStorage.getItem(k); if (!s) { s = newSecret(); localStorage.setItem(k, s); } return s; } catch { return newSecret(); }
+}
+export const rdvCode = (name, secret) => `t:${name}:${secret}`;
 
 export const P2P_BC = 'a-hole-p2p';       // same browser: a guest tab hands its answer to the host tab
 export const ADMIN_BC = 'a-hole-admin';   // a second window showing the host's panel
@@ -70,7 +78,8 @@ function localSocket(room, owner) {
 // ---------- hosting ----------
 // hooks from the game: clock() the garden's clock now, raid(), resetMap()
 // now: the host's clock (its date decides the feasts for the guests); tests give another
-export async function startHost({ name, nick = 'hôte', hooks = {}, useSig = true, now } = {}) {
+// useSig: look for the node server's /sig; rendezvous: public trackers ('auto': when there's no /sig)
+export async function startHost({ name, nick = 'hôte', hooks = {}, useSig = true, rendezvous = 'auto', trackers = TRACKERS, WS, now } = {}) {
   name = roomKey(name) || 'partie';
   const saved = await loadWorld(name) || {};
   tun.load(saved.tun || {});
@@ -80,6 +89,7 @@ export async function startHost({ name, nick = 'hôte', hooks = {}, useSig = tru
   const guests = new Map();   // key → { key, via, state, id, name, pc, pipe, offer }
   let gKey = 0;
   const sig = { state: useSig ? 'probe' : 'off', ws: null, code: null };
+  const rdv = { state: 'off', up: 0, code: null, h: null };
 
   // ---------- persistence ----------
   const save = () => { if (!room.dirty) return; room.dirty = false; saveWorld(name, { ops: room.ops, tun: room.tun, notes: room.notes, at: Date.now() }); };
@@ -124,7 +134,11 @@ export async function startHost({ name, nick = 'hôte', hooks = {}, useSig = tru
     g.pc = o.pc; g.offer = o; g.id8 = o.id;
     attach(g, o.pipe);
     g.ice = candText(o.cands);
-    watchIce(o.pc, (st) => {
+    watchGuest(g, o.pc);
+    return o;
+  }
+  function watchGuest(g, pc) {
+    watchIce(pc, (st) => {
       if (st === 'connecting' || st === 'checking') {
         if (g.state === 'invite' || g.state === 'answered') {
           g.state = 'connecting'; changed();
@@ -134,7 +148,6 @@ export async function startHost({ name, nick = 'hôte', hooks = {}, useSig = tru
         }
       } else if (st === 'failed') { g.state = 'failed'; changed(); }
     });
-    return o;
   }
 
   // ---------- invitations to paste ----------
@@ -172,9 +185,40 @@ export async function startHost({ name, nick = 'hôte', hooks = {}, useSig = tru
   } catch {}
 
   // ---------- the node server's matchmaking ----------
+  // ---------- no server of ours: public trackers as the meeting point ----------
+  async function rdvStart() {
+    if (rdv.h) return;
+    const secret = roomSecret(name);
+    rdv.state = 'connecting'; rdv.code = rdvCode(name, secret); changed();
+    rdv.h = await hostRendezvous({
+      room: name, secret, trackers, ...(WS ? { WS } : {}),
+      onState: () => { if (!rdv.h) return; rdv.up = rdv.h.up; rdv.state = rdv.up ? 'on' : 'connecting'; changed(); },
+      async onOffer(data, reply) {
+        if (!data || typeof data.c !== 'string') return;
+        // one guest (g) announces several offers on several trackers: one answer at a time
+        // (an answer lost on the way: after 15 s, a fresh offer from that guest gets one again)
+        const same = [...guests.values()].find(x => x.rdvG === data.g && (x.state === 'on' || (!['failed', 'gone', 'kicked'].includes(x.state) && Date.now() - x.at < 15000)));
+        if (same) return;
+        const g = newGuest('rdv');
+        g.rdvG = data.g; g.name = String(data.n || '').slice(0, 10) || null;
+        changed();
+        try {
+          const ans = await answerOffer(data.c, { n: nick, r: name });
+          g.pc = ans.pc; g.state = 'answered'; g.ice = candText(ans.cands) + ' ⇄ ' + candText(ans.remoteCands);
+          watchGuest(g, ans.pc);
+          await reply({ c: ans.code });
+          ans.pipe.then((p) => attach(g, p));
+        } catch { g.state = 'failed'; }
+        changed();
+      },
+    });
+    rdv.up = rdv.h.up;
+    changed();
+  }
+
   async function sigConnect() {
     const ws = await probeSig();
-    if (!ws) { sig.state = 'off'; changed(); return; }
+    if (!ws) { sig.state = 'off'; changed(); if (rendezvous === 'auto') rdvStart(); return; }
     sig.ws = ws;
     sig.state = 'wait';
     changed();
@@ -206,10 +250,11 @@ export async function startHost({ name, nick = 'hôte', hooks = {}, useSig = tru
     ws.onclose = () => { sig.ws = null; if (sig.state !== 'taken') { sig.state = 'off'; sig.code = null; changed(); setTimeout(sigConnect, 15000); } };
     ws.send(JSON.stringify({ t: 'host', room: name }));
   }
-  if (useSig) sigConnect();
+  if (useSig) sigConnect(); else if (rendezvous) rdvStart();
+  if (rendezvous === true && useSig) rdvStart();
 
   const host = {
-    name, room, guests, sig,
+    name, room, guests, sig, rdv,
     get ops() { return room.ops.length; },
     // the host's own game: a socket straight into the room
     socket: () => localSocket(room, true),
@@ -236,6 +281,7 @@ export async function startHost({ name, nick = 'hôte', hooks = {}, useSig = tru
         players: room.players().map(p => ({ id: p.id, name: p.name, color: p.color, owner: p.owner, w: p.w })),
         guests: [...guests.values()].map(g => ({ key: g.key, via: g.via, state: g.state, name: g.name, id: g.id, ice: g.ice || null, code: g.state === 'invite' && g.via === 'code' ? g.code : null, link: g.state === 'invite' && g.via === 'code' && g.code ? joinUrl(g.code) : null })),
         sig: { state: sig.state, code: sig.code, link: sig.code ? joinUrl(sig.code) : null },
+        rdv: { state: rdv.state, up: rdv.up, of: trackers.length, code: rdv.code, link: rdv.code ? joinUrl(rdv.code) : null },
       };
     },
   };
@@ -293,10 +339,12 @@ export function remoteHost(onSnap) {
 // ---------- joining ----------
 // join: '@room' through the node server, or an invitation code (or a link holding one).
 // onStep(what, data): 'sig' | 'offer' {host, room} | 'answer' {code} (to hand back) | 'ice' | 'open' | 'error' {why, hint}
-export async function joinHost({ join, nick, onStep = () => {} }) {
+// join: '@room' (node server), 't:room:secret' (public trackers), or an invitation code
+export async function joinHost({ join, nick, onStep = () => {}, trackers = TRACKERS, WS, rdv = {} }) {
   join = String(join || '').trim();
   const m = join.match(/[?&#]join=([^&\s]+)/);
   if (m) join = decodeURIComponent(m[1]);
+  if (join.startsWith('t:')) return joinRendezvous({ join, nick, onStep, trackers, WS, ...rdv });
   let ans, sigWs = null;
   if (join.startsWith('@')) {
     onStep('sig');
@@ -359,6 +407,41 @@ export async function joinHost({ join, nick, onStep = () => {} }) {
   finally { clearTimeout(slow); clearTimeout(cap); try { sigWs?.close(); } catch {} setTimeout(() => { try { bc?.close(); } catch {} }, 5000); }
   onStep('open');
   return { socket: () => pipeSocket(pipe), room: ans.offer.r, host: ans.offer.n, pc: ans.pc };
+}
+
+// ---------- joining through public trackers: our offers, sealed, the host answers one ----------
+async function joinRendezvous({ join, nick, onStep, trackers, WS, ...opts }) {
+  const [, room, secret] = join.split(':');
+  if (!room || !secret) throw Object.assign(new Error('lien incomplet'), { hint: 'demande le lien d\'invitation en entier' });
+  const g = randomId(10);
+  let info = null;
+  onStep('rdv', { room });
+  const o = await guestRendezvous({
+    room, secret, trackers, ...(WS ? { WS } : {}), ...opts,
+    onStep: (what, d) => { if (what === 'announce') onStep('rdv', { room, round: d.round, up: d.up }); },
+    async makeOffer() {
+      const off = await createOffer({ n: nick, r: room });
+      return {
+        off, data: { c: off.code, g, n: nick },
+        async accept(d) { const a = await decode(d.c); await off.accept(a); info = a; },
+        drop() { try { off.pc.close(); } catch {} },
+      };
+    },
+  });
+  onStep('offer', { host: info?.n, room });
+  const cands = candText(o.off.cands) + ' ⇄ ' + candText(o.off.remoteCands || {});
+  const why = (text) => Object.assign(new Error(text), { hint: `vos réseaux ne se voient pas : essayez un serveur turn (réglage) · candidats ${cands}` });
+  const pipe = o.off.pipe;
+  let slow = 0;
+  await new Promise((res, rej) => {
+    if (pipe.open) return res();
+    pipe.onopen = res;
+    slow = setTimeout(() => rej(why('la connexion directe n\'aboutit pas')), 30000);
+    watchIce(o.off.pc, (st) => { if (st === 'checking' || st === 'connecting') onStep('ice'); if (st === 'failed') rej(why('la connexion directe a échoué')); });
+  }).catch((e) => { try { o.off.pc.close(); } catch {} throw e; }).finally(() => clearTimeout(slow));
+  pipe.onopen = null;
+  onStep('open');
+  return { socket: () => pipeSocket(pipe), room, host: info?.n, pc: o.off.pc };
 }
 
 // ---------- the guest book through the room (a tab hosts: no /api/notes) ----------

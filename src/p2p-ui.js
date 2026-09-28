@@ -5,6 +5,8 @@ import { startHost, joinHost, listWorlds, saveWorld, readWorldFile, notesFetch }
 import { createHostPanel, localBackend } from './hostpanel.js';
 import { getTurn, setTurn, parseTurn, turnText } from './rtc.js';
 import { roomKey } from './signal.js';
+import { serverless } from './mode.js';
+import { CONFIG } from './config.js';
 
 const CSS = `
 .p2p-card { position: fixed; z-index: 70; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(460px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto;
@@ -52,8 +54,18 @@ const turnRow = `<details><summary>réseau difficile ? un serveur turn</summary>
 function keepTurn(c) { const i = c.$('[data-turn]'); if (!i) return true; if (!i.value.trim()) { setTurn(null); return true; } const t = parseTurn(i.value); if (!t) return false; setTurn(t); return true; }
 
 // ---------- the title screen: two more ways to play together ----------
+// returns { serverless, host() }: with no node server, « à plusieurs » is hosting or joining only
 export function initP2PMenu({ form, nickIn }) {
   css();
+  const menu = { serverless: CONFIG.serverless, host: () => hostCard(nickIn), join: () => joinCard(nickIn) };
+  const noServer = () => {
+    menu.serverless = true;
+    const b = document.querySelector('.m-opt[data-mode="multi"]');
+    if (b) b.dataset.desc = 'héberger une partie ou en rejoindre une · sans serveur';
+    const sub = document.getElementById('play-sub');
+    if (sub && /jardin commun/.test(sub.textContent)) sub.textContent = 'à plusieurs · héberger ou rejoindre';
+  };
+  if (CONFIG.serverless) noServer(); else serverless().then((no) => { if (no) noServer(); });
   const more = document.createElement('div');
   more.className = 'p2p-more';
   more.innerHTML = `<button type="button" data-p="host" title="ton onglet devient le serveur">héberger une partie</button><button type="button" data-p="join" title="avec un code ou un lien">rejoindre</button>`;
@@ -65,6 +77,7 @@ export function initP2PMenu({ form, nickIn }) {
     const b = e.target.closest('[data-p]');
     if (b?.dataset.p === 'host') hostCard(nickIn); else if (b) joinCard(nickIn);
   });
+  return menu;
 }
 
 async function hostCard(nickIn) {
@@ -100,7 +113,7 @@ async function hostCard(nickIn) {
 }
 
 function joinCard(nickIn) {
-  const c = card(`<h2>rejoindre</h2><div class="sub">colle le lien ou le code que l'hôte t'a donné (ou « @nom » si la partie est sur le serveur).</div>
+  const c = card(`<h2>rejoindre</h2><div class="sub">colle le lien ou le code que l'hôte t'a donné${CONFIG.serverless ? '' : ' (ou « @nom » si la partie est sur le serveur)'}.</div>
     <label>lien ou code</label><textarea data-code spellcheck="false" placeholder="https://…?join=… · @ma-partie"></textarea>
     ${turnRow}
     <div class="err" data-err></div>
@@ -114,7 +127,10 @@ function joinCard(nickIn) {
     if (m) code = decodeURIComponent(m[1]);
     if (!code) { c.$('[data-err]').textContent = 'colle d\'abord le code'; return; }
     if (!keepTurn(c)) { c.$('[data-err]').textContent = 'turn : « turn:hôte:port nom motdepasse »'; return; }
-    if (!code.startsWith('@') && !/^[zj][A-Za-z0-9_-]{20,}$/.test(code)) code = '@' + roomKey(code);
+    if (!code.startsWith('@') && !code.startsWith('t:') && !/^[zj][A-Za-z0-9_-]{20,}$/.test(code)) {
+      if (CONFIG.serverless) { c.$('[data-err]').textContent = 'colle le lien d\'invitation en entier'; return; }
+      code = '@' + roomKey(code);
+    }
     location.search = `?join=${encodeURIComponent(code)}&name=${encodeURIComponent(nickOf(nickIn))}&auto=1`;
   });
   c.$('[data-code]').focus();
@@ -129,7 +145,7 @@ export function p2pConnect(net, { params, hooks }) {
 
 async function hostNow(net, params, hooks) {
   const nick = params.get('name') || 'hôte';
-  const host = await startHost({ name: params.get('room'), nick, hooks });
+  const host = await startHost({ name: params.get('room'), nick, hooks, useSig: !CONFIG.serverless });
   window.__host = host;
   net.title = `ta partie · ${host.name}`;
   net.connect(host.name, nick, host.socket);
@@ -159,7 +175,7 @@ async function hostNow(net, params, hooks) {
 function joinNow(net, params, hooks) {
   const join = params.get('join');
   let nick = params.get('name') || (() => { try { return localStorage.getItem('a-hole-nick'); } catch { return null; } })() || '';
-  const c = card(`<h2>rejoindre une partie</h2><div class="sub" data-sub>${join.startsWith('@') ? `la partie « ${esc(join.slice(1))} »` : 'avec une invitation'}</div>
+  const c = card(`<h2>rejoindre une partie</h2><div class="sub" data-sub>${join.startsWith('@') ? `la partie « ${esc(join.slice(1))} »` : join.startsWith('t:') ? `la partie « ${esc(join.split(':')[1] || '?')} »` : 'avec une invitation'}</div>
     <div data-name><label>ton nom</label><input data-nick maxlength="10" value="${esc(nick)}" placeholder="creuseur" spellcheck="false"></div>
     <div data-steps></div>
     <div data-ans hidden><label>ta réponse, à renvoyer à l'hôte</label><textarea data-code readonly></textarea>
@@ -189,7 +205,8 @@ function joinNow(net, params, hooks) {
     try {
       const r = await joinHost({ join, nick, onStep(what, d) {
         if (what === 'sig') step('sig', 'recherche de la partie sur le serveur…');
-        else if (what === 'offer') { step('offer', `invitation de ${d.host || 'l\'hôte'} · partie « ${d.room || '?'} »`, 'ok'); c.$('[data-sub]').textContent = `la partie « ${d.room || '?'} » de ${d.host || '?'}`; step('wait', join.startsWith('@') ? 'poignée de main…' : 'en attente de l\'hôte…'); }
+        else if (what === 'rdv') step('rdv', `recherche de l'hôte par les relais publics${d?.round ? ` · essai ${d.round}` : ''}${d?.up != null ? ` · ${d.up} relais joignable${d.up > 1 ? 's' : ''}` : ''}…`);
+        else if (what === 'offer') { step('offer', `invitation de ${d.host || 'l\'hôte'} · partie « ${d.room || '?'} »`, 'ok'); c.$('[data-sub]').textContent = `la partie « ${d.room || '?'} » de ${d.host || '?'}`; step('wait', join.startsWith('@') || join.startsWith('t:') ? 'poignée de main…' : 'en attente de l\'hôte…'); }
         else if (what === 'answer') { c.$('[data-ans]').hidden = false; c.$('[data-code]').value = d.code; }
         else if (what === 'ice') step('ice', 'connexion directe…');
       } });
@@ -210,7 +227,7 @@ function joinNow(net, params, hooks) {
       btn.disabled = false; btn.textContent = 'réessayer';
       busy = false;
       // a code is used once: trying again only makes sense through the server
-      if (!join.startsWith('@')) { btn.textContent = 'retour au menu'; spent = true; }
+      if (!join.startsWith('@') && !join.startsWith('t:')) { btn.textContent = 'retour au menu'; spent = true; }
       return;
     }
     busy = false;

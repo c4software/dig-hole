@@ -64,7 +64,7 @@ const hex = (c) => '#' + (c >>> 0).toString(16).padStart(6, '0');
 const COLORS = [0xd9a125, 0x39c07a, 0x4a8fe0, 0xe4183a, 0xb05ae0, 0xf08a2a, 0x2ac0c0, 0xf2a7c3];
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const fmt = (d, v) => d.options ? '' : d.k === 'hour' && v < 0 ? 'auto' : (Math.round(v * 100) / 100) + (d.unit || '');
-const STATES = { invite: ['en attente de réponse', 'wait'], answered: ['réponse reçue', 'wait'], connecting: ['connexion…', 'wait'], on: ['connecté', 'on'], failed: ['échec (réseau)', 'bad'], gone: ['parti', ''], kicked: ['renvoyé', 'bad'] };
+const STATES = { rdv: ['par les relais', 'wait'], invite: ['en attente de réponse', 'wait'], answered: ['réponse reçue', 'wait'], connecting: ['connexion…', 'wait'], on: ['connecté', 'on'], failed: ['échec (réseau)', 'bad'], gone: ['parti', ''], kicked: ['renvoyé', 'bad'] };
 const SIG = { probe: 'recherche du serveur…', wait: 'inscription…', on: 'en ligne', off: 'pas de serveur de rencontre : invitations par code', taken: 'nom déjà pris sur le serveur : invitations par code' };
 
 // backend: set, reset, kick, raid, resetMap, invite, accept, cancel, exportWorld, importWorld; snap(): state
@@ -172,9 +172,12 @@ export function createHostPanel({ backend, page = false, detachUrl = null, paren
     if (Array.isArray(snap.notes)) $('hp-notes').innerHTML = snap.notes.map(n => `<div class="who"><span><b>${esc(n.name)}</b> · ${esc(n.text)}</span><button class="x" data-a="delnote" data-at="${n.at}" title="effacer">×</button></div>`).join('') || '<div class="hint">pas encore de mot</div>';
     $('hp-ops').textContent = snap.ops + ' changements au sol';
     const s = snap.sig;
+    const r = snap.rdv;
     $('hp-sig').innerHTML = s.code
       ? `<div class="hint">code de la partie, à taper dans « rejoindre » : <b style="color:#ffdc8f">${esc(s.code)}</b></div><div class="code"><input readonly value="${esc(s.link)}"><button data-a="copy" data-v="${esc(s.link)}">copier le lien</button></div>`
-      : `<div class="hint">serveur de rencontre : ${esc(SIG[s.state] || s.state)}</div>`;
+      : r?.link
+        ? `<div class="hint">le lien d'invitation, pour autant d'invités que tu veux · il passe par des relais publics (chiffré, clé dans le lien) · <b style="color:${r.up ? '#39c07a' : '#ff7a56'}">${r.up}/${r.of} relais joignables</b></div><div class="code"><input readonly value="${esc(r.link)}"><button data-a="copy" data-v="${esc(r.link)}">copier le lien</button></div>`
+        : `<div class="hint">serveur de rencontre : ${esc(SIG[s.state] || s.state)}</div>`;
     renderGuests(snap);
     $('hp-n').textContent = snap.players.length;
     $('hp-players').innerHTML = snap.players.map(p => `<div class="who"><i style="background:${hex(COLORS[p.color % COLORS.length])}"></i><span>${esc(p.name)}${p.owner ? ' <em>(toi, l\'hôte)</em>' : ''}</span><em>${esc(p.w || '')}</em><button class="ghost" data-a="gift" data-id="${p.id}">donner</button>${p.owner ? '' : `<button class="danger" data-a="kick" data-id="${p.id}">renvoyer</button>`}</div>`).join('') || '<div class="hint">personne pour l\'instant</div>';

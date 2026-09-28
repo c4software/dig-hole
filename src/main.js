@@ -464,23 +464,25 @@ const modeBtns = document.querySelectorAll('.m-opt');
 const multiForm = document.getElementById('multi-form');
 const nickIn = document.getElementById('nick');
 let wantMode = MODE;
+// playing together without the server: one tab hosts, the others join it (p2p-ui.js)
+const p2pMenu = initP2PMenu({ form: multiForm, nickIn });
 function setMode(m) {
   wantMode = m;
   modeBtns.forEach(b => b.setAttribute('aria-checked', String(b.dataset.mode === m)));
   multiForm.classList.toggle('hidden', m !== 'multi');
-  document.getElementById('play-sub').textContent = { solo: 'solo · ta sauvegarde', explore: 'exploration · tout illimité', multi: 'à plusieurs · le jardin commun' }[m];
+  document.getElementById('play-sub').textContent = { solo: 'solo · ta sauvegarde', explore: 'exploration · tout illimité', multi: p2pMenu?.serverless ? 'à plusieurs · héberger ou rejoindre' : 'à plusieurs · le jardin commun' }[m];
 }
 try { nickIn.value = params.get('name') || localStorage.getItem('a-hole-nick') || ''; } catch {}
 setMode(MODE);
 modeBtns.forEach(b => b.addEventListener('click', (e) => { e.stopPropagation(); setMode(b.dataset.mode); }));
 multiForm.addEventListener('click', (e) => e.stopPropagation());
 multiForm.addEventListener('submit', (e) => { e.preventDefault(); start(); });
-// playing together without the server: one tab hosts, the others join it (p2p-ui.js)
-initP2PMenu({ form: multiForm, nickIn });
 
 function start() {
   // switching mode reloads into the other world
   if (wantMode !== MODE) {
+    // no node server (a static build): together means hosting or joining
+    if (wantMode === 'multi' && p2pMenu.serverless) { p2pMenu.host(); return; }
     if (wantMode === 'multi') {
       const nick = nickIn.value.trim() || 'creuseur';
       try { localStorage.setItem('a-hole-nick', nick); } catch {}
