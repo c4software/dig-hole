@@ -135,8 +135,9 @@ docker build -f docker/static/Dockerfile -t dig-hole-static .
 docker run --rm -p 8080:8080 dig-hole-static      # → http://localhost:8080
 ```
 
-Le CI (`.github/workflows/docker-static.yml`) lance les tests puis publie l'image (amd64 et arm64)
-sur `ghcr.io/c4software/dig-hole-static:latest` à chaque push sur `main`.
+Le CI (`.github/workflows/docker-static.yml`) publie l'image (amd64 et arm64) sur
+`ghcr.io/c4software/dig-hole-static:latest` seulement quand on pousse un tag `v*`
+(`git tag v1.2.0 && git push origin v1.2.0`) ; les tests tournent à chaque push.
 
 ## github pages
 
