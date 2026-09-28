@@ -9,7 +9,7 @@ export const BLAST = {
   shell: { r: 2.3, fuse: 0, dmg: 45, push: 13 },    // an old buried shell
   air:   { r: 2.4, fuse: 0, dmg: 40, push: 14 },    // dropped by the bomber
   met:   { r: 4.2, fuse: 2.6, dmg: 50, push: 18 },   // a pocket meteor, made on the moon
-  holy:  { r: 6.0, fuse: 3.0, dmg: 45, push: 24 },   // the holy bomba, from the reliquary under the church
+  holy:  { r: 10.0, fuse: 3.0, dmg: 45, push: 30 },   // the holy bomba, from the reliquary under the church
 };
 
 // the holy bomba: a golden orb, a jewelled band, a cross on top (the one from the film)

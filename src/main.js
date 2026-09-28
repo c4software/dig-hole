@@ -1059,6 +1059,11 @@ function explode(kind, pos, power = 1) {
   } else {
     const out = applyOp({ k: 'carve', w: W(pos), c: pos.toArray().map(v => +v.toFixed(3)), r: b.r, tier, space: take ? eco.space : 0, destroy: !take });
     ores = out.ores;
+    // the holy bomba doesn't stop at a crater: a well of light bored ~20 m further down, narrowing
+    if (kind === 'holy') for (let n = 1; n <= 8; n++) {
+      const o2 = applyOp({ k: 'carve', w: W(pos), c: [+pos.x.toFixed(3), +(pos.y - b.r * .6 - n * 2.4).toFixed(3), +pos.z.toFixed(3)], r: Math.max(2.2, 5.5 - n * .45), tier, space: eco.space, destroy: false });
+      ores.push(...o2.ores);
+    }
   }
   T().flush();
   collectOres(ores, new THREE.Vector3(0, 1, 0));
