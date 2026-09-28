@@ -70,13 +70,15 @@ function nodeConsole() {
 function sameBrowser() {
 let panel = null, seen = 0;
 const remote = remoteHost((snap) => {
+  if (mine || (params.get('room') && snap.room !== roomKey(params.get('room')))) return;
   seen = Date.now();
-  if (params.get('room') && snap.room !== roomKey(params.get('room'))) return;
   if (!panel) { wait.remove(); panel = createHostPanel({ backend: { ...remote, snap: () => remote.last }, page: true }); }
   panel.render(snap);
   document.title = `A Hole | serveur · ${snap.room}`;
 });
-setInterval(() => { if (panel && remote.last && Date.now() - seen > 5000) panel.el.querySelector('#hp-err').textContent = 'l\'onglet hôte ne répond plus : fermé ?'; }, 2000);
+// (only for a panel of another tab: a dedicated server here is its own host)
+let mine = false;
+setInterval(() => { if (panel && !mine && seen && Date.now() - seen > 5000) panel.el.querySelector('#hp-err').textContent = 'l\'onglet hôte ne répond plus : fermé ?'; }, 2000);
 
 const wait = document.createElement('div');
 wait.className = 'hp page';
@@ -95,6 +97,7 @@ setTimeout(() => {
 
 async function dedicated(name) {
   if (panel) return;
+  mine = true;
   remote.close();
   const host = await startHost({ name: roomKey(name) || 'ma-partie', nick: 'serveur', hooks: { clock }, useSig: !CONFIG.serverless });
   window.__host = host;

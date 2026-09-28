@@ -42,18 +42,39 @@ export async function unseal(key, s) {
   catch { return null; }
 }
 
+// trackers that never answered, for the whole page: after 3 failed tries in a row a tracker
+// rests 15 minutes (the browser logs every failed socket: no need to fill the console)
+const DEAD = new Map();   // url → { fails, until }
+export const deadTrackers = DEAD;
+const resting = (url, now = Date.now()) => (DEAD.get(url)?.until || 0) > now;
+
 // one socket per tracker, reopened when it drops; onMsg(tracker, msg)
 function trackerLinks({ trackers, WS, onMsg, onOpen, onState }) {
-  const links = trackers.map(url => ({ url, ws: null, state: 'off', retry: 2000, closed: false }));
+  const links = trackers.map(url => ({ url, ws: null, state: resting(url) ? 'dead' : 'off', retry: 2000, closed: false, opened: false }));
   const open = (l) => {
     if (l.closed) return;
+    if (resting(l.url)) { l.state = 'dead'; onState?.(); setTimeout(() => open(l), DEAD.get(l.url).until - Date.now() + 1000); return; }
     let ws;
     try { ws = new WS(l.url); } catch { l.state = 'error'; onState?.(); return; }
     l.ws = ws; l.state = 'connecting'; onState?.();
-    ws.onopen = () => { l.state = 'on'; l.retry = 2000; onState?.(); onOpen?.(l); };
+    ws.onopen = () => { l.state = 'on'; l.retry = 2000; l.opened = true; DEAD.delete(l.url); onState?.(); onOpen?.(l); };
     ws.onmessage = (e) => { let m; try { m = JSON.parse(e.data); } catch { return; } onMsg(l, m); };
     ws.onerror = () => {};
-    ws.onclose = () => { l.ws = null; if (l.closed) return; l.state = 'off'; onState?.(); setTimeout(() => open(l), l.retry); l.retry = Math.min(60000, l.retry * 2); };
+    ws.onclose = () => {
+      l.ws = null;
+      if (l.closed) return;
+      l.state = 'off';
+      if (!l.opened) {
+        const d = DEAD.get(l.url) || { fails: 0, until: 0 };
+        d.fails++;
+        if (d.fails >= 3) { d.until = Date.now() + 15 * 60000; d.fails = 0; l.state = 'dead'; console.info(`relais ${l.url} injoignable : laissé de côté 15 min`); }
+        DEAD.set(l.url, d);
+      }
+      l.opened = false;
+      onState?.();
+      setTimeout(() => open(l), l.state === 'dead' ? 15 * 60000 : l.retry);
+      l.retry = Math.min(60000, l.retry * 2);
+    };
   };
   links.forEach(open);
   return {
@@ -94,7 +115,8 @@ export async function hostRendezvous({ room, secret, trackers = TRACKERS, WS = g
 
 // ---------- a guest: announces sealed offers until the host answers one ----------
 // makeOffer() → { data (to seal), accept(answerData) }; resolves with the offer the host took
-export function guestRendezvous({ room, secret, trackers = TRACKERS, WS = globalThis.WebSocket, makeOffer, perRound = 2, rounds = 8, roundMs = 9000, onStep = () => {} }) {
+// 4 rounds of 7 s: a host that's there answers within the first; a wrong link gives up in ~30 s
+export function guestRendezvous({ room, secret, trackers = TRACKERS, WS = globalThis.WebSocket, makeOffer, perRound = 2, rounds = 4, roundMs = 7000, onStep = () => {} }) {
   return new Promise(async (resolve, reject) => {
     const { hash, key } = await roomKeys(room, secret);
     const peerId = randomId();

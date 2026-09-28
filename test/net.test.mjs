@@ -761,6 +761,23 @@ test('rendezvous: a guest finds the host through (fake) public trackers, one of 
   await assert.rejects(p2p.joinHost({ join: 't:sans-serveur:x', nick: 'x', trackers: ['wss://dead.a', 'wss://dead.b'], WS: TWS, rdv: { roundMs: 50, rounds: 2 } }), /aucun relais/);
 });
 
+test('rendezvous: a tracker that never answers is left alone after 3 tries', async () => {
+  const r = await import('../src/rendezvous.js');
+  const { TWS } = fakeTrackers();
+  let made = 0;
+  class Counting extends TWS { constructor(u) { super(u); made++; } }
+  const h = await r.hostRendezvous({ room: 'x', secret: 'y', trackers: ['wss://dead.never'], WS: Counting, onOffer() {} });
+  await tick(6800);   // tries at 0, 2 s, 6 s
+  assert.equal(made, 3);
+  assert.ok(r.deadTrackers.get('wss://dead.never').until > Date.now() + 14 * 60000);
+  assert.equal(h.links[0].state, 'dead');
+  // a guest on the same page doesn't even try it
+  const before = made;
+  await assert.rejects(r.guestRendezvous({ room: 'x', secret: 'y', trackers: ['wss://dead.never'], WS: Counting, makeOffer: async () => ({ data: {}, accept() {} }), rounds: 1, roundMs: 30 }), /aucun relais|personne/);
+  assert.equal(made, before);
+  h.close();
+});
+
 test('build-static.sh: a self-contained folder, no server, every module versioned', async () => {
   const out = fs.mkdtempSync(path.join(os.tmpdir(), 'ahole-static-'));
   const { execFileSync } = await import('node:child_process');

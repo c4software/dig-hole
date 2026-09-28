@@ -65,7 +65,9 @@ export function initP2PMenu({ form, nickIn }) {
     const sub = document.getElementById('play-sub');
     if (sub && /jardin commun/.test(sub.textContent)) sub.textContent = 'à plusieurs · héberger ou rejoindre';
   };
-  if (CONFIG.serverless) noServer(); else serverless().then((no) => { if (no) noServer(); });
+  // (again a moment later: the title menu may be dressed up after us)
+  const soon = () => { noServer(); setTimeout(noServer, 0); setTimeout(noServer, 1500); };
+  if (CONFIG.serverless) soon(); else serverless().then((no) => { if (no) soon(); });
   const more = document.createElement('div');
   more.className = 'p2p-more';
   more.innerHTML = `<button type="button" data-p="host" title="ton onglet devient le serveur">héberger une partie</button><button type="button" data-p="join" title="avec un code ou un lien">rejoindre</button>`;
