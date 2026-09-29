@@ -122,8 +122,10 @@ export const ITEMS = {
   met:  { name: 'météore de poche',    price: 0, max: 4, sub: 'un cratère énorme, et les minerais avec', moon: true },
   // from the reliquary under the church, never sold (holy.js)
   holy: { name: 'holy bomba',          price: 0, max: 1, sub: 'compter jusqu\'à trois, pas cinq', secret: true },
+  // pinched from the bag at the lycée's blockade, never sold (blocus.js, mortier.js)
+  mortier: { name: 'mortier d\'artifice', price: 0, max: 9, sub: 'piqué au blocus · une fusée qui éclate en couleurs', stolen: true },
 };
-export const SLOTS = ['dyn', 'sup', 'fus', 'med', 'cell', 'ladder', 'grav', 'met', 'holy'];
+export const SLOTS = ['dyn', 'sup', 'fus', 'med', 'cell', 'ladder', 'grav', 'met', 'holy', 'mortier'];
 
 // what a thing sells for: the host may make ores or treasures worth more (tunables.js)
 const valueOf = (id) => (ORE[id] || FIND[id] || ANIMAL[id] || { value: 0 }).value * (ORE[id] ? tun.get('oreValue') : FIND[id] ? tun.get('findValue') : 1);
