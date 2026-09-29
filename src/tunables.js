@@ -43,6 +43,7 @@ export const DEFS = [
   { g: 'dangers', k: 'raidBombs', label: 'bombes par raid', def: 10, min: 0, max: 40, step: 1, unit: '' },
   X('dangers', 'moleRate', 'taupes qui surgissent', 6, 0, .1),
   X('dangers', 'moleDamage', 'morsure des taupes', 5, 0, .1),
+  { g: 'dangers', k: 'blocus', label: 'blocus du lycée', def: -1, options: [[-1, 'auto (jours de classe, en journée)'], [1, 'en cours'], [0, 'levé']] },
   X('boutique', 'shopPrice', 'prix des boutiques (outils, konbini, vêtements)', 5, 0),
   X('boutique', 'parcelPrice', 'prix des colis', 5),
   X('boutique', 'sellMult', 'prix de revente', 5),

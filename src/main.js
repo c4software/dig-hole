@@ -33,6 +33,7 @@ import { createPartCompass } from './compass.js';
 import { createPortals } from './portal.js';
 import { createOrgan, createDiscLauncher, createBats, createReliquary, SONGS } from './church.js';
 import { createMatsuri } from './matsuri.js';
+import { createBlocus } from './blocus.js';
 import { createCrypt, inChurchDig, DIG, cutDig } from './crypt.js';
 import { createHoly } from './holy.js';
 import { createMarioCabinet } from './marioportal-cab.js';
@@ -184,6 +185,8 @@ world.colliders.push({ min: new THREE.Vector3(CH.organ.x - 1, 0, CH.organ.z - .9
 world.interactables.push({ id: 'organ', pos: new THREE.Vector3(CH.organ.x - 1.3, 1.1, CH.organ.z), reach: 2 });
 // the japanese street's summer festival: the taiko stage (free play for all) and the goldfish stall
 const matsuri = createMatsuri({ parent: world.china.group, origin: CHINA, colliders: world.colliders, interactables: world.interactables, rooms: world.china.interiors.rooms, ui, send: (fx) => net?.sendFx(fx) });
+// the lycée behind the back lane, and its blockade on school days
+const blocus = createBlocus({ parent: homeRoot, colliders: world.colliders, interactables: world.interactables, ui, renderer: world.renderer, shake: (s) => { shakeT = Math.max(shakeT, s); }, insideOf: (p) => world.neighbours.insideOf?.(p) });
 const reliquary = createReliquary({ parent: homeRoot, at: new THREE.Vector3(CH.altar.x, 0, CH.altar.z - .95) });
 world.colliders.push({ min: new THREE.Vector3(CH.altar.x - .47, 0, CH.altar.z - 1.22), max: new THREE.Vector3(CH.altar.x + .47, .5, CH.altar.z - .68) });
 world.interactables.push({ id: 'dgun', pos: new THREE.Vector3(CH.altar.x, .7, CH.altar.z - .95), reach: 1.8 });
@@ -709,6 +712,7 @@ function updateAim() {
     else if (near.id === 'organ') p = `<b>e</b> ${organ.playing ? 'morceau suivant' : 'jouer de l\'orgue'} · ${SONGS[(organSong + 1) % SONGS.length].name} · <b>t</b> orgue héros`;
     else if (near.id === 'pgun') p = !cave.gunReady ? 'le socle du pistolet à portails · il en revient un bientôt' : eco.s.portal ? '<b>e</b> le pistolet à portails · tu as déjà le tien' : '<b>e</b> prendre le pistolet à portails';
     else if (near.id === 'taiko') p = matsuri.prompt(near);
+    else if (near.id === 'lycee') p = blocus.prompt(near);
     else if (near.game) p = `<b>e</b> jouer · ${GAMES[near.game].name}`;
     else if (crypt.prompt(near) !== undefined) p = crypt.prompt(near);
     else if (holy.prompt(near) !== undefined) p = holy.prompt(near);
@@ -2381,6 +2385,7 @@ function interact(it) {
     case 'sdoor': setDoor(it.w, it.i, !doorOf(it)?.open, true); return;
     case 'organ': playOrgan((organSong + 1) % SONGS.length, true); return;
     case 'taiko': matsuri.act(it); return;
+    case 'lycee': blocus.act(it); return;
     case 'egg': audio.tick(); ui.toast('trois clefs, trois portes… et un œuf. il y a toujours quelque chose de caché, même sous un lit', false, 3600); return;
     case 'bed': {
       ui.veil(1);
@@ -3445,6 +3450,7 @@ function loop(ts) {
   launcher.update(dt, Math.hypot(player.vel.x, player.vel.z) > 0.5, solidAt, discHit);
   reliquary.update(dt); organ.update(dt, camera.position, camera, organHearing(camera.position, { here, crypt: here === 'home' && crypt.inside(camera.position), cave: inCave }, organEar));
   matsuri.update(dt, camera, { here, view: viewNow(), can: state === 'play' && here === 'china', night: world.env.night });
+  blocus.update(dt, camera, { here, view: viewNow(), can: state === 'play' && here === 'home', player, now: Date.now() / 1000, mode: tun.get('blocus'), hour: hourNow, day: Math.floor(clockNow() / DAY), night: world.env.night });
   if (here === 'home') bats.update(dt, t, world.env.night);
   shovel.root.visible = holding && !drilling && !mg.armed && !portals.held && !launcher.held && !looks.handsOut;
   mg.updateBlaster(dt, holding && mg.armed && state === 'play', Math.hypot(player.vel.x, player.vel.z) > 0.5);
@@ -3618,7 +3624,7 @@ window.__dig = {
   test: false,
   skipSwoop() { swoop = 1; this.test = true; },
   start, toSurface, travel, win, save, useItem, applyUpgrades, openPanel, closePanel, enterVan, exitVan, useLift, explode,
-  quest, takeKey, reveal, startReveal, cave, crypt, portals, shootPortal, trapGuide, launcher, bats, organ, matsuri, portalCells, gameroom: house.room, updateAim, get pad() { return pad; }, get touch() { return touch; }, get down() { return down; }, screenView: (dt) => race?.screen && screenView(dt),
+  quest, takeKey, reveal, startReveal, cave, crypt, portals, shootPortal, trapGuide, launcher, bats, organ, matsuri, blocus, portalCells, gameroom: house.room, updateAim, get pad() { return pad; }, get touch() { return touch; }, get down() { return down; }, screenView: (dt) => race?.screen && screenView(dt),
   interact: (id) => interact(id === 'van' ? VAN : id === 'lift' ? LIFT : world.interactables.find(i => i.id === id) || (onPlanet() && findNear()?.id === id ? findNear() : null)),
   swing: doDig,
   // the holy bomba (holy.js): the module, and two shortcuts for tests
