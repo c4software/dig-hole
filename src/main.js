@@ -188,7 +188,7 @@ const organ = createOrgan({ parent: homeRoot, at: CH.organ, rot: -Math.PI / 2 })
 world.colliders.push({ min: new THREE.Vector3(CH.organ.x, 0, CH.organ.z - 1.75), max: new THREE.Vector3(CH.organ.x + .9, 5.6, CH.organ.z + 1.75) });
 world.colliders.push({ min: new THREE.Vector3(CH.organ.x - 1, 0, CH.organ.z - .95), max: new THREE.Vector3(CH.organ.x, 1, CH.organ.z + .95) });
 world.interactables.push({ id: 'organ', pos: new THREE.Vector3(CH.organ.x - 1.3, 1.1, CH.organ.z), reach: 2 });
-// the trolley race's stack of trolleys, by the church portal
+// the trolley race's stack of trolleys, on the square's north-west corner
 createCaddieStand({ parent: homeRoot, colliders: world.colliders, interactables: world.interactables });
 // the japanese street's summer festival: the taiko stage (free play for all) and the goldfish stall
 const matsuri = createMatsuri({ parent: world.china.group, origin: CHINA, colliders: world.colliders, interactables: world.interactables, rooms: world.china.interiors.rooms, ui, send: (fx) => net?.sendFx(fx) });

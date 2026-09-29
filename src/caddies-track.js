@@ -1,30 +1,29 @@
-// caddies-track.js, the shopping-cart course on the church square: plain numbers only (no three.js),
-// so the loop, its checkpoints and the ground are testable in node. The line starts in front of the
-// church portal heading west, squeezes between the bench and the tower, turns down past the post box,
-// weaves through the café terrace, drops off the kerb onto the high street, crosses the zebra, climbs
-// back into the square by the bakery, threads between the parked cars and the clothes shop, rounds
-// the cherry tree and comes back to the line. Europe.js has the square: x 44..78, z -10.8..14.
+// caddies-track.js, the shopping-cart course round the church: plain numbers only (no three.js),
+// so the loop, its checkpoints and the ground are testable in node. The line starts on the square in
+// front of the church portal heading west, turns up the lawn along the nave, crosses behind the apse,
+// comes down the other side and swings back onto the square: lanes 5.5 to 6.5 m wide, room to overtake.
+// Europe.js has the square (x 44..78, z -10.8..14, paved 10 cm over the grass), the church's nave
+// (x 55.5..66.5, z 17..39) and its tower (x 57.75..64.25 from z 12.25), the garden wall at x 41.
 
 // [x, z, half width]: the course's centre line, the start line first
 export const CTRL = [
-  [66.0, 11.3, 1.35], [63.2, 11.2, .95], [60.9, 11.2, .9], [58.4, 11.2, 1.0], [56.2, 10.9, 1.1],
-  // past the post box, between the house and the tree, the bench
-  [54.4, 9.9, 1.1], [53.8, 8.2, 1.2], [53.4, 5.8, 1.3], [53.4, 3.2, 1.3], [53.9, .9, 1.05],
-  // round the lamp post into the café terrace, between the tables
-  [55.2, -.6, .85], [55.7, -2.6, .9], [55.7, -5.2, .95], [55.6, -7.6, .95], [55.2, -9.4, .9],
-  // between two bollards, off the kerb, along the high street over the zebra crossing
-  [54.9, -10.6, .85], [55.6, -12.2, 1.3], [57.8, -13.2, 1.5], [61.0, -13.4, 1.7], [64.6, -13.2, 1.6],
-  [67.6, -12.6, 1.4], [69.6, -11.4, 1.1],
-  // back up the kerb by the bakery, the wide east side
-  [70.3, -10.0, .9], [70.6, -8.0, 1.6], [70.9, -5.0, 2.0], [70.9, -1.5, 2.0], [71.2, 2.0, 2.0],
-  // between the parked cars and the clothes shop, round the cherry tree
-  [72.4, 4.8, 1.4], [72.95, 7.2, 1.15], [73.2, 9.4, 1.1], [74.3, 11.0, 1.0], [74.1, 12.9, 1.0],
-  [72.2, 13.4, 1.2], [70.0, 12.3, 1.4], [68.2, 11.4, 1.4],
+  // in front of the church, westwards, between the fountain and the tower
+  [63.5, 9.3, 2.8], [60.5, 9.25, 2.85], [57.6, 9.5, 2.65],
+  // round the tower's corner (the post box outside) onto the lawn
+  [55.0, 10.7, 2.75], [52.6, 13.6, 2.9], [51, 17.2, 3], [49.9, 21, 3.1],
+  // up the lawn along the nave
+  [49.4, 26, 3.2], [49.4, 31, 3.2], [50.2, 37, 3.1],
+  // behind the apse
+  [53, 42.4, 3], [57.5, 44.8, 3], [62, 45.3, 3.1], [66.5, 44.6, 3], [70.4, 42, 3],
+  // down the other side
+  [72.4, 37, 3.2], [72.8, 31, 3.2], [72.6, 25, 3.2], [71.6, 19.5, 3.1],
+  // back onto the square, past the cherry tree, to the line
+  [69.6, 15, 2.9], [67.6, 11.8, 2.8], [65.8, 9.8, 2.8],
 ];
 export const STEP = .25;   // metres between two samples of the line
-// the checkpoints, as shares of a lap: the church portal, the café, the zebra, the bakery, the tree;
+// the checkpoints, as shares of a lap: the tower's corner, the lawn, behind the apse, the far side, the tree;
 // the finish line (the start) is the last one
-export const CP_AT = [.1, .3, .5, .66, .84];
+export const CP_AT = [.12, .3, .5, .7, .86];
 
 // a closed Catmull-Rom through the control points, sampled every STEP metres
 export function buildTrack(ctrl = CTRL, step = STEP) {
@@ -77,11 +76,10 @@ export function buildTrack(ctrl = CTRL, step = STEP) {
   return { pts, N, len, cps, nearest, lateral, yawAt, box: { x0, x1, z0, z1 } };
 }
 
-// the ground under a wheel: the square's paving and the pavements stand 10 cm over the road
-const ROAD_Z = -13.1;
+// the ground under a wheel: the square's paving stands 10 cm over the grass round it
+export const SQUARE = { x0: 44, x1: 78, z0: -10.78, z1: 14 };
 export function groundY(x, z) {
-  if (z > ROAD_Z + 1.64 || z < ROAD_Z - 1.64) return .1;
-  return .02;
+  return x > SQUARE.x0 && x < SQUARE.x1 && z > SQUARE.z0 && z < SQUARE.z1 ? .1 : 0;
 }
 
 // the square's props a cart can hit (world colliders, { min, max }), as flat boxes near the course

@@ -303,3 +303,62 @@ export function stepMelon(m, dt, env) {
   }
   m.age += dt;
 }
+
+// ---------- the rider thrown off: a body flying, bouncing, rolling to a stop ----------
+// b: { x, y, z, vx, vy, vz }; kept out of the props, inside the barriers, never under the ground
+export const BODY_R = .3;
+export function stepBody(b, dt, env) {
+  const n = Math.max(1, Math.ceil(Math.hypot(b.vx, b.vz, b.vy) * dt / .1));
+  const h = dt / n;
+  for (let s = 0; s < n; s++) {
+    b.vy -= 9.8 * h;
+    b.x += b.vx * h; b.y += b.vy * h; b.z += b.vz * h;
+    const g = groundY(b.x, b.z);
+    if (b.y <= g) {
+      b.y = g;
+      b.vy = b.vy < -1.5 ? -b.vy * .3 : 0;
+      // on the paving, on the grass: it rolls and scrapes to a stop
+      const sp = Math.hypot(b.vx, b.vz), k = sp > 1e-6 ? Math.max(0, sp - (3 + 4 * sp) * h) / sp : 0;
+      b.vx *= k; b.vz *= k;
+    }
+    pushOut(b, env, BODY_R, .35);
+  }
+}
+// out of every prop and back inside the barriers (bouncing off them); true if it had to move
+export function pushOut(b, env, r = BODY_R, bounce = 0) {
+  let moved = false;
+  for (const w of env.solids || []) {
+    if (b.x < w.x0 - r || b.x > w.x1 + r || b.z < w.z0 - r || b.z > w.z1 + r) continue;
+    const px = clamp(b.x, w.x0, w.x1), pz = clamp(b.z, w.z0, w.z1);
+    let dx = b.x - px, dz = b.z - pz, d = Math.hypot(dx, dz);
+    if (d >= r) continue;
+    if (d < 1e-6) {
+      const o = [[b.x - w.x0, -1, 0], [w.x1 - b.x, 1, 0], [b.z - w.z0, 0, -1], [w.z1 - b.z, 0, 1]].sort((p, q) => p[0] - q[0])[0];
+      dx = o[1]; dz = o[2]; b.x += dx * (o[0] + r); b.z += dz * (o[0] + r);
+    } else { dx /= d; dz /= d; b.x += dx * (r - d); b.z += dz * (r - d); }
+    const vn = (b.vx || 0) * dx + (b.vz || 0) * dz;
+    if (vn < 0 && b.vx != null) { b.vx -= dx * vn * (1 + bounce); b.vz -= dz * vn * (1 + bounce); }
+    moved = true;
+  }
+  const tr = env.track;
+  if (tr) {
+    b.idx = tr.nearest(b.x, b.z, b.idx ?? -1, 30);
+    const p = tr.pts[b.idx], lat = tr.lateral(b.idx, b.x, b.z), lim = p.hw + .2;
+    if (Math.abs(lat) > lim) {
+      const s = Math.sign(lat);
+      b.x -= p.sx * (lat - s * lim); b.z -= p.sz * (lat - s * lim);
+      const vn = ((b.vx || 0) * p.sx + (b.vz || 0) * p.sz) * s;
+      if (vn > 0 && b.vx != null) { b.vx -= p.sx * s * vn * (1 + bounce); b.vz -= p.sz * s * vn * (1 + bounce); }
+      moved = true;
+    }
+  }
+  if (b.y != null) b.y = Math.max(b.y, groundY(b.x, b.z));
+  return moved;
+}
+
+// a step split so no part goes further than a third of the cart: nothing tunnels through a barrier
+export function stepCartSub(c, inp, dt, env, ev = []) {
+  const n = Math.max(1, Math.min(8, Math.ceil(Math.hypot(c.vx, c.vz) * dt / (TUNE.R * .35))));
+  for (let s = 0; s < n; s++) stepCart(c, s ? { ...inp, tap: false } : inp, dt / n, env, ev);
+  return ev;
+}

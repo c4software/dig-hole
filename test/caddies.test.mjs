@@ -49,15 +49,15 @@ test('the course: a closed loop on the church square, checkpoints in order', () 
   for (let i = 0; i < tr.N; i++) {
     const a = tr.pts[i], b = tr.pts[(i + 1) % tr.N], d = Math.hypot(b.x - a.x, b.z - a.z);
     assert.ok(Math.abs(d - tr.len / tr.N) < .02, `gap at ${i}: ${d}`);
-    assert.ok(a.hw >= .8 && a.hw <= 2.2, `half width at ${i}`);
+    assert.ok(a.hw >= 2.6 && a.hw <= 3.5, `half width at ${i}: ${a.hw}`);   // lanes of 5.2 m and more: room to overtake
   }
   assert.ok(Math.abs(tr.len / tr.N - STEP) < .01);
   // the checkpoints: rising, the last one the line itself
   for (let i = 1; i < tr.cps.length; i++) assert.ok(tr.cps[i] > tr.cps[i - 1]);
   assert.equal(tr.cps[tr.cps.length - 1], tr.N);
-  // the start line is in front of the church portal (the tower's front at z 12.25, x 57.75..64.25)
+  // the start line is in front of the church portal (the tower's front at z 12.25, x 57.75..64.25), the lane clear of it
   const s = tr.pts[0];
-  assert.ok(s.z > 10 && s.z < 12.5 && s.x > 60 && s.x < 70, `start at ${s.x}, ${s.z}`);
+  assert.ok(s.z > 6 && s.z < 12.25 - s.hw + .2 && s.x > 58 && s.x < 66, `start at ${s.x}, ${s.z}`);
   // it never crosses itself: two samples far apart along the line stay apart
   for (let i = 0; i < tr.N; i += 3) for (let j = i + 40; j < tr.N - 40 + i && j < tr.N; j += 3) {
     const a = tr.pts[i], b = tr.pts[j];
@@ -65,17 +65,18 @@ test('the course: a closed loop on the church square, checkpoints in order', () 
   }
 });
 
-test('the course keeps clear of the square\'s props: benches, café tables, cars, the fountain', () => {
+test('the lanes are clear of the village\'s props: the fountain, benches, trees, the church', () => {
   assert.ok(solids.length > 20, 'the village\'s props are read');
   for (let i = 0; i < tr.N; i++) {
     const p = tr.pts[i];
     for (const b of solids) {
       const dx = p.x - Math.max(b.x0, Math.min(p.x, b.x1)), dz = p.z - Math.max(b.z0, Math.min(p.z, b.z1));
-      assert.ok(Math.hypot(dx, dz) > P.TUNE.R + .25, `sample ${i} (${p.x.toFixed(1)}, ${p.z.toFixed(1)}) runs into a prop`);
+      // the whole width of the lane (a few cm grazing a corner at most)
+      assert.ok(Math.hypot(dx, dz) > p.hw - .15, `sample ${i} (${p.x.toFixed(1)}, ${p.z.toFixed(1)}): a prop in the lane`);
     }
   }
   // the kerbs: the square and the pavements over the road
-  assert.equal(groundY(61, 2), .1); assert.equal(groundY(61, -13.1), .02);
+  assert.equal(groundY(61, 9), .1); assert.equal(groundY(49, 30), 0);
 });
 
 test('the trolley: kicks push it, the drift stays bounded, no NaN under any keys', () => {
@@ -142,6 +143,40 @@ test('a barrier never pins a cart: head-on or glancing, it slides along and gets
     for (let n = 0; n < 60 * 4; n++) P.stepCart(c, { steer: 0, kick: true, tap: false }, 1 / 60, wall);
     assert.ok(Math.hypot(c.vx, c.vz) > 2, `still rolling along the wall (yaw ${yaw}: ${Math.hypot(c.vx, c.vz).toFixed(2)})`);
     assert.ok(Math.abs(c.x) > 3, 'slid along it');
+  }
+});
+
+test('a rider thrown off never goes through a wall, a barrier or the ground', () => {
+  const rnd = seeded(77);
+  const inside = (b) => solids.some(w => b.x > w.x0 + .02 && b.x < w.x1 - .02 && b.z > w.z0 + .02 && b.z < w.z1 - .02);
+  for (let n = 0; n < 400; n++) {
+    const i = Math.floor(rnd() * tr.N), p = tr.pts[i], a = rnd() * Math.PI * 2, v = 2 + rnd() * 8;
+    const b = { x: p.x + p.sx * (rnd() - .5) * 2 * p.hw, z: p.z + p.sz * (rnd() - .5) * 2 * p.hw, y: .5, vx: Math.sin(a) * v, vz: Math.cos(a) * v, vy: 1.5 + rnd() * 2 };
+    P.pushOut(b, env);
+    for (let s = 0; s < 120; s++) {
+      P.stepBody(b, 1 / 60, env);
+      assert.ok(Number.isFinite(b.x + b.y + b.z), 'NaN');
+      assert.ok(b.y >= groundY(b.x, b.z) - 1e-9, `under the ground (crash ${n})`);
+      assert.ok(!inside(b), `inside a prop at (${b.x.toFixed(2)}, ${b.z.toFixed(2)}) (crash ${n})`);
+      const j = tr.nearest(b.x, b.z);
+      assert.ok(Math.abs(tr.lateral(j, b.x, b.z)) < tr.pts[j].hw + .3, `past the barriers (crash ${n})`);
+    }
+    assert.ok(Math.hypot(b.vx, b.vz) < 1, `rolled to a stop (${Math.hypot(b.vx, b.vz).toFixed(2)}, y ${b.y.toFixed(2)}, crash ${n})`);
+  }
+});
+
+test('a cart at full tilt never tunnels through a barrier or a prop', () => {
+  const rnd = seeded(123);
+  for (let n = 0; n < 200; n++) {
+    const i = Math.floor(rnd() * tr.N), c = P.newCart('t');
+    P.placeCart(c, tr, i, (rnd() - .5) * 2);
+    const a = rnd() * Math.PI * 2; c.yaw = a; c.vx = Math.sin(a) * 12; c.vz = Math.cos(a) * 12;
+    for (let s = 0; s < 40; s++) {
+      P.stepCartSub(c, { steer: 0 }, 1 / 20, env);
+      const j = tr.nearest(c.x, c.z);
+      assert.ok(Math.abs(tr.lateral(j, c.x, c.z)) < tr.pts[j].hw + .05, `out through a barrier (run ${n})`);
+      assert.ok(!solids.some(w => c.x > w.x0 && c.x < w.x1 && c.z > w.z0 && c.z < w.z1), `inside a prop (run ${n})`);
+    }
   }
 });
 
@@ -238,7 +273,7 @@ test('holding only z from the grid: the cart gets going and slides round the fir
   let top = 0;
   for (let n = 0; n < 60 * 10; n++) { wall += 1000 / 60; m.update(1 / 60, keys); top = Math.max(top, Math.hypot(m.me.vx, m.me.vz)); }
   assert.ok(top > 4, `top speed with z held: ${top.toFixed(2)}`);
-  assert.ok(m.me.k > 30 * 4, `got along the course (k ${m.me.k})`);
+  assert.ok(m.me.k > 25 * 4, `got along the course (k ${m.me.k})`);
   assert.ok(Math.hypot(m.me.vx, m.me.vz) > 1, 'not pinned');
   m.stop();
 });
