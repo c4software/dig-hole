@@ -162,6 +162,6 @@ export function createNet({ scene, onOp, onJoin, onLeave, onWelcome, onStatus, o
     setLook(o) { myLook = o; send({ k: 'look', o }); },
     emote(e) { send({ k: 'emote', e }); },
     setHands(l, tool) { if (String(myHands.l) === String(l) && myHands.tool === tool) return; myHands = { l, tool }; sendHands(); },
-    list() { return [{ name, color, me: true }, ...[...peers.values()].map(p => ({ name: p.name, color: p.color }))]; },
+    list() { return [{ name, color, me: true }, ...[...peers].map(([pid, p]) => ({ id: pid, name: p.name, color: p.color }))]; },
   };
 }

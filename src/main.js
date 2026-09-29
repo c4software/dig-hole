@@ -44,6 +44,10 @@ import { createSpaceArcade, spaceWorld, HALL_DIR } from './spacearcade.js';
 import { createSpaceRace, DECK_DIR } from './spacerace.js';
 import { createLooks } from './looks.js';
 import { createEvents } from './events.js';
+import { createVoice } from './voice.js';
+import { createScreamer, createFallWatch } from './scream.js';
+import { listen } from './lib/spatial.js';
+import { organHearing } from './organ-hear.js';
 import { esc, esc as escH } from './lib/fmt.js';
 
 const REACH = 3.2;
@@ -1402,6 +1406,12 @@ const moonP = createMoonPlayer(scene, camera, () => terrains[onPlanet() ? here :
 const looks = createLooks({ scene, camera, eco, ui, audio, player, moonP, house, world, T, getNet: () => net, getState: () => state, getPanel: () => panelKind, getHere: () => here, onPlanet: () => onPlanet(),
   openPanel: (k) => openPanel(k), renderPanel: (q) => renderPanel(q), save: () => save(), armed: () => mg.armed, digging: () => (digging || shovel.busy) && !mg.armed });
 const LANDER = { id: 'lander' };
+// proximity voice (multiplayer only) and the falling scream (voice.js, scream.js)
+const voice = createVoice({ audio, ui, camera, getNet: () => net, getState: () => state, getMe: () => ({ pos: player.pos.toArray(), w: here }), blocked: (a, b) => lineBlocked(a, b), multi: MULTI });
+const screamer = createScreamer(audio), fallWatch = createFallWatch(), screams = new Map(), npcScreams = [];
+const screamSeed = (Math.random() * 1e9) | 0;
+let myScream = null;
+const organEar = {};   // organ-hear.js fills it each frame
 
 function gainPart(id) {
   if (eco.s.parts[id]) return;
@@ -3001,12 +3011,15 @@ if (MULTI) {
       else if (fx.k === 'disc' && fx.p && fx.d) launcher.remote(fx);
       else if (fx.k === 'dv') delivery.remote(id, fx, peer);
       else if (fx.k === 'holyfx') holy.remote(fx, here);
+      else if (fx.k === 'vc') voice.onFx(id, fx);
+      else if (fx.k === 'scream') remoteScream(id, peer, fx);
       else mg.onFx(id, peer, fx);
     },
     onSuperReset(m) { startSuperCountdown(m.in, m.seed, m.by); },
     onSuperDenied() { superDenied(); },
     onJoin(name) {
       ui.toast(`${name} arrive dans le jardin`);
+      voice.hello();
       // the newcomer learns where my portals are
       for (const [i, a, w] of portals.mine(myId())) net.sendFx({ k: 'portal', i, a, w });
       // and sees my vans on the road and my parcels at the door
@@ -3015,6 +3028,7 @@ if (MULTI) {
     onLeave(name, id) {
       ui.toast(`${name} est parti`);
       race?.mod.peerLeft(id); mg.rivalLeft(id); portals.clear(id); delivery.dropPeer(id);
+      voice.peerLeft(id); screams.get(id)?.end('cut'); screams.delete(id);
       if (lobby) { if (lobby.host === id) { closeLobby(); if (gm && !gm.host) closeGameMenu(); ui.toast('la partie proposée est annulée'); } else { lobby.ready.delete(id); hostCheck(); renderLobby(); } }
     },
     onStatus(s, why) {
@@ -3044,7 +3058,47 @@ function updateNetList(dt) {
   netListT = 1;
   if (!net.online) return;
   const hex = (c) => '#' + c.toString(16).padStart(6, '0');
-  ui.setNet(`<div class="t">${esc(net.title || 'le jardin commun')}</div>` + net.list().map(p => `<div><i style="background:${hex(p.color)}"></i>${esc(p.name)}${p.me ? ' (toi)' : ''}</div>`).join(''));
+  ui.setNet(`<div class="t">${esc(net.title || 'le jardin commun')}</div>` + net.list().map(p => `<div><i style="background:${hex(p.color)}"></i>${esc(p.name)}${p.me ? ' (toi)' : ''}${voice.mark(p.me ? null : p.id, p.name)}</div>`).join(''));
+}
+
+// ---------- the falling scream (scream.js): mine, the others', the flung passers-by ----------
+function screamStep(dt) {
+  const r = fallWatch.step({ dt, y: player.pos.y, vy: player.vel.y, ground: player.onGround, jet: player.stats.jetting, ladder: player.stats.onLadder, lift: elevator.holds(player.pos),
+    water: player.stats.inWater, glide: player.stats.gliding, active: state === 'play' && !onPlanet() && !!tun.get('scream'), drop: airBelow });
+  if (r === 'start') { audio.init(); myScream = screamer.start({ seed: screamSeed, local: true }); net?.sendFx({ k: 'scream', v: screamSeed }); }
+  else if (r) { myScream?.end(r); myScream = null; net?.sendFx({ k: 'scream', e: r }); }
+  for (let i = npcScreams.length - 1; i >= 0; i--) {
+    const [p, h] = npcScreams[i];
+    if (p.mode !== 'fly' || h.done) { h.end(p.mode === 'fly' ? 'cut' : 'land'); npcScreams.splice(i, 1); }
+  }
+  if (screamer.live.size || voice.talk.size) listen(audio.ctx, camera);
+  screamer.update(dt, camera.position);
+}
+// metres of air under my feet (up to 12): a short hop over a deep shaft is already a fall
+function airBelow() {
+  const p = player.pos;
+  for (let d = .5; d <= 12; d += .5) if (solidAt(p.x, p.y - d, p.z)) return d;
+  return 12;
+}
+function remoteScream(id, peer, fx) {
+  const cur = screams.get(id);
+  if (fx.e) { cur?.end(['land', 'water'].includes(fx.e) ? fx.e : 'cut'); screams.delete(id); return; }
+  if (!tun.get('scream') || !peer || peer.w !== here) return;
+  cur?.end('cut');
+  const g = peer.avatar.g;
+  const h = screamer.start({ seed: fx.v | 0, pos: () => g.visible ? g.position : null });
+  if (h) screams.set(id, h);
+}
+function npcScream(p) {
+  if (!tun.get('scream') || npcScreams.length > 4) return;
+  const at = new THREE.Vector3();
+  const h = screamer.start({ seed: p.g.id * 7919 + 13, pos: () => p.g.getWorldPosition(at), vol: .8 });
+  if (h) npcScreams.push([p, h]);
+}
+// voices through the ground or a wall: a few points along the line, solid or not
+function lineBlocked(a, b) {
+  for (let k = 1; k < 6; k++) { const f = k / 6; if (solidAt(a.x + (b.x - a.x) * f, a.y + (b.y - a.y) * f, a.z + (b.z - a.z) * f)) return true; }
+  return false;
 }
 
 // ---------- quality: a switch, and an automatic step down when frames run late ----------
@@ -3177,7 +3231,7 @@ function loop(ts) {
       m.prev.copy(m.pos);
     }
     const W = world.walkers[here];
-    if (W) for (const p of W.bodies()) if (portals.pass(p.body, dt)) W.flung(p);
+    if (W) for (const p of W.bodies()) if (portals.pass(p.body, dt)) { W.flung(p); npcScream(p); }
   }
 
   if (state === 'attract') {
@@ -3204,6 +3258,7 @@ function loop(ts) {
     } else if (state === 'reveal' || reveal.playing) reveal.update(dt);
     else player.update(playing ? dt : 0);
     elevator.update(dt, player);
+    screamStep(dt);
     updateLaunch(dt);
     if (state === 'kart' && race) { race.mod.update(dt, down); if (race) raceHud(); if (race?.screen) screenView(dt); }
     if (state === 'gamemenu') updateGameMenu(dt);
@@ -3357,6 +3412,7 @@ function loop(ts) {
     }
     audio.setBeds(Math.max(0, -player.pos.y), player.stats.jetting, state === 'drive' ? 1 : 0);
     if (net) net.update(dt, { pos: player.pos, yaw: player.yaw, w: here, dig: (digging || shovel.busy) && !mg.armed, g: mg.active });
+    voice.update(dt);
     updateNetList(dt);
   }
   const holding = state !== 'attract' && state !== 'reveal' && state !== 'drive' && state !== 'launch' && state !== 'kart' && !onPlanet();
@@ -3373,7 +3429,7 @@ function loop(ts) {
   holy.update(dt, { here, pos: onPlanet() ? moonP.pos : player.pos, live: bombs.live });
   launcher.held = eco.s.tool === 'disc' && eco.s.discs && holding && !mg.armed;
   launcher.update(dt, Math.hypot(player.vel.x, player.vel.z) > 0.5, solidAt, discHit);
-  reliquary.update(dt); organ.update(dt, camera.position);
+  reliquary.update(dt); organ.update(dt, camera.position, camera, organHearing(camera.position, { here, crypt: here === 'home' && crypt.inside(camera.position), cave: inCave }, organEar));
   if (here === 'home') bats.update(dt, t, world.env.night);
   shovel.root.visible = holding && !drilling && !mg.armed && !portals.held && !launcher.held && !looks.handsOut;
   mg.updateBlaster(dt, holding && mg.armed && state === 'play', Math.hypot(player.vel.x, player.vel.z) > 0.5);
@@ -3534,6 +3590,7 @@ if (params.has('go')) {
 
 // a handle for tests and the curious
 window.__dig = {
+  voice, screamer, organ,
   world, terrains, player, eco, ui, camera, renderer, scene, heart, shovel, delivery, elevator, moles, finds, bombs, plane, animals, hologram, moonP, rocket, gainPart, launch, get landerPos() { return landerPos; }, MOON, MARS, marsRocket, MARS_PAD,
   get net() { return net; },
   get events() { return events; },

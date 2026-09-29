@@ -854,3 +854,18 @@ body.touch #relock { display: none !important; }
 #emote-btn { position: fixed; right: 16px; top: 38%; z-index: 19; padding: 10px 14px; border: 0; border-radius: 999px; background: rgba(11, 13, 18, .6); color: #fff;
   font: 400 14px / 1 var(--display); box-shadow: inset 0 0 0 2px rgba(var(--a-rgb), .5); }
 #emote-btn.hidden { display: none; }
+
+/* proximity voice (voice.js): the mic chip, the marks in the player list, the settings list */
+#voice { position: absolute; left: 22px; bottom: 132px; display: flex; align-items: center; gap: 8px; padding: 6px 14px 6px 8px; border-radius: 999px; font: 700 13px / 1.2 var(--text);
+  background: rgba(20, 14, 10, .78); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .08), 0 3px 0 rgba(0, 0, 0, .35); }
+#voice i { width: 14px; height: 14px; border-radius: 50%; background: rgba(255, 255, 255, .25); box-shadow: 0 0 0 calc(var(--lv, 0) * 7px) rgba(var(--a-rgb), .35); transition: box-shadow .1s; }
+#voice i.on { background: var(--a); }
+#voice i.talk { background: var(--a-light); }
+#voice b { color: var(--a-light); font-weight: 800; }
+#voice em { font-style: normal; opacity: .6; font-weight: 600; }
+body.touch #voice { bottom: auto; top: 200px; left: 14px; }
+#net .vc { display: inline-block; width: 8px; height: 8px; margin-left: 7px; border-radius: 50%; background: rgba(255, 255, 255, .35); vertical-align: middle; }
+#net .vc.on { background: var(--a); box-shadow: 0 0 0 3px rgba(var(--a-rgb), .35); }
+#net .vc.mute { background: var(--danger); }
+@media (min-width: 901px) and (min-height: 521px) { #settings { max-height: 92vh; overflow: hidden auto; } }
+#set-voices .set-row { min-height: 36px; }

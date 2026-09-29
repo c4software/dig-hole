@@ -5,6 +5,8 @@
 import * as THREE from 'three';
 import { toolMat } from './tool.js';
 import { metalSongs } from './orgue-metal.js';
+import { listen, panner, place } from './lib/spatial.js';
+import { organGain, FALLOFF, PIPES_Y } from './organ-hear.js';
 
 // ---------- the pieces (all public domain): [start in beats, length in beats, midi notes…] ----------
 // The Toccata in D minor (Bach): the mordent and fall, three times, an octave lower each time, in
@@ -123,9 +125,12 @@ export function createOrgan({ parent, at, rot = 0 }) {
   const glow = new THREE.Mesh(new THREE.PlaneGeometry(3.4, 4.2), halo); glow.position.set(0, 4.2, .25); glow.userData.keep = true; g.add(glow);
   for (const p of pipes) p.userData.keep = true;
   g.updateMatrixWorld(true);
+  const pipesAt = new THREE.Vector3();
 
   // ---------- the sound: additive pipes, a long stone reverb ----------
-  let ctx = null, out = null, drive = null, playing = null;
+  // heard from the pipes (a panner, organ-hear.js), muffled by a lowpass through walls and ground;
+  // the rhythm game at the console (lend) gets the whole mix, straight
+  let ctx = null, out = null, drive = null, playing = null, lp = null, pan = null, spat = null, direct = null, wet = null;
   function ensure() {
     if (ctx) return ctx;
     const AC = window.AudioContext || window.webkitAudioContext;
@@ -135,8 +140,13 @@ export function createOrgan({ parent, at, rot = 0 }) {
     const rev = ctx.createConvolver(), len = ctx.sampleRate * 3.2, ir = ctx.createBuffer(2, len, ctx.sampleRate);
     for (let c = 0; c < 2; c++) { const d = ir.getChannelData(c); for (let n = 0; n < len; n++) d[n] = (Math.random() * 2 - 1) * Math.pow(1 - n / len, 2.6); }
     rev.buffer = ir;
-    const dry = ctx.createGain(), wet = ctx.createGain(); dry.gain.value = .55; wet.gain.value = .5;
-    out.connect(dry); out.connect(rev); rev.connect(wet); dry.connect(ctx.destination); wet.connect(ctx.destination);
+    const dry = ctx.createGain(); dry.gain.value = .55; wet = ctx.createGain(); wet.gain.value = 0;
+    lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 20000;
+    pan = panner(ctx, { ref: FALLOFF.ref, roll: FALLOFF.roll, max: 10000, model: 'equalpower' });
+    spat = ctx.createGain(); spat.gain.value = 0; direct = ctx.createGain(); direct.gain.value = 0;
+    out.connect(lp); lp.connect(dry); dry.connect(pan); pan.connect(spat); spat.connect(ctx.destination);
+    lp.connect(rev); rev.connect(wet); wet.connect(ctx.destination);
+    out.connect(direct); direct.connect(ctx.destination);
     // the metal registration: the plenum and reeds pushed through a soft clipper, some left clean
     drive = ctx.createGain();
     const pre = ctx.createGain(), ws = ctx.createWaveShaper(), tone = ctx.createBiquadFilter(), post = ctx.createGain(), clean = ctx.createGain();
@@ -209,15 +219,26 @@ export function createOrgan({ parent, at, rot = 0 }) {
   return {
     group: g, play, stop, pipes, lend,
     get playing() { return !!playing; }, get song() { return playing ? playing.song : -1; },
-    // loud in the church, still heard across the village and down the hole
-    update(dt, ear) {
+    // loud in the church, still heard across the village and down the hole.
+    // cam: the listener; hear: organ-hear.js { on, inside, lp, boost } (none: the old flat mix)
+    update(dt, ear, cam = null, hear = null) {
       const on = playing && performance.now() / 1000 < playing.until;
       if (playing && !on) playing = null;
       feed();
       halo.opacity += ((on ? .12 + Math.random() * .05 : 0) - halo.opacity) * Math.min(1, dt * 4);
       if (!ctx) return;
-      const d = ear ? ear.distanceTo(g.position) : 999;
-      out.gain.setTargetAtTime(on || lent ? Math.max(.28, 1 - d / 70) : 0, ctx.currentTime, .2);
+      const t = ctx.currentTime, h = hear || { on: true, inside: true, lp: 20000, boost: 1 };
+      out.gain.setTargetAtTime(on || lent ? 1 : 0, t, .2);
+      if (!on && !lent) return;
+      g.getWorldPosition(pipesAt); pipesAt.y += PIPES_Y;
+      listen(ctx, cam); place(ctx, pan, pipesAt.x, pipesAt.y, pipesAt.z);
+      const d = ear ? ear.distanceTo(pipesAt) : 999;
+      // the stone's echo fills the nave; outside, it fades with the rest
+      const room = lent ? .5 : !h.on ? 0 : h.inside ? .5 : .5 * Math.min(1, organGain(d) * 1.5);
+      direct.gain.setTargetAtTime(lent ? .55 : 0, t, .15);
+      spat.gain.setTargetAtTime(lent || !h.on ? 0 : h.boost, t, .15);
+      wet.gain.setTargetAtTime(room, t, .2);
+      lp.frequency.setTargetAtTime(lent ? 20000 : h.lp, t, .1);
     },
   };
 }
