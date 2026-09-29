@@ -3,7 +3,8 @@
 // 60 m, gone at 100 m: talkieRange), with a radio's colour, static near the edge or through the
 // ground, and a « kssht » at each end. The
 // walkie shows in your hand and at your avatar's mouth, a ring over the head of whoever speaks.
-// Opt-in: the mic is asked for at the first press (or in the settings). The links are
+// Opt-in: the mic is asked for at the first press (or in the settings). A double press locks it
+// on air, through the mini-games too, until the next press. The links are
 // voice-mesh.js, the radio itself talkie.js; this is the sound, the keys and the hud.
 import * as THREE from 'three';
 import { createMesh, VOICE } from './voice-mesh.js';
@@ -41,7 +42,8 @@ export function createVoice(game) {
   });
 
   // ---------- the mic: on air only while the button is held ----------
-  const ptt = createPtt({ ready: () => !!mic && pref.mode !== 'off', join: () => setMode('ptt'), talk: onAir });
+  const ptt = createPtt({ ready: () => !!mic && pref.mode !== 'off', join: () => setMode('ptt'), talk: onAir,
+    onLock: (on) => { ui.toast(on ? 'talkie verrouillé : tu parles tout le temps · n pour couper' : 'talkie déverrouillé', false, 2600); render(); } });
   function micLive() { const on = !!mic && pref.mode !== 'off' && ptt.on; for (const t of mic?.getAudioTracks() || []) t.enabled = on; return on; }
   function onAir(on) {
     micLive();
@@ -54,7 +56,7 @@ export function createVoice(game) {
     if (!multi) return false;
     m = normMode(m);
     if (m === 'off') {
-      ptt.up();
+      ptt.lock(false); ptt.up();
       pref.mode = 'off'; save();
       mesh.stop();
       for (const t of mic?.getTracks() || []) t.stop();
@@ -81,7 +83,7 @@ export function createVoice(game) {
     micLive();
     const n = net();
     if (n?.online && n.id != null && !mesh.live) mesh.start(n.id);
-    ui.toast('talkie allumé · maintiens n pour parler', false, 2600);
+    ui.toast('talkie allumé · maintiens n pour parler, deux fois n pour verrouiller', false, 3200);
     render();
     return true;
   }
@@ -196,7 +198,7 @@ export function createVoice(game) {
   function update(dt) {
     if (!multi) return;
     fp.update(dt);
-    if (ptt.held && getState() !== 'play') ptt.up();
+    if (ptt.held && getState() !== 'play' && !ptt.locked) ptt.up();
     const n = net();
     if (mesh.live && !n?.online) mesh.stop();
     else if (!mesh.live && mic && n?.online && n.id != null && pref.mode !== 'off') mesh.start(n.id);
@@ -261,7 +263,7 @@ export function createVoice(game) {
     const who = [...talk].filter(([, v]) => v.level > TALK && v.ring?.material.opacity > .2).map(([id]) => net()?.peers.get(id)?.name).filter(Boolean);
     const me = live && level > TALK;
     const html = `<i class="${live ? me ? 'on talk' : 'on' : ''}" style="--lv:${Math.min(1, level * 10).toFixed(2)}"></i>` +
-      `<span>${live ? 'tu parles…' : '<b class="k">n</b> : parler au talkie'}</span>` +
+      `<span>${live ? ptt.locked ? 'tu parles · verrouillé (<b class="k">n</b> pour couper)' : 'tu parles…' : '<b class="k">n</b> : parler · <b class="k">n</b><b class="k">n</b> : verrouiller'}</span>` +
       (who.length ? `<b>${who.slice(0, 3).map(esc).join(', ')} ${who.length > 1 ? 'parlent' : 'parle'}</b>` : '') +
       (talk.size ? `<em>${talk.size} à portée</em>` : '');
     if (chip._h !== html) { chip.innerHTML = html; chip._h = html; }
@@ -301,7 +303,8 @@ export function createVoice(game) {
     // hold n (a pad's R3 and the touch button send it too): the first press asks for the mic
     document.body.classList.add('vc');
     addEventListener('keydown', (e) => {
-      if (e.code !== 'KeyN' || e.repeat || e.target.closest?.('input, textarea') || getState() !== 'play') return;
+      // locked, a press anywhere unlocks (a game that wants n takes it first, in capture)
+      if (e.code !== 'KeyN' || e.repeat || e.target.closest?.('input, textarea') || (getState() !== 'play' && !ptt.locked)) return;
       ptt.down();
     });
     addEventListener('keyup', (e) => { if (e.code === 'KeyN') ptt.up(); });

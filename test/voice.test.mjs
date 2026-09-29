@@ -356,6 +356,32 @@ test('talkie: push to talk: on air only while held; the first press asks for the
   assert.deepEqual(air, []);
 });
 
+test('talkie: a double press locks it on air, a press unlocks', async () => {
+  const { createPtt, LOCK_TAP } = await import('../src/talkie.js');
+  let t = 0, mic = true; const air = [], locks = [];
+  const p = createPtt({ ready: () => mic, join: async () => false, talk: (on) => air.push(on), onLock: (v) => locks.push(v), now: () => t });
+  // a tap, another soon after: locked, still on air once let go
+  p.down(); t += 80; p.up(); t += 120; p.down(); t += 60; p.up();
+  assert.ok(p.locked && p.on); assert.deepEqual(locks, [true]);
+  assert.deepEqual(air, [true, false, true]);
+  // a release elsewhere (a blur, a mini-game starting) keeps it on
+  p.up(); assert.ok(p.on);
+  // a press unlocks, off air at once; its release says nothing more
+  t += 5000; p.down(); assert.ok(!p.locked && !p.on); t += 80; p.up();
+  assert.deepEqual(air, [true, false, true, false]); assert.deepEqual(locks, [true, false]);
+  // and that press doesn't start a double: the next tap is only a tap
+  t += 100; p.down(); t += 50; p.up();
+  assert.ok(!p.locked);
+  // two presses too far apart, or a long hold first: no lock
+  t += 5000; p.down(); t += 50; p.up(); t += LOCK_TAP + 10; p.down(); t += 50; p.up();
+  t += 5000; p.down(); t += 1500; p.up(); t += 100; p.down(); t += 50; p.up();
+  assert.ok(!p.locked && !p.on);
+  // before the mic: no lock; lock() from the settings, and off unlocks
+  mic = false; p.lock(true); assert.ok(!p.locked);
+  mic = true; p.lock(true); assert.ok(p.locked && p.on);
+  p.lock(false); assert.ok(!p.locked && !p.on);
+});
+
 test('talkie: the radio model, the avatar lifting it, the squelch and the radio colour', async () => {
   const { talkieModel, squelch, radioChain } = await import('../src/talkie.js');
   const { createRig } = await import('../src/rig.js');

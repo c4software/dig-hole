@@ -39,20 +39,36 @@ export function talkieModel(color = 0xd9a125) {
 export const normMode = (m) => m === 'off' || !m ? 'off' : 'ptt';
 // ready(): the mic is open · join(): asks for it (→ Promise<bool>) · talk(on): on air or not
 // The first press asks for the mic; if the button is still held when it comes, it talks.
-export function createPtt({ ready, join, talk }) {
-  let held = false, on = false, asking = false;
+// A quick double press locks it on air (hands free, through the mini-games too); a press unlocks.
+export const LOCK_TAP = 350;   // ms: a tap this short, then a press this soon after
+export function createPtt({ ready, join, talk, onLock = () => {}, now = () => performance.now() }) {
+  let held = false, on = false, asking = false, locked = false, tapAt = -1e9, downAt = 0;
   const set = (v) => { if (v === on) return; on = v; talk(v); };
+  const lock = (v) => { if (v === locked) return; locked = v; if (!v && !held) set(false); onLock(v); };
   return {
-    get held() { return held; }, get on() { return on; },
+    get held() { return held; }, get on() { return on; }, get locked() { return locked; },
+    lock(v) { if (v && !ready()) return; if (v) set(true); lock(!!v); },
     down() {
       if (held) return;
-      held = true;
-      if (ready()) { set(true); return; }
+      held = true; downAt = now();
+      if (locked) { lock(false); set(false); tapAt = -1e9; return; }
+      if (ready()) {
+        // the second press of a double one: stays on air
+        if (downAt - tapAt < LOCK_TAP) { tapAt = -1e9; set(true); lock(true); return; }
+        set(true); return;
+      }
       if (asking) return;
       asking = true;
       Promise.resolve(join()).then((ok) => { asking = false; if (ok && held && ready()) set(true); }, () => { asking = false; });
     },
-    up() { held = false; set(false); },
+    up() {
+      if (!held) { if (!locked) set(false); return; }
+      held = false;
+      // a short tap that went on air: the start of a double press, maybe
+      const t = now();
+      tapAt = on && !locked && t - downAt < LOCK_TAP ? t : -1e9;
+      if (!locked) set(false);
+    },
   };
 }
 
