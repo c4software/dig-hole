@@ -16,6 +16,26 @@ export function parseTurn(s) {
 export const turnText = (t) => t ? [t.urls, t.username, t.credential].filter(Boolean).join(' ') : '';
 export function iceServers() { const t = getTurn(); return t ? [...STUN, t] : STUN; }
 
+// ---------- the local network: browsers hide their own address behind an mdns name (xxxx.local)
+// unless the page may use the micro. Where multicast is blocked and stun too,
+// two machines that do see each other then never find how: the micro, asked once and kept muted,
+// puts the real address in the candidates. Asked before any RTCPeerConnection of the page.
+const LAN_KEY = 'a-hole-lan';
+export function lanWanted() { try { return localStorage.getItem(LAN_KEY) === '1'; } catch { return false; } }
+export function setLan(on) { try { if (on) localStorage.setItem(LAN_KEY, '1'); else localStorage.removeItem(LAN_KEY); } catch {} }
+let lanStream = null;
+export const lanOpen = () => !!lanStream;
+export async function unlockLan() {
+  if (lanStream) return true;
+  if (!navigator.mediaDevices?.getUserMedia) return false;
+  try {
+    // kept alive, muted: firefox shows the addresses only while a capture is live
+    lanStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    for (const t of lanStream.getAudioTracks()) t.enabled = false;
+    return true;
+  } catch { return false; }
+}
+
 // ---------- codes: json → deflate → base64url ----------
 const b64 = (u8) => { let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode(...u8.subarray(i, i + 0x8000)); return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''); };
 const unb64 = (s) => { s = s.replace(/-/g, '+').replace(/_/g, '/'); const bin = atob(s + '==='.slice((s.length + 3) % 4)); return Uint8Array.from(bin, c => c.charCodeAt(0)); };

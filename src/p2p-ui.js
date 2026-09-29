@@ -3,7 +3,7 @@
 // in the host's tab, the server panel (f2 or the pause menu).
 import { startHost, joinHost, listWorlds, saveWorld, readWorldFile, notesFetch } from './p2p.js';
 import { createHostPanel, localBackend } from './hostpanel.js';
-import { getTurn, setTurn, parseTurn, turnText } from './rtc.js';
+import { getTurn, setTurn, parseTurn, turnText, lanWanted, setLan, lanOpen, unlockLan } from './rtc.js';
 import { roomKey } from './signal.js';
 import { serverless } from './mode.js';
 import { CONFIG } from './config.js';
@@ -32,6 +32,8 @@ const CSS = `
 @keyframes p2pblink { 50% { opacity: .35; } }
 .p2p-card .err { color: #ff7a56; font-weight: 700; margin-top: 8px; } .p2p-card .hint { opacity: .6; font-size: 12.5px; margin-top: 6px; }
 .p2p-card details { margin-top: 12px; opacity: .85; } .p2p-card summary { cursor: pointer; font-size: 12.5px; }
+.p2p-card label.chk { display: flex; gap: 10px; align-items: flex-start; text-transform: none; letter-spacing: 0; font: 600 13px/1.35 'Rubik', system-ui, sans-serif; opacity: .85; cursor: pointer; }
+.p2p-card label.chk input { width: auto; margin-top: 2px; accent-color: #ffb020; }
 .p2p-more { display: flex; gap: 8px; margin-top: 6px; }
 /* the two extra buttons make the menu taller: it rises a little, and on short screens the
    quality chip in the corner steps aside rather than sit on « héberger une partie » */
@@ -51,6 +53,8 @@ function card(html) {
 }
 const nickOf = (nickIn) => { const n = nickIn?.value.trim() || (() => { try { return localStorage.getItem('a-hole-nick'); } catch { return null; } })() || 'creuseur'; try { localStorage.setItem('a-hole-nick', n); } catch {} return n; };
 const turnRow = `<details><summary>réseau difficile ? un serveur turn</summary><label>turn (optionnel)</label><input data-turn placeholder="turn:hôte:3478 nom motdepasse" spellcheck="false"></details>`;
+const lanRow = `<label class="chk"><input type="checkbox" data-lan> autoriser le micro (il reste coupé) : facilite la connexion directe entre les machines</label>`;
+function keepLan(c) { const i = c.$('[data-lan]'); if (i) setLan(i.checked); }
 function keepTurn(c) { const i = c.$('[data-turn]'); if (!i) return true; if (!i.value.trim()) { setTurn(null); return true; } const t = parseTurn(i.value); if (!t) return false; setTurn(t); return true; }
 
 // ---------- the title screen: two more ways to play together ----------
@@ -89,10 +93,12 @@ async function hostCard(nickIn) {
     <label>nom de la partie</label><input data-room maxlength="24" value="${esc(last)}" spellcheck="false">
     <div data-worlds></div>
     <label>ou partir d'un monde exporté</label><input type="file" data-file accept=".json,application/json">
+    ${lanRow}
     ${turnRow}
     <div class="err" data-err></div>
     <div class="acts"><button data-go>héberger</button><button class="ghost" data-x>retour</button></div>`);
   c.$('[data-turn]').value = turnText(getTurn());
+  c.$('[data-lan]').checked = lanWanted();
   const worlds = await listWorlds();
   if (worlds.length) c.$('[data-worlds]').innerHTML = `<label>tes mondes gardés</label><div class="worlds">${worlds.map(w => `<button data-w="${esc(w)}">${esc(w)}</button>`).join('')}</div>`;
   c.el.addEventListener('click', async (e) => {
@@ -103,6 +109,7 @@ async function hostCard(nickIn) {
     const room = roomKey(c.$('[data-room]').value);
     if (!room) { c.$('[data-err]').textContent = 'il faut un nom'; return; }
     if (!keepTurn(c)) { c.$('[data-err]').textContent = 'turn : « turn:hôte:port nom motdepasse »'; return; }
+    keepLan(c);
     const f = c.$('[data-file]').files?.[0];
     if (f) {
       try { const w = readWorldFile(JSON.parse(await f.text())); await saveWorld(room, { ...w, at: Date.now() }); }
@@ -117,10 +124,12 @@ async function hostCard(nickIn) {
 function joinCard(nickIn) {
   const c = card(`<h2>rejoindre</h2><div class="sub">colle le lien ou le code que l'hôte t'a donné${CONFIG.serverless ? '' : ' (ou « @nom » si la partie est sur le serveur)'}.</div>
     <label>lien ou code</label><textarea data-code spellcheck="false" placeholder="https://…?join=… · @ma-partie"></textarea>
+    ${lanRow}
     ${turnRow}
     <div class="err" data-err></div>
     <div class="acts"><button data-go>rejoindre</button><button class="ghost" data-x>retour</button></div>`);
   c.$('[data-turn]').value = turnText(getTurn());
+  c.$('[data-lan]').checked = lanWanted();
   c.el.addEventListener('click', (e) => {
     if (e.target.closest('[data-x]')) { c.close(); return; }
     if (!e.target.closest('[data-go]')) return;
@@ -129,6 +138,7 @@ function joinCard(nickIn) {
     if (m) code = decodeURIComponent(m[1]);
     if (!code) { c.$('[data-err]').textContent = 'colle d\'abord le code'; return; }
     if (!keepTurn(c)) { c.$('[data-err]').textContent = 'turn : « turn:hôte:port nom motdepasse »'; return; }
+    keepLan(c);
     if (!code.startsWith('@') && !code.startsWith('t:') && !/^[zj][A-Za-z0-9_-]{20,}$/.test(code)) {
       if (CONFIG.serverless) { c.$('[data-err]').textContent = 'colle le lien d\'invitation en entier'; return; }
       code = '@' + roomKey(code);
@@ -147,6 +157,8 @@ export function p2pConnect(net, { params, hooks }) {
 
 async function hostNow(net, params, hooks) {
   const nick = params.get('name') || 'hôte';
+  // before the first RTCPeerConnection: the real local address in every answer
+  if (lanWanted() && !(await unlockLan())) setTimeout(() => hooks.toast?.('micro refusé : la connexion directe risque d\'être plus difficile', true, 6000), 3000);
   const host = await startHost({ name: params.get('room'), nick, hooks, useSig: !CONFIG.serverless });
   window.__host = host;
   net.title = `ta partie · ${host.name}`;
@@ -158,6 +170,13 @@ async function hostNow(net, params, hooks) {
   const panel = createHostPanel({ backend, detachUrl: `serveur.html?room=${encodeURIComponent(host.name)}` });
   let t = 0;
   host.on(() => { if (panel.open && !t) t = setTimeout(() => { t = 0; panel.render(host.snap()); }, 50); });
+  // a guest who never got through, on a network that hides addresses: said once
+  let lanTold = false;
+  host.on(() => {
+    if (lanTold || lanOpen() || ![...host.guests.values()].some(g => g.state === 'failed')) return;
+    lanTold = true;
+    hooks.toast?.('un invité n\'arrive pas à se connecter · réheberge en cochant « autoriser le micro » pour faciliter la connexion directe', true, 8000);
+  });
   addEventListener('keydown', (e) => { if (e.code === 'F2') { e.preventDefault(); panel.toggle(); } else if (e.code === 'Escape' && panel.open) panel.hide(); });
   // and a way in from the pause menu
   const pm = document.querySelector('.pause-menu');
@@ -184,7 +203,7 @@ function joinNow(net, params, hooks) {
       <div class="acts"><button class="ghost" data-copy>copier la réponse</button></div>
       <div class="hint">l'hôte la colle dans son panneau serveur (f2). si vous êtes dans le même navigateur, c'est déjà fait.</div></div>
     <div class="err" data-err></div><div class="hint" data-hint></div>
-    <div class="acts"><button data-go>se connecter</button><button class="ghost" data-x>jouer seul</button></div>`);
+    <div class="acts"><button data-go>se connecter</button><button class="ghost" data-lan-go hidden>autoriser le micro et réessayer</button><button class="ghost" data-x>jouer seul</button></div>`);
   const steps = [];
   const step = (key, text, st = 'go') => {
     let s = steps.find(x => x.key === key);
@@ -204,6 +223,8 @@ function joinNow(net, params, hooks) {
     c.$('[data-name]').hidden = true;
     c.$('[data-err]').textContent = ''; c.$('[data-hint]').textContent = '';
     const btn = c.$('[data-go]'); btn.disabled = true; btn.textContent = 'connexion…';
+    c.$('[data-lan-go]').hidden = true;
+    if (lanWanted()) await unlockLan();
     try {
       const r = await joinHost({ join, nick, onStep(what, d) {
         if (what === 'sig') step('sig', 'recherche de la partie sur le serveur…');
@@ -230,11 +251,19 @@ function joinNow(net, params, hooks) {
       busy = false;
       // a code is used once: trying again only makes sense through the server
       if (!join.startsWith('@') && !join.startsWith('t:')) { btn.textContent = 'retour au menu'; spent = true; }
+      // the handshake went through, the direct line didn't: likely hidden local addresses
+      else if (x.ice && !lanOpen()) c.$('[data-lan-go]').hidden = false;
       return;
     }
     busy = false;
   }
   c.$('[data-go]').addEventListener('click', go);
+  c.$('[data-lan-go]').addEventListener('click', async () => {
+    if (!(await unlockLan())) { c.$('[data-err]').textContent = 'micro refusé (ou absent) : pas de connexion directe possible ici'; return; }
+    setLan(true);
+    steps.length = 0;
+    go();
+  });
   c.$('[data-nick]').addEventListener('keydown', (e) => { if (e.code === 'Enter') go(); });
   c.$('[data-copy]').addEventListener('click', async (e) => { await navigator.clipboard?.writeText(c.$('[data-code]').value).catch(() => {}); e.target.textContent = 'copié !'; });
   c.$('[data-x]').addEventListener('click', () => { location.search = ''; });

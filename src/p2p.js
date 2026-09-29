@@ -389,7 +389,7 @@ export async function joinHost({ join, nick, onStep = () => {}, trackers = TRACK
     } catch {}
   }
   const cands = candText(ans.remoteCands) + ' ⇄ ' + candText(ans.cands);
-  const why = (text) => Object.assign(new Error(text), { hint: `vos réseaux ne se voient pas : essayez un serveur turn (réglage), ou le jardin commun sur le serveur · candidats ${cands}` });
+  const why = (text) => Object.assign(new Error(text), { ice: true, hint: `vos réseaux ne se voient pas : essayez un serveur turn (réglage), ou le jardin commun sur le serveur · candidats ${cands}` });
   let slow = 0, cap = 0;
   const failed = new Promise((_, rej) => {
     // through the server the answer is taken at once: 30 s is plenty. With a code to paste,
@@ -433,7 +433,7 @@ async function joinRendezvous({ join, nick, onStep, trackers, WS, ...opts }) {
   });
   onStep('offer', { host: info?.n, room });
   const cands = candText(o.off.cands) + ' ⇄ ' + candText(o.off.remoteCands || {});
-  const why = (text) => Object.assign(new Error(text), { hint: `vos réseaux ne se voient pas : essayez un serveur turn (réglage) · candidats ${cands}` });
+  const why = (text) => Object.assign(new Error(text), { ice: true, hint: `vos réseaux ne se voient pas : essayez un serveur turn (réglage) · candidats ${cands}` });
   const pipe = o.off.pipe;
   let slow = 0;
   await new Promise((res, rej) => {
