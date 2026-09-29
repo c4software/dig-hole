@@ -151,7 +151,7 @@ export function createVoice(game) {
   // ---------- the walkie in my hand: raised to the face while on air ----------
   const fp = (() => {
     let m = null, k = 0;
-    const REST = new THREE.Vector3(-.2, -.62, -.38), UP = new THREE.Vector3(-.12, -.2, -.3);
+    const REST = new THREE.Vector3(-.3, -.62, -.46), UP = new THREE.Vector3(-.24, -.2, -.44);
     return {
       led(on) { m?.led(on); },
       update(dt) {
@@ -160,14 +160,13 @@ export function createVoice(game) {
         if (!m && want) {
           m = talkieModel(net()?.color ?? 0xd9a125);
           m.g.traverse(o => { o.renderOrder = 999; });
-          m.g.scale.setScalar(1.6);
           game.camera.add(m.g);
           m.led(true);
         }
         if (!m) return;
         m.g.visible = k > .02;
         m.g.position.lerpVectors(REST, UP, k);
-        m.g.rotation.set(.15 - .25 * k, .5, .12);
+        m.g.rotation.set(.1 - .2 * k, .45, .18);
       },
       get model() { return m; },
     };
