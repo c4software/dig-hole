@@ -33,6 +33,7 @@ import { createPartCompass } from './compass.js';
 import { createPortals } from './portal.js';
 import { createOrgan, createDiscLauncher, createBats, createReliquary, SONGS } from './church.js';
 import { createMatsuri } from './matsuri.js';
+import { createCaddieStand } from './caddies-stand.js';
 import { createCrypt, inChurchDig, DIG, cutDig } from './crypt.js';
 import { createHoly } from './holy.js';
 import { createMarioCabinet } from './marioportal-cab.js';
@@ -182,6 +183,8 @@ const organ = createOrgan({ parent: homeRoot, at: CH.organ, rot: -Math.PI / 2 })
 world.colliders.push({ min: new THREE.Vector3(CH.organ.x, 0, CH.organ.z - 1.75), max: new THREE.Vector3(CH.organ.x + .9, 5.6, CH.organ.z + 1.75) });
 world.colliders.push({ min: new THREE.Vector3(CH.organ.x - 1, 0, CH.organ.z - .95), max: new THREE.Vector3(CH.organ.x, 1, CH.organ.z + .95) });
 world.interactables.push({ id: 'organ', pos: new THREE.Vector3(CH.organ.x - 1.3, 1.1, CH.organ.z), reach: 2 });
+// the trolley race's stack of trolleys, by the church portal
+createCaddieStand({ parent: homeRoot, colliders: world.colliders, interactables: world.interactables });
 // the japanese street's summer festival: the taiko stage (free play for all) and the goldfish stall
 const matsuri = createMatsuri({ parent: world.china.group, origin: CHINA, colliders: world.colliders, interactables: world.interactables, rooms: world.china.interiors.rooms, ui, send: (fx) => net?.sendFx(fx) });
 const reliquary = createReliquary({ parent: homeRoot, at: new THREE.Vector3(CH.altar.x, 0, CH.altar.z - .95) });
@@ -1554,6 +1557,7 @@ mg.onEnd = (id, r) => {
 const RACES = {
   kart: { make: (create) => create({ scene, camera, audio, ui }), help: '4 tours · zqsd pour piloter · shift pour déraper · espace pour l\'objet · r pour revenir sur la piste', prizes: [1500, 800, 400, 100] },
   rc: { make: (create) => create({ scene, camera, audio, ui, world, terrain: terrains.home }), help: 'petites voitures dans la ville · zqsd · espace pour l\'objet · r pour revenir sur la piste', prizes: [2000, 1100, 600, 300, 150, 80] },
+  caddies: { make: (create) => create({ scene, camera, audio, ui, world, lookOf: (id) => id === myId() ? eco.s.wear?.fit : net?.peers.get(id)?.look, getNet: () => net }), where: 'sur la place, devant l\'église', help: 'z : pousser du pied (en rythme : plus fort) · q d : tourner · shift : déraper · espace : objet · r : revenir sur la piste', prizes: [1800, 900, 450, 200, 100, 50] },
   jetski: { make: (create) => create({ scene, camera, audio, ui, world }), help: 'mini jet-skis dans la fontaine · zqsd · shift pour se pencher · bouée rouge à sa droite, jaune à sa gauche · r pour revenir', prizes: [1800, 900, 450, 200, 100, 50] },
   // the secret cave's games: dioramas you shrink into
   bomber: { make: (create) => create({ scene: homeRoot, camera, audio, ui, at: slotAt('bomber') }), help: 'zqsd : bouger · espace : poser une bombe · le dernier debout gagne la manche', prizes: [1500, 700, 350, 150] },
@@ -1826,6 +1830,7 @@ function openLobby(g, opts) {
 const GAME_KEYS = {
   kart: [['z q s d', 'piloter'], ['shift', 'déraper · mini-turbo'], ['espace', 'objet'], ['r', 'revenir sur la piste']],
   rc: [['z q s d', 'piloter'], ['shift', 'frein à main'], ['espace', 'arme'], ['r', 'replacer la voiture']],
+  caddies: [['z', 'pousser du pied · en rythme : plus fort'], ['q d', 'tourner'], ['s', 'freiner du pied'], ['shift', 'déraper · contre-braquer'], ['espace', 'objet du panier'], ['r', 'revenir sur la piste']],
   podrace: [['z', 'gaz'], ['q d', 'piloter'], ['s', 'freiner'], ['shift', 'boost · ça chauffe'], ['r', 'revenir sur la piste']],
   nes: [['← →', 'courir'], ['espace', 'sauter'], ['shift', 'sprinter'], ['r', 'dernier drapeau']],
   invaders: [['q d', 'bouger'], ['← →', 'bouger aussi'], ['espace', 'tirer']],

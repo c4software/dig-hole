@@ -20,6 +20,7 @@ export const GAMES = {
   tresor:  { name: 'chasse au trésor',   sub: 'un coffre enfoui, un thermomètre, 3 minutes', unit: 'time', lower: true },
   kart:    { name: 'a hole grand prix',  sub: 'karting, 4 tours derrière le village, des adversaires, des objets · à plusieurs', unit: 'time', lower: true },
   podrace: { name: 'course de modules',  sub: 'podracers dans un canyon de mars · deux moteurs, un cockpit, 3 tours · boost, surchauffe, casse', unit: 'time', lower: true },
+  caddies: { name: 'course de caddies',  sub: 'sur la place, devant l\'église : debout sur le caddie, pousse du pied en rythme, dérape, tiens bon · baguette, pastèque, farine · à plusieurs', unit: 'time', lower: true },
   jetski:  { name: 'vague à fond',       sub: 'mini jet-skis dans la fontaine de la place · vagues, tremplins, bouées rouges et jaunes', unit: 'time', lower: true },
   // the secret cave's collection
   bomber:  { name: 'bombardiers',       sub: 'quatre bombardiers dans l\'arène · le meilleur de 3 manches', unit: 'score' },

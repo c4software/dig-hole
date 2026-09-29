@@ -58,6 +58,8 @@ export const DEFS = [
   X('fêtes', 'candyValue', 'valeur des friandises échangées', 10, 0, .1),
   X('mini-jeux', 'gameReward', 'gains des jeux et des courses', 10, 0, .1),
   { g: 'mini-jeux', k: 'kartLaps', label: 'tours du grand prix (au départ)', def: 4, min: 1, max: 10, step: 1, unit: '' },
+  { g: 'mini-jeux', k: 'caddiesLaps', label: 'tours de la course de caddies (au départ)', def: 3, min: 1, max: 10, step: 1, unit: '' },
+  X('mini-jeux', 'caddiesFall', 'caddies : choc pour tomber', 3, .3, .05, '1 : un mur pris à 16 km/h'),
   X('planètes', 'moonGravity', 'gravité sur la lune', 4, .2),
   X('planètes', 'marsGravity', 'gravité sur mars', 4, .2),
   X('planètes', 'planetWalk', 'vitesse de marche', 4, .3),
