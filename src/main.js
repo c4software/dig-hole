@@ -186,7 +186,7 @@ world.interactables.push({ id: 'organ', pos: new THREE.Vector3(CH.organ.x - 1.3,
 // the japanese street's summer festival: the taiko stage (free play for all) and the goldfish stall
 const matsuri = createMatsuri({ parent: world.china.group, origin: CHINA, colliders: world.colliders, interactables: world.interactables, rooms: world.china.interiors.rooms, ui, send: (fx) => net?.sendFx(fx) });
 // the lycée behind the back lane, and its blockade on school days
-const blocus = createBlocus({ parent: homeRoot, colliders: world.colliders, interactables: world.interactables, ui, renderer: world.renderer, shake: (s) => { shakeT = Math.max(shakeT, s); }, insideOf: (p) => world.neighbours.insideOf?.(p) });
+const blocus = createBlocus({ parent: homeRoot, colliders: world.colliders, interactables: world.interactables, ui, renderer: world.renderer, shake: (s) => { shakeT = Math.max(shakeT, s); }, insideOf: (p) => world.neighbours.insideOf?.(p), walkers: world.walkers.home });
 const reliquary = createReliquary({ parent: homeRoot, at: new THREE.Vector3(CH.altar.x, 0, CH.altar.z - .95) });
 world.colliders.push({ min: new THREE.Vector3(CH.altar.x - .47, 0, CH.altar.z - 1.22), max: new THREE.Vector3(CH.altar.x + .47, .5, CH.altar.z - .68) });
 world.interactables.push({ id: 'dgun', pos: new THREE.Vector3(CH.altar.x, .7, CH.altar.z - .95), reach: 1.8 });

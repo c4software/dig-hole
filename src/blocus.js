@@ -24,7 +24,7 @@ const BURST = [[1, .25, .2], [.35, 1, .35], [1, .8, .25], [.35, .55, 1], [1, .4,
 const HITS = ['poc ! une balle en mousse · rien de cassé', 'poc ! en plein dans le sac à dos', 'aïe… non, même pas mal : c\'est de la mousse', 'poc ! touché, pas coulé', 'poc ! la mousse, ça rebondit'];
 const TOPS = [0xd8403a, 0x3f7fd8, 0x3aa060, 0xe8b830, 0x8a52c8, 0xee7a2a, 0xf2efe8, 0x2a2c32, 0xe87aa8, 0x3ab8b0];
 
-export function createBlocus({ parent, colliders, interactables, ui, shake = () => {}, renderer, insideOf = null }) {
+export function createBlocus({ parent, colliders, interactables, ui, shake = () => {}, renderer, insideOf = null, walkers = null }) {
   const lycee = createLycee({ parent, colliders });
   const root = new THREE.Group(); root.userData.keep = true; parent.add(root);
   const OX = LYCEE.x, OZ = LYCEE.z;
@@ -258,6 +258,12 @@ export function createBlocus({ parent, colliders, interactables, ui, shake = () 
       if (dist > 200) { root.visible = false; return; }
       root.visible = true;
       if (!built) build();
+      // the passers-by of the back lane turn round before the police line
+      if (walkers) for (const w of walkers.people) {
+        if (w.mode !== 'walk' || w.pts.length !== 2 || Math.abs(w.pts[0].z - OZ + 2.6) > 1) continue;
+        const x = w.g.position.x - OX;
+        if ((x > -18 && x < -15 && w.dir > 0) || (x > 15 && x < 18 && w.dir < 0)) w.dir = -w.dir;
+      }
       // the script up to now
       events.length = 0;
       const frac = Math.min(1, Math.max(0, sim.advanceTo(now, events)));
