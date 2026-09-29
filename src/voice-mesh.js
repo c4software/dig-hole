@@ -137,7 +137,7 @@ export function createMesh({ send, makePc, stream, onTrack, onGone, now = () => 
         L.st = 'ring';
         Promise.resolve(L.pc.setRemoteDescription({ type: 'answer', sdp: fx.s })).then(() => remoteSet(L), () => hang(id, 'error'));
       } else if (fx.a === 'ice' && fx.c) { if (L.remote) addIce(L, fx.c); else L.q.push(fx.c); }
-      else if (fx.a === 'bye') hang(id, 'refused', false);
+      else if (fx.a === 'bye') hang(id, L.st === 'up' ? 'range' : 'refused', false);   // a hang-up after talking is no refusal: redial at once
     },
   };
 }
