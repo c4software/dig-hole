@@ -173,8 +173,9 @@ export function startGate(width, text = 'COURSE DE CADDIES') {
     c.fillStyle = '#c8281e'; c.fillRect(0, 16, w, h - 32);
     c.fillStyle = '#fff'; c.font = '800 60px Rubik, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(text, w / 2, h / 2 + 2);
   });
-  const ban = new THREE.Mesh(new THREE.PlaneGeometry(width + .3, (width + .3) / 8), new THREE.MeshStandardMaterial({ map: tex, side: THREE.DoubleSide, roughness: .7 }));
-  ban.position.y = 2.7; g.add(ban);
+  // two faces back to back: the words read right from both sides
+  const bg = new THREE.PlaneGeometry(width + .3, (width + .3) / 8), bm = new THREE.MeshStandardMaterial({ map: tex, roughness: .7 });
+  for (const r of [0, Math.PI]) { const ban = new THREE.Mesh(bg, bm); ban.position.y = 2.7; ban.rotation.y = r; g.add(ban); }
   return g;
 }
 // a promo: a yellow price tag that spins over the course (drive through it for something in the basket)
