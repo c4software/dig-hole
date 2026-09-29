@@ -3540,7 +3540,7 @@ function loop(ts) {
     voice.update(dt);
     updateNetList(dt);
   }
-  const holding = state !== 'attract' && state !== 'reveal' && state !== 'drive' && state !== 'launch' && state !== 'kart' && !onPlanet();
+  const holding = state !== 'attract' && state !== 'reveal' && state !== 'drive' && state !== 'launch' && state !== 'kart' && !onPlanet() && !looks.away;
   const drilling = eco.s.tool === 'drill' && eco.s.lv.drill > 0 && !mg.armed;
   portals.setWorld(here);
   portals.held = gunOut() && holding && !mg.armed;

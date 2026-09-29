@@ -381,6 +381,8 @@ export function createLooks(game) {
     get hands() { return { ...hand }; },
     get fit() { return fit; },
     get wheelOpen() { return !!open; },
+    // the camera has stepped back (an emote, a mirror, the wardrobe): no first-person tool
+    get away() { return blend > .02; },
     openWheel, closeWheel,
   };
 }
