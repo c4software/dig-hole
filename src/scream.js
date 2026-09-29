@@ -5,13 +5,15 @@
 // createFallWatch() decides when a fall is worth a scream (pure: tested in node).
 import { panner, place } from './lib/spatial.js';
 
-// ---------- when: a fall of a few metres, or a short one over a deep shaft ----------
-export const FALL = { start: 3, fast: 6, shaft: 8, shaftStart: 1.2, cool: 3, teleport: 6 };
+// ---------- when: a real drop (8 m, or 4 m over a 15 m shaft), and only now and then ----------
+// chance: a fall that qualifies screams once in ten (the rarer, the funnier)
+export const FALL = { start: 8, fast: 9, shaft: 15, shaftStart: 4, cool: 3, teleport: 6, chance: .1 };
 
 // step(s) once per frame, s: { dt, y, vy, ground, jet, ladder, lift, water, glide, active, drop?() }
 // → 'start' | 'land' | 'water' | 'cut' | null
-export function createFallWatch(o = FALL) {
-  let peak = null, on = false, coolT = 0, lastY = null;
+export function createFallWatch(o = FALL, rand = Math.random) {
+  // silent: this fall already had its roll and lost it (no second chance on the way down)
+  let peak = null, on = false, silent = false, coolT = 0, lastY = null;
   const end = (r) => { on = false; peak = null; coolT = o.cool; return r; };
   return {
     get on() { return on; },
@@ -20,18 +22,21 @@ export function createFallWatch(o = FALL) {
       // a jump in height from one frame to the next is a teleport (r, a portal, a trip)
       const jump = lastY != null && Math.abs(s.y - lastY) > o.teleport;
       lastY = s.y;
-      if (!s.active || jump) { peak = null; return on ? end('cut') : null; }
+      if (!s.active || jump) { peak = null; silent = false; return on ? end('cut') : null; }
       if (on) {
         if (s.water) return end('water');
         if (s.ground) return end('land');
         if (s.jet || s.ladder || s.lift || s.glide || s.vy > .5) return end('cut');
         return null;
       }
-      if (s.ground || s.ladder || s.lift || s.water || s.jet || s.glide) { peak = null; return null; }
+      if (s.ground || s.ladder || s.lift || s.water || s.jet || s.glide) { peak = null; silent = false; return null; }
       if (peak == null || s.y > peak) peak = s.y;
-      if (coolT > 0 || s.vy > -o.fast) return null;
+      if (silent || coolT > 0 || s.vy > -o.fast) return null;
       const fallen = peak - s.y;
-      if (fallen >= o.start || (fallen >= o.shaftStart && s.drop && s.drop() >= o.shaft)) { on = true; return 'start'; }
+      if (fallen >= o.start || (fallen >= o.shaftStart && s.drop && s.drop() >= o.shaft)) {
+        if (rand() >= (o.chance ?? 1)) { silent = true; return null; }
+        on = true; return 'start';
+      }
       return null;
     },
   };

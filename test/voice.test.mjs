@@ -4,7 +4,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { pickPeers, createMesh, VOICE } from '../src/voice-mesh.js';
-import { createFallWatch, createScreamer, voiceOf, FALL } from '../src/scream.js';
+import { createFallWatch as watch, createScreamer, voiceOf, FALL } from '../src/scream.js';
+// the thresholds without the dice (the one-in-ten roll has its own test)
+const createFallWatch = () => watch({ ...FALL, chance: 1 });
 import { createRoom } from '../src/room.js';
 
 const flush = async (n = 6) => { for (let i = 0; i < n; i++) await new Promise(r => setTimeout(r, 0)); };
@@ -208,7 +210,8 @@ function fall(w, { from = 0, to = -10, dt = 1 / 60, G = 20, extra = {}, drop } =
 test('fall: a few metres screams and lands, a step or a small ledge does not', () => {
   assert.deepEqual(fall(createFallWatch(), { to: -1.5 }), []);
   assert.deepEqual(fall(createFallWatch(), { to: -2.8 }), []);
-  assert.deepEqual(fall(createFallWatch(), { to: -8 }), ['start', 'land']);
+  assert.deepEqual(fall(createFallWatch(), { to: -6 }), [], 'a few metres: no longer enough');
+  assert.deepEqual(fall(createFallWatch(), { to: -10 }), ['start', 'land']);
 });
 
 test('fall: not on a jetpack, a ladder, in the lift or gliding; water ends it with a splash', () => {
@@ -222,15 +225,15 @@ test('fall: not on a jetpack, a ladder, in the lift or gliding; water ends it wi
   // the jetpack mid-fall stops the scream
   const j = createFallWatch();
   y = 0; vy = 0; got = [];
-  for (let i = 0; i < 40; i++) { vy -= 20 * .02; y += vy * .02; r = j.step({ dt: .02, y, vy, ground: false, active: true }); if (r) got.push(r); }
+  for (let i = 0; i < 60; i++) { vy -= 20 * .02; y += vy * .02; r = j.step({ dt: .02, y, vy, ground: false, active: true }); if (r) got.push(r); }
   got.push(j.step({ dt: .02, y, vy, ground: false, jet: true, active: true }));
   assert.deepEqual(got, ['start', 'cut']);
 });
 
 test('fall: over a deep shaft it starts sooner; a cooldown; a teleport is no fall', () => {
-  // 2 m of fall: nothing on flat ground, a scream above 20 m of air
-  assert.deepEqual(fall(createFallWatch(), { to: -2, drop: () => 3 }), []);
-  assert.deepEqual(fall(createFallWatch(), { to: -2, drop: () => 20 }), ['start', 'land']);
+  // 5 m of fall: nothing on flat ground, a scream above 20 m of air
+  assert.deepEqual(fall(createFallWatch(), { to: -5, drop: () => 3 }), []);
+  assert.deepEqual(fall(createFallWatch(), { to: -5, drop: () => 20 }), ['start', 'land']);
   const w = createFallWatch();
   assert.deepEqual(fall(w, { to: -8 }), ['start', 'land']);
   assert.deepEqual(fall(w, { from: -8, to: -9 - FALL.start * 2, dt: 1 / 600 }).length <= 2, true);
@@ -241,9 +244,22 @@ test('fall: over a deep shaft it starts sooner; a cooldown; a teleport is no fal
   const t = createFallWatch();
   let y = 0, vy = 0; const got = [];
   t.step({ dt: .02, y, vy, ground: true, active: true });
-  for (let i = 0; i < 40; i++) { vy -= 20 * .02; y += vy * .02; const r = t.step({ dt: .02, y, vy, ground: false, active: true }); if (r) got.push(r); }
+  for (let i = 0; i < 60; i++) { vy -= 20 * .02; y += vy * .02; const r = t.step({ dt: .02, y, vy, ground: false, active: true }); if (r) got.push(r); }
   got.push(t.step({ dt: .02, y: 30, vy: 0, ground: true, active: true }));
   assert.deepEqual(got, ['start', 'cut']);
+});
+
+test('fall: one qualifying fall in ten screams, one roll per fall', () => {
+  // the dice lose: silent all the way down, and the next fall rolls again
+  const rolls = [.5, .05];
+  const w = watch(FALL, () => rolls.shift());
+  assert.deepEqual(fall(w, { to: -12 }), [], 'lost roll: no scream, and no second chance mid-fall');
+  assert.equal(rolls.length, 1, 'one roll for that fall');
+  assert.deepEqual(fall(w, { from: -12, to: -30, dt: 1 / 120 }), ['start', 'land']);
+  // about one in ten over many falls
+  let n = 0;
+  for (let i = 0; i < 400; i++) if (fall(watch(FALL), { to: -12 }).length) n++;
+  assert.ok(n > 15 && n < 70, 'roughly one in ten: ' + n);
 });
 
 // ---------- the scream, in a fake WebAudio ----------
