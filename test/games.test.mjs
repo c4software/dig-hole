@@ -30,6 +30,7 @@ globalThis.matchMedia = () => ({ matches: false, addEventListener() {} });
 
 const { GAME_CODE } = await import('../src/games.js');
 const { createOrgan } = await import('../src/church.js');
+const { createMatsuri } = await import('../src/matsuri.js');
 
 // the ids main.js offers (its RACES table), read from the source
 const main = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
@@ -49,7 +50,9 @@ function ctx() {
   const scene = new THREE.Scene();
   const organ = createOrgan({ parent: scene, at: new THREE.Vector3(10, 0, 20), rot: -Math.PI / 2 });
   const world = { colliders: [], interactables: [], F: { pool: new THREE.Group() }, fountain: new THREE.Group(), label: () => new THREE.Texture(), sun: new THREE.DirectionalLight(), hemi: new THREE.HemisphereLight(), lamp: new THREE.PointLight() };
-  return { scene, camera: new THREE.PerspectiveCamera(), audio: any, ui: any, world, terrain: any, at: new THREE.Vector3(0, .6, -900), organ, church: { altar: new THREE.Vector3(0, 0, 30), organ: new THREE.Vector3(10, 0, 20) }, eco: { s: {} }, pay() {}, save() {} };
+  const town = new THREE.Group(); scene.add(town);
+  const matsuri = createMatsuri({ parent: town, origin: new THREE.Vector3(400, 0, 0), colliders: [], interactables: [], ui: any });
+  return { scene, matsuri, camera: new THREE.PerspectiveCamera(), audio: any, ui: any, world, terrain: any, at: new THREE.Vector3(0, .6, -900), organ, church: { altar: new THREE.Vector3(0, 0, 30), organ: new THREE.Vector3(10, 0, 20) }, eco: { s: {} }, pay() {}, save() {} };
 }
 const CONTRACT = ['start', 'stop', 'update', 'hud', 'onFx', 'peerLeft', 'respawn'];
 

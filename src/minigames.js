@@ -33,6 +33,8 @@ export const GAMES = {
   nes:     { name: 'super creuseur',     sub: 'plateforme rétro en 2D, façon 8 bits · à plusieurs · le premier au drapeau', unit: 'time', lower: true },
   worms:   { name: 'taupes de guerre',   sub: 'artillerie au tour par tour : équipes de taupes, terrain destructible, vent, bazooka, grenades…', unit: 'score' },
   orgue:   { name: 'orgue héros',        sub: 'les notes défilent, joue-les en rythme sur le grand orgue de l\'église · tenues, phrases dorées, grand jeu · à plusieurs', unit: 'score' },
+  taiko:   { name: 'taiko héros',        sub: 'le grand tambour du matsuri, au japon : don sur la peau, ka sur le bord, les grosses à deux mains, la jauge de fête · à plusieurs', unit: 'score' },
+  kingyo:  { name: 'kingyo-sukui',       sub: 'pêche les poissons rouges au poi de papier : doucement, il se déchire · les dorés valent 10 · à plusieurs dans le même bac', unit: 'score' },
   painkiller: { name: 'painkiller', sub: 'la nef maudite sous l\'église : vagues de damnés, pieux, fusil glaçant, âmes et démon · à plusieurs', unit: 'score' },
   marioportal: { name: 'super portail', sub: 'plateforme 8 bits et pistolet à portails : cinq niveaux, champignons, feuille, carapaces · à plusieurs · le premier au bout', unit: 'time', lower: true },
   encre:   { name: 'encre 2D',           sub: 'plateforme 2D en équipes : peins le niveau, nage dans ton encre', unit: 'pct' },

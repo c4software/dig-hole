@@ -32,6 +32,7 @@ import { createCave, createTrapGuide, GUN_REGEN, slotAt } from './cave.js';
 import { createPartCompass } from './compass.js';
 import { createPortals } from './portal.js';
 import { createOrgan, createDiscLauncher, createBats, createReliquary, SONGS } from './church.js';
+import { createMatsuri } from './matsuri.js';
 import { createCrypt, inChurchDig, DIG, cutDig } from './crypt.js';
 import { createHoly } from './holy.js';
 import { createMarioCabinet } from './marioportal-cab.js';
@@ -177,6 +178,8 @@ const organ = createOrgan({ parent: homeRoot, at: CH.organ, rot: -Math.PI / 2 })
 world.colliders.push({ min: new THREE.Vector3(CH.organ.x, 0, CH.organ.z - 1.75), max: new THREE.Vector3(CH.organ.x + .9, 5.6, CH.organ.z + 1.75) });
 world.colliders.push({ min: new THREE.Vector3(CH.organ.x - 1, 0, CH.organ.z - .95), max: new THREE.Vector3(CH.organ.x, 1, CH.organ.z + .95) });
 world.interactables.push({ id: 'organ', pos: new THREE.Vector3(CH.organ.x - 1.3, 1.1, CH.organ.z), reach: 2 });
+// the japanese street's summer festival: the taiko stage (free play for all) and the goldfish stall
+const matsuri = createMatsuri({ parent: world.china.group, origin: CHINA, colliders: world.colliders, interactables: world.interactables, rooms: world.china.interiors.rooms, ui, send: (fx) => net?.sendFx(fx) });
 const reliquary = createReliquary({ parent: homeRoot, at: new THREE.Vector3(CH.altar.x, 0, CH.altar.z - .95) });
 world.colliders.push({ min: new THREE.Vector3(CH.altar.x - .47, 0, CH.altar.z - 1.22), max: new THREE.Vector3(CH.altar.x + .47, .5, CH.altar.z - .68) });
 world.interactables.push({ id: 'dgun', pos: new THREE.Vector3(CH.altar.x, .7, CH.altar.z - .95), reach: 1.8 });
@@ -366,6 +369,7 @@ function updateClock(dt) {
 
 house.drawBoard(eco.s.ach);
 for (const id in eco.s.found) house.showTrophy(+id);
+if (eco.s.kingyo) house.showTrophy('kingyo');
 heart.setPortal(eco.s.portal);
 
 const ladders = createLadders(scene);
@@ -565,6 +569,7 @@ addEventListener('keydown', (e) => {
   if (state !== 'play') return;
   if (e.code === 'KeyR') toSurface();
   if (e.code === 'KeyT' && near && near.id === 'organ') { offerGame('orgue'); return; }
+  if (e.code === 'KeyT' && near && near.id === 'taiko') { offerGame('taiko'); return; }
   if (e.code === 'KeyT' && near && near.id === 'globe') {
     if (eco.s.china) travel('china', 'globe');
     else ui.toast('le globe tourne… il faudrait d\'abord trouver le chemin, tout au fond');
@@ -699,6 +704,7 @@ function updateAim() {
     else if (near.id === 'dgun') p = !reliquary.ready ? 'le reliquaire est vide · il en revient un bientôt' : eco.s.discs ? '<b>e</b> le lance-disques · tu as déjà le tien' : '<b>e</b> prendre le lance-disques chasse-vampire';
     else if (near.id === 'organ') p = `<b>e</b> ${organ.playing ? 'morceau suivant' : 'jouer de l\'orgue'} · ${SONGS[(organSong + 1) % SONGS.length].name} · <b>t</b> orgue héros`;
     else if (near.id === 'pgun') p = !cave.gunReady ? 'le socle du pistolet à portails · il en revient un bientôt' : eco.s.portal ? '<b>e</b> le pistolet à portails · tu as déjà le tien' : '<b>e</b> prendre le pistolet à portails';
+    else if (near.id === 'taiko') p = matsuri.prompt(near);
     else if (near.game) p = `<b>e</b> jouer · ${GAMES[near.game].name}`;
     else if (crypt.prompt(near) !== undefined) p = crypt.prompt(near);
     else if (holy.prompt(near) !== undefined) p = holy.prompt(near);
@@ -1561,6 +1567,9 @@ const RACES = {
   tycoon: { make: (create) => create({ audio, ui, eco, pay: (v, text) => reward(prize(v), text), save: () => save() }), screen: true, help: 'souris · la colonie tourne même sans toi', prizes: [0] },
   invaders: { make: (create) => create({ audio, ui }), screen: true, help: 'q d ou ← → : bouger · espace : tirer · abats la vague avant qu\'elle ne touche la lune', prizes: [1500, 700, 350, 150] },
   shooter: { make: (create) => create({ audio, ui }), screen: true, help: 'zqsd ou flèches : voler · espace : tirer · e : bombe · ramasse les capsules', prizes: [1800, 900, 450, 200] },
+  // the matsuri in the japanese street: the taiko stage's rhythm game, the goldfish stall
+  taiko: { noBanner: true, world: 'china', where: 'au japon, sur la scène du matsuri', make: (create) => create({ camera, audio, ui, matsuri }), help: 'f j : don · d k : ka · les grosses à deux mains · les roulements : tout ce que tu peux', prizes: [1500, 700, 350, 150] },
+  kingyo: { world: 'china', where: 'au japon, au stand de poissons rouges du matsuri', make: (create) => create({ camera, audio, ui, matsuri }), help: 'souris ou z q s d : le poi · clic ou espace : plonger · lâcher : sortir · doucement dans l\'eau, le papier se déchire', prizes: [1200, 600, 300, 150] },
   // the church organ's rhythm game, at the console
   orgue: { noBanner: true, make: (create) => create({ scene: homeRoot, camera, audio, ui, organ, church: CH }), help: 'les notes au passage de la ligne · maintenir les longues · shift : grand jeu', prizes: [1500, 700, 350, 150] },
   // the crypt's secret: an island far off, reached from the table under the nave
@@ -1677,6 +1686,7 @@ function quitRace(result, silent = false) {
   reward(prize(r.prizes[Math.min(result.place, r.prizes.length) - 1]), text + (best ? ' · nouveau record !' : ''));
   if (result.place === 1 && r.id === 'kart') unlock('kart');
   if (result.place === 1 && r.id === 'worms3d') unlock('lombrics');
+  if (r.id === 'kingyo' && result.fish > 0) { eco.s.kingyo = (eco.s.kingyo | 0) + result.fish; house.showTrophy('kingyo'); }
   save();
 }
 // A game's code comes on demand, the first time it's needed: its title screen, the lobby's countdown,
@@ -1817,6 +1827,8 @@ const GAME_KEYS = {
   pile: [['clic', 'creuser'], ['e', 'valider la profondeur']],
   tresor: [['clic', 'creuser'], ['thermo', 'chaud / froid']],
   orgue: [['d f j k', 'jouer les notes'], ['shift', 'grand jeu']],
+  taiko: [['f j', 'don · la peau (rouge)'], ['d k', 'ka · le bord (bleu)'], ['deux mains', 'les grosses notes'], ['↑ ↓ entrée', 'le morceau']],
+  kingyo: [['souris · z q s d', 'bouger le poi'], ['clic · espace', 'plonger (tenir)'], ['lâcher', 'sortir · attraper'], ['shift', 'tout doux']],
   comic: [['← →', 'marcher'], ['espace', 'sauter (garder : plus haut)'], ['j', 'tirer (il faut du cola)'], ['e', 'ouvrir une porte'], ['k', 'baguette : se téléporter'], ['r', 'revenir au dernier sol sûr']],
   pvz: [['clic', 'étoiles, cartes, planter'], ['1 … 9', 'choisir une carte'], ['0', 'la pelle'], ['clic droit', 'annuler'], ['flèches espace', 'planter au clavier']],
   painkiller: [['z q s d', 'courir'], ['espace', 'sauter · bunny hop'], ['clic', 'tir'], ['clic droit', 'secondaire'], ['1 2 3', 'armes']],
@@ -2358,6 +2370,7 @@ function interact(it) {
     case 'dgun': takeLauncher(); return;
     case 'sdoor': setDoor(it.w, it.i, !doorOf(it)?.open, true); return;
     case 'organ': playOrgan((organSong + 1) % SONGS.length, true); return;
+    case 'taiko': matsuri.act(it); return;
     case 'egg': audio.tick(); ui.toast('trois clefs, trois portes… et un œuf. il y a toujours quelque chose de caché, même sous un lit', false, 3600); return;
     case 'bed': {
       ui.veil(1);
@@ -2770,7 +2783,7 @@ function renderPanel(quip) {
     const ores = Object.values(ORE).filter(o => !o.letter);
     const rows = ores.map(o => ({ id: 'tro:' + o.id, name: eco.s.found[o.id] ? o.name : '? ? ?', sub: eco.s.found[o.id] ? `${ui.fmt(o.value)} ● pièce` : '', done: !!eco.s.found[o.id], static: true }));
     const nf = Object.values(eco.s.finds).flat().length;
-    ui.panel({ title: 'les trophées', rows, note: `${nf} trouvaille${nf > 1 ? 's' : ''} déterrée${nf > 1 ? 's' : ''} · ${eco.s.moles} taupe${eco.s.moles > 1 ? 's' : ''} vaincue${eco.s.moles > 1 ? 's' : ''}`, close: 'fermer' });
+    ui.panel({ title: 'les trophées', rows, note: `${nf} trouvaille${nf > 1 ? 's' : ''} déterrée${nf > 1 ? 's' : ''} · ${eco.s.moles} taupe${eco.s.moles > 1 ? 's' : ''} vaincue${eco.s.moles > 1 ? 's' : ''}${eco.s.kingyo ? ` · ${eco.s.kingyo} poisson${eco.s.kingyo > 1 ? 's' : ''} rouge${eco.s.kingyo > 1 ? 's' : ''} du matsuri` : ''}`, close: 'fermer' });
   }
 }
 
@@ -2998,6 +3011,7 @@ if (MULTI) {
       else if (fx.k === 'sdoor') setDoor(fx.w, fx.i, !!fx.o, false);
       else if (fx.k === 'planedown') ui.toast(`${peer?.name ?? 'quelqu\'un'} a abattu le bombardier !`, false, 3500);
       else if (fx.k === 'organ' && race?.id !== 'orgue') playOrgan(fx.s | 0, false, peer?.name ?? 'quelqu\'un');
+      else if (fx.k === 'taiko' && race?.id !== 'taiko') matsuri.onFx(fx, peer?.name ?? 'quelqu\'un', here);
       else if (fx.k === 'disc' && fx.p && fx.d) launcher.remote(fx);
       else if (fx.k === 'dv') delivery.remote(id, fx, peer);
       else if (fx.k === 'holyfx') holy.remote(fx, here);
@@ -3374,6 +3388,7 @@ function loop(ts) {
   launcher.held = eco.s.tool === 'disc' && eco.s.discs && holding && !mg.armed;
   launcher.update(dt, Math.hypot(player.vel.x, player.vel.z) > 0.5, solidAt, discHit);
   reliquary.update(dt); organ.update(dt, camera.position);
+  matsuri.update(dt, camera, { here, view: viewNow(), can: state === 'play' && here === 'china', night: world.env.night });
   if (here === 'home') bats.update(dt, t, world.env.night);
   shovel.root.visible = holding && !drilling && !mg.armed && !portals.held && !launcher.held && !looks.handsOut;
   mg.updateBlaster(dt, holding && mg.armed && state === 'play', Math.hypot(player.vel.x, player.vel.z) > 0.5);
@@ -3546,7 +3561,7 @@ window.__dig = {
   test: false,
   skipSwoop() { swoop = 1; this.test = true; },
   start, toSurface, travel, win, save, useItem, applyUpgrades, openPanel, closePanel, enterVan, exitVan, useLift, explode,
-  quest, takeKey, reveal, startReveal, cave, crypt, portals, shootPortal, trapGuide, launcher, bats, organ, portalCells, gameroom: house.room, updateAim, get pad() { return pad; }, get touch() { return touch; }, get down() { return down; }, screenView: (dt) => race?.screen && screenView(dt),
+  quest, takeKey, reveal, startReveal, cave, crypt, portals, shootPortal, trapGuide, launcher, bats, organ, matsuri, portalCells, gameroom: house.room, updateAim, get pad() { return pad; }, get touch() { return touch; }, get down() { return down; }, screenView: (dt) => race?.screen && screenView(dt),
   interact: (id) => interact(id === 'van' ? VAN : id === 'lift' ? LIFT : world.interactables.find(i => i.id === id) || (onPlanet() && findNear()?.id === id ? findNear() : null)),
   swing: doDig,
   // the holy bomba (holy.js): the module, and two shortcuts for tests

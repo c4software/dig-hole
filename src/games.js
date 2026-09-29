@@ -24,6 +24,8 @@ export const GAME_CODE = {
   invaders: () => import('./invaders.js').then(m => m.createInvaders),
   shooter: () => import('./spaceshooter.js').then(m => m.createShooter),
   orgue: () => import('./orgue.js').then(m => m.createOrgue),
+  taiko: () => import('./taiko.js').then(m => m.createTaiko),
+  kingyo: () => import('./kingyo.js').then(m => m.createKingyo),
   worms3d: () => import('./worms3d.js').then(m => m.createWorms3d),
   comic: () => import('./comic.js').then(m => m.createComic),
   pvz: () => import('./pvz.js').then(m => m.createPvz),

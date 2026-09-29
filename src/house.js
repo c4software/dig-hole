@@ -264,6 +264,15 @@ export function createHouse({ scene, colliders, interactables, label }) {
   // ore samples and the like, shown once found
   const gem = (color, geo) => new THREE.Mesh(geo || new THREE.OctahedronGeometry(.1), new THREE.MeshStandardMaterial({ color, metalness: .4, roughness: .3, emissive: color, emissiveIntensity: .15 }));
   [[20, 0xd4773a], [21, 0xc9b3a0], [22, 0xe8eef5], [23, 0xffc629], [24, 0xe4183a], [25, 0x7af4ff], [26, 0xf3ead0]].forEach(([id, c], n) => addTrophy(id, gem(c, id === 26 ? new THREE.TorusGeometry(.07, .025, 6, 12, Math.PI * 1.3) : null), n));
+  // a goldfish in its bag, brought back from the matsuri's stall
+  {
+    const bag = new THREE.Group();
+    const water = new THREE.Mesh(new THREE.SphereGeometry(.085, 12, 8), new THREE.MeshStandardMaterial({ color: 0xcfe8ff, transparent: true, opacity: .45, roughness: .05 }));
+    water.scale.set(1, 1.2, 1); water.position.y = .1; water.renderOrder = 3; bag.add(water);
+    const fish = new THREE.Mesh(new THREE.SphereGeometry(.025, 8, 6), std(0xe8481c, { emissive: 0x401000 })); fish.scale.set(1.7, 1, 1); fish.position.y = .09; bag.add(fish);
+    const knot = new THREE.Mesh(new THREE.ConeGeometry(.02, .06, 6), std(0xe8f4ff)); knot.position.y = .22; bag.add(knot);
+    addTrophy('kingyo', bag, 7);
+  }
   interactables.push({ id: 'shelf', pos: new THREE.Vector3(4.0, 1.1, -21.4) });
 
   // ---------- the letter on a little round table ----------
