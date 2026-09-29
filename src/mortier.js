@@ -21,6 +21,7 @@ export function createMortiers({ scene, sfx = null, hooks = {} }) {
   const root = new THREE.Group(); root.userData.keep = true; scene.add(root);
   const fx = createPoints(root, { max: 700, additive: true });
   const puffs = createPoints(root, { max: 160, additive: false });
+  const solid = createPoints(root, { max: 260, additive: false, solid: true });
   // the tube: cardboard in a bright wrap, a white band, the fuse sticking out of its tail
   const tubeGeo = new THREE.CylinderGeometry(.045, .045, .34, 10); tubeGeo.rotateX(Math.PI / 2);
   const wrapM = [0xd8403a, 0x3f7fd8, 0xe8b830, 0x8a52c8].map(c => new THREE.MeshLambertMaterial({ color: c }));
@@ -36,7 +37,7 @@ export function createMortiers({ scene, sfx = null, hooks = {} }) {
   let next = 0;
 
   function burst(x, y, z, r, mine, low) {
-    fireworkBurst(fx, puffs, x, y, z, r.col, { low, n: low ? 60 : 110, speed: low ? 6 : 8.5 });
+    fireworkBurst(fx, puffs, x, y, z, r.col, { low, n: low ? 60 : 110, speed: low ? 6 : 8.5, solid });
     sfx?.burst(x, y, z, true);
     if (low && mine) hooks.carve?.(x, y, z, HOLE);
     hooks.burst?.(x, y, z, mine);
@@ -69,7 +70,7 @@ export function createMortiers({ scene, sfx = null, hooks = {} }) {
       }
       const h = renderer ? renderer.getDrawingBufferSize(_v).y : 720;
       const scale = (camera?.projectionMatrix.elements[5] ?? 1.4) * h * .5;
-      fx.update(dt, scale); puffs.update(dt, scale);
+      fx.update(dt, scale); puffs.update(dt, scale); solid.update(dt, scale);
     },
   };
 }

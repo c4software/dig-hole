@@ -43,7 +43,9 @@ function puffTex() {
 }
 
 // a pool of points: spawn(x, y, z, vx, vy, vz, life, size0, size1, r, g, b, alpha, drag, gravity)
-export function createPoints(parent, { max = 600, additive = true } = {}) {
+// additive: glowing (flames, sparks, flashes); solid: glowing points drawn over what's behind
+// (a firework's colours by day: added to a bright sky they'd fade to white); else soft puffs
+export function createPoints(parent, { max = 600, additive = true, solid = false } = {}) {
   const geo = new THREE.BufferGeometry();
   const pos = new Float32Array(max * 3), col = new Float32Array(max * 3), size = new Float32Array(max), alpha = new Float32Array(max);
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3).setUsage(THREE.DynamicDrawUsage));
@@ -52,9 +54,10 @@ export function createPoints(parent, { max = 600, additive = true } = {}) {
   geo.setAttribute('aAlpha', new THREE.BufferAttribute(alpha, 1).setUsage(THREE.DynamicDrawUsage));
   geo.setDrawRange(0, 0);
   geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e5);
-  const uniforms = { uScale: { value: 600 }, uMap: { value: additive ? null : puffTex() } };
+  const glow = additive || solid;
+  const uniforms = { uScale: { value: 600 }, uMap: { value: glow ? null : puffTex() } };
   const mat = new THREE.ShaderMaterial({
-    uniforms, vertexShader: VERT, fragmentShader: additive ? FRAG_GLOW : FRAG_PUFF,
+    uniforms, vertexShader: VERT, fragmentShader: glow ? FRAG_GLOW : FRAG_PUFF,
     transparent: true, depthWrite: false, blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending,
   });
   const pts = new THREE.Points(geo, mat);
@@ -105,11 +108,14 @@ export function createPoints(parent, { max = 600, additive = true } = {}) {
 // spread wide so they don't pile up into white, bright enough for the bloom; a coloured flash
 // and its lit smoke. low: a half sphere (it went off on the ground)
 export const FIRE_COLS = [[1, .12, .06], [.1, 1, .2], [.2, .35, 1], [1, .72, 0], [.85, .15, 1]];
-export function fireworkBurst(fx, puffs, x, y, z, col, { low = false, n = 120, speed = 9, rnd = Math.random } = {}) {
+export function fireworkBurst(fx, puffs, x, y, z, col, { low = false, n = 120, speed = 9, rnd = Math.random, solid = null } = {}) {
   const [r, g, b] = FIRE_COLS[col % FIRE_COLS.length], [r2, g2, b2] = FIRE_COLS[(col + 2) % FIRE_COLS.length];
   for (let k = 0; k < n; k++) {
     const u = low ? rnd() : rnd() * 2 - 1, th = rnd() * Math.PI * 2, s = Math.sqrt(1 - u * u), v = speed * (.75 + rnd() * .4), two = k % 3 === 0;
-    fx.spawn(x, y, z, Math.cos(th) * s * v, u * v, Math.sin(th) * s * v, 1.4 + rnd() * .8, .75, .25, (two ? r2 : r) * 1.8, (two ? g2 : g) * 1.8, (two ? b2 : b) * 1.8, .75, 1.3, 2);
+    const vx = Math.cos(th) * s * v, vy = u * v, vz = Math.sin(th) * s * v, lf = 1.4 + rnd() * .8;
+    // the colour itself (solid, it reads by day), and a halo of light round it (for the night and the bloom)
+    if (solid) solid.spawn(x, y, z, vx, vy, vz, lf, .42, .16, two ? r2 : r, two ? g2 : g, two ? b2 : b, 1, 1.3, 2);
+    fx.spawn(x, y, z, vx, vy, vz, lf, .8, .25, (two ? r2 : r) * 1.8, (two ? g2 : g) * 1.8, (two ? b2 : b) * 1.8, solid ? .45 : .75, 1.3, 2);
   }
   // the flash, in the burst's colour, and glitter falling after
   fx.spawn(x, y, z, 0, 0, 0, .3, 10, 16, r * 1.5 + .2, g * 1.5 + .2, b * 1.5 + .2, .8);

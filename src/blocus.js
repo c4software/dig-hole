@@ -32,6 +32,7 @@ export function createBlocus({ parent, colliders, interactables, ui, shake = () 
   const sfx = createBlocusSfx();
   const fx = createPoints(root, { max: 1400, additive: true });
   const puffs = createPoints(root, { max: 420, additive: false });
+  const solid = createPoints(root, { max: 600, additive: false, solid: true });
   const balls = createBalls(root, 16);
   const rnd = mulberry(99);
 
@@ -158,7 +159,7 @@ export function createBlocus({ parent, colliders, interactables, ui, shake = () 
       for (let k = 0; k < 14; k++) puffs.spawn(OX + tb.x, .9, OZ + tb.z, (rnd() - .5) * 1.5, 1 + rnd(), (rnd() - .5) * 1.5, 1.4, .3, 1.2, .8, .8, .78, .5, 1.5, -.2);
     } else if (e.k === 'burst') {
       const x = OX + e.x, y = e.y, z = OZ + e.z;
-      fireworkBurst(fx, puffs, x, y, z, e.col, { rnd });
+      fireworkBurst(fx, puffs, x, y, z, e.col, { rnd, solid });
       const d = cam.distanceTo(_c.set(x, y, z));
       sfx.burst(x, y, z);
       if (d < 30) shake(.08 + .3 * (1 - d / 30));
@@ -270,7 +271,7 @@ export function createBlocus({ parent, colliders, interactables, ui, shake = () 
       const on = SIM.blocusOn(mode, hour, day);
       if (on !== active) {
         active = on; lycee.setBlocked(on); root.visible = on;
-        if (!on) { balls.clear(); fx.clear(); puffs.clear(); rockets.length = 0; cans.length = 0; clouds.length = 0; }
+        if (!on) { balls.clear(); fx.clear(); puffs.clear(); solid.clear(); rockets.length = 0; cans.length = 0; clouds.length = 0; }
       }
       lycee.setNight(night);
       camera.getWorldPosition(_c);
@@ -465,7 +466,7 @@ export function createBlocus({ parent, colliders, interactables, ui, shake = () 
       // the points: size in pixels at 1 m
       const h = renderer ? renderer.getDrawingBufferSize(_v).y : innerHeight;
       const scale = camera.projectionMatrix.elements[5] * h * .5;
-      fx.update(dt, scale); puffs.update(dt, scale);
+      fx.update(dt, scale); puffs.update(dt, scale); solid.update(dt, scale);
     },
     // for tests: the nearest launcher aims at me now (if I'm in front of the line)
     testShot() { localShotT = 0; },
