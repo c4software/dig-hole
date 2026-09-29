@@ -92,8 +92,9 @@ export function createRoom({
       if (!ok) { to(c, { t: 'superreset-denied' }); return; }
       superReset(me.name);
     } else if (m.t === 'fx' && m.fx && typeof m.fx === 'object') {
-      // a laser shot, a paint blob: passed on, never kept
-      others(c, { t: 'fx', id: me.id, fx: m.fx });
+      // a laser shot, a paint blob: passed on, never kept. With `only`: that digger alone (voice signaling)
+      if (m.fx.only != null) { const d = clients.get(m.fx.only); if (d && d !== c) to(d, { t: 'fx', id: me.id, fx: m.fx }); }
+      else others(c, { t: 'fx', id: me.id, fx: m.fx });
     } else if (m.t === 'op' && m.op && typeof m.op === 'object') {
       record(m.op, c, me.id);
     } else if (m.t === 'notes' && notes) {

@@ -70,6 +70,8 @@ export function createAudio() {
 
   return {
     init,
+    // for the sounds built elsewhere (scream.js, voice.js): the context, the master bus, white noise
+    get ctx() { return ctx; }, get out() { return master; }, get noiseBuf() { return noiseBuf; },
     setVolume(v) { volume = v; if (master) master.gain.value = v; },
     dig(hard = 1) {
       noise(500 + hard * 180, 0.22, 0.55);

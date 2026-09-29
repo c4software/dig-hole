@@ -20,6 +20,7 @@ export const DEFS = [
   X('corps', 'damage', 'dégâts subis (tout)', 4),
   X('corps', 'fallDamage', 'dégâts de chute', 4),
   X('corps', 'hpRegen', 'vie qui revient', 10, 0, .1),
+  { g: 'corps', k: 'scream', label: 'cri de chute', def: 1, options: YES },
   X('creuser', 'digRadius', 'taille du coup de pelle', 3, .5),
   X('creuser', 'shovelSpeed', 'vitesse de la pelle', 4, .25),
   X('creuser', 'drillSpeed', 'vitesse de la foreuse', 4, .25),
