@@ -144,7 +144,7 @@ export function stepCart(c, inp, dt, env, ev = []) {
       const o = [[c.x - b.x0, -1, 0], [b.x1 - c.x, 1, 0], [c.z - b.z0, 0, -1], [b.z1 - c.z, 0, 1]].sort((p, q) => p[0] - q[0])[0];
       dx = o[1]; dz = o[2]; d = 0; c.x += dx * (o[0] + T.R); c.z += dz * (o[0] + T.R);
     } else { dx /= d; dz /= d; c.x += dx * (T.R - d); c.z += dz * (T.R - d); }
-    const v = collideWall(c, dx, dz);
+    const v = collideWall(c, dx, dz, dt, tr);
     if (v > hit) { hit = v; nx = dx; nz = dz; }
   }
   // the barriers: kept within the half width of the line
@@ -154,7 +154,7 @@ export function stepCart(c, inp, dt, env, ev = []) {
     if (Math.abs(lat) > lim2) {
       const s = Math.sign(lat);
       c.x -= p.sx * (lat - s * lim2); c.z -= p.sz * (lat - s * lim2);
-      const v = collideWall(c, -p.sx * s, -p.sz * s);
+      const v = collideWall(c, -p.sx * s, -p.sz * s, dt, tr);
       if (v > hit) { hit = v; nx = -p.sx * s; nz = -p.sz * s; }
     }
   }
@@ -178,14 +178,24 @@ export function stepCart(c, inp, dt, env, ev = []) {
   return ev;
 }
 
-// against a wall of normal (nx, nz) pointing out of it: the speed into it, bounced off
-function collideWall(c, nx, nz) {
+// against a wall of normal (nx, nz) pointing out of it: the speed into it bounced off a little,
+// the speed along it kept (a cart slides along a barrier, never pinned to it); returns the speed into it
+function collideWall(c, nx, nz, dt = 0, tr = null) {
+  // nose into the wall: the casters swing it round along the wall, the way the course goes
+  const fx = Math.sin(c.yaw), fz = Math.cos(c.yaw), into = -(fx * nx + fz * nz);
+  if (c.fall < 0 && into > .05 && dt > 0) {
+    let tx = -nz, tz = nx;
+    const p = tr?.pts[c.idx], rx = p ? p.tx : fx, rz = p ? p.tz : fz;
+    if (tx * rx + tz * rz < 0) { tx = -tx; tz = -tz; }
+    const d = wrap(Math.atan2(tx, tz) - c.yaw);
+    c.yaw = wrap(c.yaw + clamp(d, -1, 1) * Math.min(1, dt * (1.5 + 3 * into)));
+  }
   const vn = c.vx * nx + c.vz * nz;
   if (vn >= 0) return 0;
-  c.vx -= nx * vn * 1.3; c.vz -= nz * vn * 1.3;
-  c.vx *= .9; c.vz *= .9;
-  // a glancing blow turns the cart a little
-  c.spin += (c.vx * nz - c.vz * nx) * .3;
+  c.vx -= nx * vn * 1.25; c.vz -= nz * vn * 1.25;
+  // a scrape along it costs a little, by how hard it hit
+  const k = 1 - Math.min(.3, -vn * .05);
+  c.vx *= k; c.vz *= k;
   return -vn;
 }
 

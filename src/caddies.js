@@ -458,10 +458,18 @@ export function createCaddies({ scene, camera, audio, ui, world, lookOf = () => 
     sfx.crash(c === me ? null : c);
     if (c === me) { shake = .35; ui.toast('gamelle !', true, 1200); }
   }
-  function respawnCart(c) {
-    placeCart(c, TR, c.idx, 0);
-    c.k = c.k - (((c.k % N) + N) % N) + c.idx;
-    if (c === me) camYaw = c.yaw;
+  // back on the line where you are along it (a bot stuck), or at the last checkpoint passed (r)
+  function respawnCart(c, toCheckpoint = false) {
+    if (toCheckpoint) {
+      const per = TR.cps.length, m = c.cp - 1;
+      const k = m < 0 ? -5 : Math.floor(m / per) * N + TR.cps[m % per];
+      placeCart(c, TR, ((k % N) + N) % N, 0);
+      c.k = k;
+    } else {
+      placeCart(c, TR, c.idx, 0);
+      c.k = c.k - (((c.k % N) + N) % N) + c.idx;
+    }
+    if (c === me) { camYaw = c.yaw; shake = 0; }
   }
 
   // ---------- drawing a cart and its rider ----------
@@ -617,7 +625,7 @@ export function createCaddies({ scene, camera, audio, ui, world, lookOf = () => 
     modes: MODES,
     keys: [['z', 'pousser du pied · en rythme : plus fort'], ['q d', 'tourner'], ['s', 'freiner du pied'], ['shift', 'déraper · contre-braquer'], ['espace', 'objet du panier'], ['r', 'revenir sur la piste']],
     start, update, stop, onFx, peerLeft,
-    respawn() { if (state === 'race' && me && !me.done && me.fall < 0 && respawnCd <= clock) { respawnCd = clock + 1; respawnCart(me); } },
+    respawn() { if (state === 'race' && me && !me.done && respawnCd <= clock) { respawnCd = clock + 1; respawnCart(me, true); ui.toast('retour au dernier point de passage', false, 900); } },
     hud() {
       if (state === 'count') return { count: Math.ceil(count - .5) };
       if (!me || state === 'off') return { count: 0 };

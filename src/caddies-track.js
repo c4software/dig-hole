@@ -7,7 +7,7 @@
 
 // [x, z, half width]: the course's centre line, the start line first
 export const CTRL = [
-  [66.0, 11.7, 1.35], [63.2, 11.25, .95], [60.9, 11.2, .9], [58.4, 11.2, 1.0], [56.2, 10.9, 1.1],
+  [66.0, 11.3, 1.35], [63.2, 11.2, .95], [60.9, 11.2, .9], [58.4, 11.2, 1.0], [56.2, 10.9, 1.1],
   // past the post box, between the house and the tree, the bench
   [54.4, 9.9, 1.1], [53.8, 8.2, 1.2], [53.4, 5.8, 1.3], [53.4, 3.2, 1.3], [53.9, .9, 1.05],
   // round the lamp post into the café terrace, between the tables
@@ -19,7 +19,7 @@ export const CTRL = [
   [70.3, -10.0, .9], [70.6, -8.0, 1.6], [70.9, -5.0, 2.0], [70.9, -1.5, 2.0], [71.2, 2.0, 2.0],
   // between the parked cars and the clothes shop, round the cherry tree
   [72.4, 4.8, 1.4], [72.95, 7.2, 1.15], [73.2, 9.4, 1.1], [74.3, 11.0, 1.0], [74.1, 12.9, 1.0],
-  [72.2, 13.4, 1.2], [69.6, 12.8, 1.4], [67.8, 12.1, 1.4],
+  [72.2, 13.4, 1.2], [70.0, 12.3, 1.4], [68.2, 11.4, 1.4],
 ];
 export const STEP = .25;   // metres between two samples of the line
 // the checkpoints, as shares of a lap: the church portal, the café, the zebra, the bakery, the tree;

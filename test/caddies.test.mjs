@@ -135,6 +135,16 @@ test('a hard knock throws the rider off; up again after a while', () => {
   assert.equal(g.fall, -1);
 });
 
+test('a barrier never pins a cart: head-on or glancing, it slides along and gets going again', () => {
+  const wall = { track: null, solids: [{ x0: -50, x1: 50, z0: 1.2, z1: 1.6 }] };
+  for (const yaw of [0, .5]) {
+    const c = P.newCart('w'); c.yaw = yaw; c.vx = Math.sin(yaw) * 3; c.vz = Math.cos(yaw) * 3;
+    for (let n = 0; n < 60 * 4; n++) P.stepCart(c, { steer: 0, kick: true, tap: false }, 1 / 60, wall);
+    assert.ok(Math.hypot(c.vx, c.vz) > 2, `still rolling along the wall (yaw ${yaw}: ${Math.hypot(c.vx, c.vz).toFixed(2)})`);
+    assert.ok(Math.abs(c.x) > 3, 'slid along it');
+  }
+});
+
 test('a whole race of bots: three laps, every checkpoint in order, everyone home', () => {
   for (const seed of [3, 11]) {
     const rnd = seeded(seed), carts = [];
@@ -200,6 +210,11 @@ test('the race module: solo with bots, a lap done, quit cleans up; the camera ne
   assert.ok(jump < .8, `the camera jumped ${jump.toFixed(2)} m in a frame`);
   const h = m.hud();
   assert.ok(h.lap >= 1 && h.place >= 1 && h.of === 6 && h.board.length === 6);
+  // r: back to the last checkpoint passed, facing along the course
+  const cp = m.me.cp, idx = tr.cps[(cp - 1) % tr.cps.length] % tr.N;
+  m.respawn();
+  assert.equal(m.me.cp, cp); assert.equal(m.me.idx, idx);
+  assert.ok(Math.abs(m.me.x - tr.pts[idx].x) < .01 && Math.abs(m.me.z - tr.pts[idx].z) < .01);
   // items: a flour cloud and a melon behind, a swat beside
   m._give('flour'); m._use(); assert.ok(m.flours.some(f => f.id.startsWith('me:')), 'my flour on the paving');
   m._give('melon'); m._use(); assert.ok(m.melons.some(f => f.id.startsWith('me:')), 'my melon rolling');
@@ -212,6 +227,20 @@ test('the race module: solo with bots, a lap done, quit cleans up; the camera ne
   m.stop();
   assert.equal(m.carts.length, 0);
   assert.equal(g.scene.children.filter(o => o.visible).length, 0, 'nothing left on the square');
+});
+
+test('holding only z from the grid: the cart gets going and slides round the first corner', async () => {
+  const g = await makeGame('me');
+  const m = g.mod;
+  m.start({ seed: 5, opts: { mode: 'chrono' } });
+  m._go();
+  const keys = new Set(['KeyW']);
+  let top = 0;
+  for (let n = 0; n < 60 * 10; n++) { wall += 1000 / 60; m.update(1 / 60, keys); top = Math.max(top, Math.hypot(m.me.vx, m.me.vz)); }
+  assert.ok(top > 4, `top speed with z held: ${top.toFixed(2)}`);
+  assert.ok(m.me.k > 30 * 4, `got along the course (k ${m.me.k})`);
+  assert.ok(Math.hypot(m.me.vx, m.me.vz) > 1, 'not pinned');
+  m.stop();
 });
 
 test('two players: each drives their own cart, the other one comes through netlerp', async () => {
