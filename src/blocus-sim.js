@@ -21,9 +21,10 @@ export const LAUNCHERS = [2, 5, 8, 10];            // the police with a launcher
 export const FIRES = [[-7.2, 2.3], [6.4, 1.1], [10.6, 3.4]];   // bins on fire, loose in the crowd
 export const TUBES = [[-4.6, 3.7], [4.7, 3.8]];    // the mortar batteries, on crates by the gate
 export const BARRICADE = { x0: -3.4, x1: 3.4, z0: 3.1, z1: 5.3 };
+export const BAG = [-11.6, 4.1];                   // the holdall of mortars, by the railing
 export const BANNERS = [[0, 1], [2, 3], [4, 5]];   // leader, partner
 export const BANNER_W = 2.3;
-const OBST = [...FIRES.map(([x, z]) => [x, z, .95]), ...TUBES.map(([x, z]) => [x, z, .75])];
+const OBST = [...FIRES.map(([x, z]) => [x, z, .95]), ...TUBES.map(([x, z]) => [x, z, .75]), [BAG[0], BAG[1], .7]];
 const R2 = .8;                       // two bodies closer than this push apart
 
 // the blockade's hours: 1 always, 0 never, -1 school days (5 in 7) by daylight

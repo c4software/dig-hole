@@ -25,7 +25,7 @@ const BURST = [[1, .25, .2], [.35, 1, .35], [1, .8, .25], [.35, .55, 1], [1, .4,
 const HITS = ['poc ! une balle en mousse · rien de cassé', 'poc ! en plein dans le sac à dos', 'aïe… non, même pas mal : c\'est de la mousse', 'poc ! touché, pas coulé', 'poc ! la mousse, ça rebondit'];
 const TOPS = [0xd8403a, 0x3f7fd8, 0x3aa060, 0xe8b830, 0x8a52c8, 0xee7a2a, 0xf2efe8, 0x2a2c32, 0xe87aa8, 0x3ab8b0];
 
-export function createBlocus({ parent, colliders, interactables, ui, shake = () => {}, renderer, insideOf = null, walkers = null }) {
+export function createBlocus({ parent, colliders, interactables, ui, shake = () => {}, renderer, insideOf = null, walkers = null, steal = () => 0 }) {
   const lycee = createLycee({ parent, colliders });
   const root = new THREE.Group(); root.userData.keep = true; parent.add(root);
   const OX = LYCEE.x, OZ = LYCEE.z;
@@ -210,7 +210,26 @@ export function createBlocus({ parent, colliders, interactables, ui, shake = () 
   // ---------- the gate ----------
   const gateIt = { id: 'lycee', pos: new THREE.Vector3(OX, 1.1, OZ + 4.4), reach: 3.2 };
   const doorIt = { id: 'lycee', door: true, pos: new THREE.Vector3(OX, 1.1, OZ + 8.8), reach: 2.6 };
-  interactables.push(gateIt, doorIt);
+  // the holdall of mortars (only there during the blockade): a handful for whoever dares
+  const bagIt = { id: 'lycee', bag: true, pos: new THREE.Vector3(lycee.bag.x, .6, lycee.bag.z), reach: 2.2, off: true };
+  interactables.push(gateIt, doorIt, bagIt);
+  let bagCool = 0;
+  const chase = { ids: [], t: 0 };
+  let shoutTex = null;
+  // two of them run after me, shouting, for a few seconds (only I see it)
+  function outrage(px, pz) {
+    const near = agents.filter(a => !a.police && a.role !== 'banner' && !a.sat).map(a => [a, Math.hypot(OX + a.x - px, OZ + a.z - pz)]).sort((p, q) => p[1] - q[1]).slice(0, 2);
+    chase.ids = near.map(([a]) => a.i); chase.t = 5;
+    if (!shoutTex) shoutTex = canvasTex(256, 80, (c) => {
+      c.font = '700 25px Rubik, sans-serif'; c.fillStyle = '#fffdf6'; c.strokeStyle = '#1a130d'; c.lineWidth = 5;
+      c.beginPath(); c.roundRect(8, 6, 240, 50, 22); c.moveTo(118, 55); c.lineTo(128, 74); c.lineTo(140, 55); c.fill(); c.stroke();
+      c.fillStyle = '#1a130d'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText('hé ! nos mortiers !', 128, 32);
+    });
+    for (const [a] of near) {
+      if (!a.say) { a.say = new THREE.Sprite(new THREE.SpriteMaterial({ map: shoutTex, transparent: true, depthWrite: false })); a.say.scale.set(1.3, .4, 1); a.say.position.y = 2.25; a.g.add(a.say); }
+      a.say.visible = true;
+    }
+  }
 
   let indoorNow = false;
   const ear = {};
@@ -223,7 +242,7 @@ export function createBlocus({ parent, colliders, interactables, ui, shake = () 
   const inside = (p) => { if (!rooms) { rooms = []; parent.traverse(o => { if (o.userData.inner?.box) rooms.push(o.userData.inner.box); }); } return rooms.some(b => b.containsPoint(p)) || !!insideOf?.(p); };
 
   return {
-    lycee, sim, sfx, stats,
+    lycee, sim, sfx, stats, bagIt,
     get active() { return !!active; },
     get agents() { return agents; },
     get built() { return built; },
@@ -231,17 +250,29 @@ export function createBlocus({ parent, colliders, interactables, ui, shake = () 
     prompt(near) {
       if (near === gateIt) return active ? 'le lycée est bloqué · blocus en cours, personne n\'entre' : 'le portail du lycée · ouvert, la cour est libre';
       if (near === doorIt) return '<b>e</b> la porte du lycée';
+      if (near === bagIt) return bagCool > 0 ? `un sac de mortiers d'artifice · surveillé de près (${Math.ceil(bagCool)} s)` : '<b>e</b> piquer des mortiers';
       return undefined;
     },
     act(near) {
       if (near === gateIt) { ui?.toast(active ? 'pas moyen de passer : le portail est bloqué par les poubelles et les palettes' : 'la cour est ouverte · entre donc', active, 2400); return true; }
       if (near === doorIt) { ui?.toast('fermé · les cours ont lieu… ailleurs, aujourd\'hui', false, 2400); return true; }
+      if (near === bagIt) {
+        if (!active) return true;
+        if (bagCool > 0) { ui?.toast(`ils ont l'œil sur leur sac · reviens dans ${Math.ceil(bagCool)} s`, true, 2000); return true; }
+        const got = steal();
+        if (!got) { ui?.toast('tes poches sont déjà pleines de mortiers', true, 2000); return true; }
+        bagCool = 60;
+        ui?.toast(`+${got} mortier${got > 1 ? 's' : ''} d'artifice · « hé ! nos mortiers ! » · f pour tirer`, false, 3000);
+        outrage(near.pos.x, near.pos.z);
+        return true;
+      }
       return false;
     },
     // the whole scene, once a frame. now: the shared clock (s); mode: the tunable; hour, day: game time
     update(dt, camera, { here = 'home', view = here, can = true, player = null, now, mode = -1, hour = 12, day = 0, night = 0 }) {
       t += dt; frame++;
-      hitCool = Math.max(0, hitCool - dt);
+      hitCool = Math.max(0, hitCool - dt); bagCool = Math.max(0, bagCool - dt);
+      bagIt.off = !active;
       const on = SIM.blocusOn(mode, hour, day);
       if (on !== active) {
         active = on; lycee.setBlocked(on); root.visible = on;
@@ -256,7 +287,7 @@ export function createBlocus({ parent, colliders, interactables, ui, shake = () 
       if (home && active && dist < 130 && (navigator.userActivation?.hasBeenActive ?? true)) sfx.ensure();
       const m = active ? SIM.moveAt(sim.plan || SIM.makePlan(SEED, 0), sim.tau) : null;
       if ((frame & 7) === 0) indoorNow = home && dist < 130 && inside(_c);
-      sfx.update(dt, camera, { active: home && active, crowdAt, policeAt, mood: mood(m, sim.tau), hear: hearing({ home, y: _c.y, indoor: indoorNow }, ear) });
+      sfx.update(dt, camera, { active: home && active, crowdAt, policeAt, mood: mood(m, sim.tau), hear: hearing({ home: view === here && (here === 'home' || here === 'china'), y: _c.y, indoor: indoorNow }, ear) });
       if (!home || !active) { setVeil(blur = 0); return; }
       if (dist > 200) { root.visible = false; return; }
       root.visible = true;
@@ -280,6 +311,7 @@ export function createBlocus({ parent, colliders, interactables, ui, shake = () 
       if (beat >= 0 && beat !== lastBeat) { sfx.bang(OX, OZ + SIM.LINE_Z + adv); for (const a of agents) if (a.shield) a.bang = .18; }
       lastBeat = beat;
       const k = 1 - Math.exp(-dt * 10);
+      if (chase.t > 0) { chase.t -= dt; if (chase.t <= 1.5) for (const i of chase.ids) if (agents[i].say) agents[i].say.visible = false; if (chase.t <= 0) ui?.toast('ils ont laissé tomber · file !', false, 1600); }
       const chant = mood(m, tau) === 'chant', hoot = mood(m, tau) === 'hoot';
       let n = 0;
       for (const a of agents) {
@@ -287,7 +319,12 @@ export function createBlocus({ parent, colliders, interactables, ui, shake = () 
         // where the script has them (between its last two steps), smoothed; nudged by me (locally)
         const sx = sim.ox[i] + (sim.px[i] - sim.ox[i]) * frac, sz = sim.oz[i] + (sim.pz[i] - sim.oz[i]) * frac;
         const ox = a.x, oz = a.z;
-        a.x += (sx - a.x) * k; a.z += (sz - a.z) * k;
+        // towards the script at a runner's pace (a chaser: towards me, stopping short)
+        let tx = sx, tz = sz;
+        const chasing = chase.t > 0 && chase.ids.includes(i);
+        if (chasing) { const cx = lx - a.x, cz = lz - a.z, cd = Math.hypot(cx, cz); if (cd > 1.1) { tx = a.x + cx / cd * Math.min(cd - 1.1, 1); tz = a.z + cz / cd * Math.min(cd - 1.1, 1); } else { tx = a.x; tz = a.z; } }
+        const mx = tx - a.x, mz = tz - a.z, md = Math.hypot(mx, mz), lim = (chasing ? 3.8 : 6.5) * dt;
+        if (md > lim) { a.x += mx / md * lim; a.z += mz / md * lim; } else { a.x += mx * (chasing ? 1 : k); a.z += mz * (chasing ? 1 : k); }
         const ex = lx - (a.x + a.offX), ez = lz - (a.z + a.offZ), ed = Math.hypot(ex, ez);
         if (ed < .7 && py < 1.6 && py > -.5) {
           const nx = ex / (ed || 1), nz = ez / (ed || 1), f = 1 - ed / .7;

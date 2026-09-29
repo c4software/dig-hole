@@ -8,7 +8,7 @@
 import * as THREE from 'three';
 import { canvasTex } from './lib/tex.js';
 import { mergeStatic } from './merge.js';
-import { FIRES, TUBES, BARRICADE } from './blocus-sim.js';
+import { FIRES, TUBES, BARRICADE, BAG } from './blocus-sim.js';
 
 export const LYCEE = { x: 38, z: 52 };            // the frame's origin in the world (the lane's edge)
 export const NAME = 'LYCÉE JEAN-CREUSE';
@@ -220,6 +220,13 @@ export function createLycee({ parent, colliders }) {
     tubes.push({ x, y: .95, z });
     solid(x - .3, 0, z - .25, x + .3, .95, z + .25).blocus = true;
   }
+  // the holdall full of mortars, unzipped, by the railing
+  const bagG = new THREE.Group(); bagG.position.set(BAG[0], 0, BAG[1]); bagG.rotation.y = .4; props.add(bagG);
+  const holdall = new THREE.Mesh(new THREE.CapsuleGeometry(.24, .5, 4, 10), mat(0x2a4aa8)); holdall.rotation.z = Math.PI / 2; holdall.scale.set(1, 1, .85); holdall.position.y = .24; bagG.add(holdall);
+  const stripe = new THREE.Mesh(new THREE.CylinderGeometry(.245, .245, .08, 12), mat(0xf4f0e6)); stripe.rotation.z = Math.PI / 2; stripe.scale.set(1, 1, .86); stripe.position.set(-.2, .24, 0); bagG.add(stripe);
+  for (const s of [-1, 1]) { const hdl = new THREE.Mesh(new THREE.TorusGeometry(.12, .02, 5, 10, Math.PI), mat(0x1a1a1e)); hdl.position.set(s * .12, .44, 0); bagG.add(hdl); }
+  for (let k = 0; k < 6; k++) { const c = cyl(.045, .38, tubeMats[k % tubeMats.length], -.22 + k * .09, .5, (k % 2 - .5) * .1, bagG, 8); c.rotation.set((k % 2 - .5) * .5, 0, (k - 2.5) * .12); }
+  solid(BAG[0] - .45, 0, BAG[1] - .35, BAG[0] + .45, .5, BAG[1] + .35).blocus = true;
   const propCols = colliders.filter(c => c.blocus);
   propCols.push(barricadeCol);
 
@@ -232,6 +239,7 @@ export function createLycee({ parent, colliders }) {
   return {
     root, props, fires, tubes, sheet,
     gate: { x: LYCEE.x, z: LYCEE.z + GATE_Z },
+    bag: { x: LYCEE.x + BAG[0], z: LYCEE.z + BAG[1] },
     // the blockade on (props out, gate shut and blocked) or off (gate open, the yard's free)
     setBlocked(on) {
       props.visible = on; sheet.visible = on;

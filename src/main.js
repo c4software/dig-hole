@@ -34,6 +34,7 @@ import { createPortals } from './portal.js';
 import { createOrgan, createDiscLauncher, createBats, createReliquary, SONGS } from './church.js';
 import { createMatsuri } from './matsuri.js';
 import { createBlocus } from './blocus.js';
+import { createMortiers } from './mortier.js';
 import { createCaddieStand } from './caddies-stand.js';
 import { createCrypt, inChurchDig, DIG, cutDig } from './crypt.js';
 import { createHoly } from './holy.js';
@@ -189,7 +190,14 @@ createCaddieStand({ parent: homeRoot, colliders: world.colliders, interactables:
 // the japanese street's summer festival: the taiko stage (free play for all) and the goldfish stall
 const matsuri = createMatsuri({ parent: world.china.group, origin: CHINA, colliders: world.colliders, interactables: world.interactables, rooms: world.china.interiors.rooms, ui, send: (fx) => net?.sendFx(fx) });
 // the lycée behind the back lane, and its blockade on school days
-const blocus = createBlocus({ parent: homeRoot, colliders: world.colliders, interactables: world.interactables, ui, renderer: world.renderer, shake: (s) => { shakeT = Math.max(shakeT, s); }, insideOf: (p) => world.neighbours.insideOf?.(p), walkers: world.walkers.home });
+const blocus = createBlocus({ parent: homeRoot, colliders: world.colliders, interactables: world.interactables, ui, renderer: world.renderer, shake: (s) => { shakeT = Math.max(shakeT, s); }, insideOf: (p) => world.neighbours.insideOf?.(p), walkers: world.walkers.home,
+  steal: () => { const n = Math.max(0, Math.min(tun.get('mortierVol'), ITEMS.mortier.max - (eco.s.items.mortier || 0))); if (n) { eco.give('mortier', n); audio.pickup(); } return n; } });
+// the mortars pinched from its bag: f fires one, the others see it through one fx
+const mortiers = createMortiers({ scene, sfx: blocus.sfx, hooks: {
+  ground: (x, y, z) => { if (solidAt(x, y, z)) return true; const t = T(), h = t.NX * S / 2; return y < .03 && !(Math.abs(x - t.ox) < h && Math.abs(z - t.oz) < h); },
+  carve: (x, y, z, r) => { applyOp({ k: 'carve', w: W(new THREE.Vector3(x, y, z)), c: [+x.toFixed(3), +y.toFixed(3), +z.toFixed(3)], r, tier: 3, space: 0, destroy: true }); T().flush(); },
+  burst: (x, y, z) => mortarBurst(x, y, z),
+} });
 const reliquary = createReliquary({ parent: homeRoot, at: new THREE.Vector3(CH.altar.x, 0, CH.altar.z - .95) });
 world.colliders.push({ min: new THREE.Vector3(CH.altar.x - .47, 0, CH.altar.z - 1.22), max: new THREE.Vector3(CH.altar.x + .47, .5, CH.altar.z - .68) });
 world.interactables.push({ id: 'dgun', pos: new THREE.Vector3(CH.altar.x, .7, CH.altar.z - .95), reach: 1.8 });
@@ -954,7 +962,7 @@ const KONBINI = {
   coffee:  { name: 'café glacé en canette', sub: '60 s à courir plus vite', price: 60, quip: 'bien frais, du distributeur.', use: () => { speedT = 60; } },
   melon:   { name: 'melon pan', sub: '+15 vie, et la bonne humeur', price: 15, quip: 'croustillant dessus, moelleux dedans.', use: () => { eco.s.health = Math.min(100, eco.s.health + 15); } },
 };
-const hotSlots = () => SLOTS.filter(id => (!ITEMS[id].moon || eco.s.moon || EXPLORE) && (!ITEMS[id].secret || eco.s.items[id] || eco.s.holy?.taken || EXPLORE));
+const hotSlots = () => SLOTS.filter(id => (!ITEMS[id].moon || eco.s.moon || EXPLORE) && (!ITEMS[id].secret || eco.s.items[id] || eco.s.holy?.taken || EXPLORE) && (!ITEMS[id].stolen || eco.s.items[id] || EXPLORE));
 let gravT = 0;
 // an aliexpresso unit: mostly fine, sometimes dead, sometimes it goes off as you touch it,
 // sometimes the wick is far too short, and sometimes it's way better than the real thing
@@ -988,6 +996,18 @@ function useItem() {
     return;
   }
   if (it === 'ladder') { placeLadder(); return; }
+  if (it === 'mortier') {
+    if (onPlanet()) { audio.deny(); ui.toast('pas de feu d\'artifice dans le vide', true); return; }
+    eco.use(it);
+    camera.getWorldPosition(eye); camera.getWorldDirection(dir);
+    const d = dir.clone(); d.y = Math.max(d.y, -.3); d.normalize();
+    const p = eye.clone().addScaledVector(d, .6).toArray().map(v => +v.toFixed(2)), dd = d.toArray().map(v => +v.toFixed(3));
+    blocus.sfx.ensure();
+    mortiers.fire(p, dd, true);
+    net?.sendFx({ k: 'mortier', w: here, p, d: dd });
+    audio.tick();
+    return;
+  }
   if (it === 'cell') {
     eco.use(it);
     if (ali === 'dud') { audio.deny(); ui.toast('pile morte · merci aliexpresso', true, 2400); return; }
@@ -1095,6 +1115,15 @@ function explode(kind, pos, power = 1) {
   } else if (d < 25 && (kind !== 'air' || inDigZone())) shakeT = Math.max(shakeT, 0.15);
   // the holy one shakes the whole village
   if (kind === 'holy' && d < 60) shakeT = Math.max(shakeT, 1.1 * (1 - d / 60) + .3);
+}
+
+// a stolen firework bursting: a shove if you're close, passers-by run off, moles dive
+function mortarBurst(x, y, z) {
+  const pos = new THREE.Vector3(x, y, z), chest = player.pos.clone().add(new THREE.Vector3(0, 1, 0)), d = chest.distanceTo(pos);
+  if (d < 3.5 && state === 'play' && !onPlanet()) { const k = 1 - d / 3.5; player.vel.addScaledVector(chest.sub(pos).normalize(), 5 * k); player.vel.y += 2 * k; }
+  if (d < 30) shakeT = Math.max(shakeT, .08 + .22 * (1 - d / 30));
+  for (const p of world.walkers[here]?.people || []) if (p.mode === 'walk' && p.body.pos.distanceTo(pos) < 8) { p.mode = 'flee'; p.t2 = 3; p.flee.copy(p.body.pos).sub(pos).setY(0).normalize(); }
+  for (const m of moles.list) if (m.g.position.distanceTo(pos) < 8) moles.burrow(m);
 }
 
 // ---------- moles ----------
@@ -3035,6 +3064,7 @@ if (MULTI) {
       else if (fx.k === 'disc' && fx.p && fx.d) launcher.remote(fx);
       else if (fx.k === 'dv') delivery.remote(id, fx, peer);
       else if (fx.k === 'holyfx') holy.remote(fx, here);
+      else if (fx.k === 'mortier' && fx.w === here && [...(fx.p || []), ...(fx.d || [])].length === 6 && [...fx.p, ...fx.d].every(Number.isFinite)) mortiers.fire(fx.p, fx.d, false);
       else if (fx.k === 'vc' || fx.k === 'talkie') voice.onFx(id, fx);
       else if (fx.k === 'scream') remoteScream(id, peer, fx);
       else mg.onFx(id, peer, fx);
@@ -3456,6 +3486,7 @@ function loop(ts) {
   reliquary.update(dt); organ.update(dt, camera.position, camera, organHearing(camera.position, { here, crypt: here === 'home' && crypt.inside(camera.position), cave: inCave }, organEar));
   matsuri.update(dt, camera, { here, view: viewNow(), can: state === 'play' && here === 'china', night: world.env.night });
   blocus.update(dt, camera, { here, view: viewNow(), can: state === 'play' && here === 'home', player, now: Date.now() / 1000, mode: tun.get('blocus'), hour: hourNow, day: Math.floor(clockNow() / DAY), night: world.env.night });
+  mortiers.update(dt, camera, world.renderer);
   if (here === 'home') bats.update(dt, t, world.env.night);
   shovel.root.visible = holding && !drilling && !mg.armed && !portals.held && !launcher.held && !looks.handsOut;
   mg.updateBlaster(dt, holding && mg.armed && state === 'play', Math.hypot(player.vel.x, player.vel.z) > 0.5);
@@ -3629,7 +3660,7 @@ window.__dig = {
   test: false,
   skipSwoop() { swoop = 1; this.test = true; },
   start, toSurface, travel, win, save, useItem, applyUpgrades, openPanel, closePanel, enterVan, exitVan, useLift, explode,
-  quest, takeKey, reveal, startReveal, cave, crypt, portals, shootPortal, trapGuide, launcher, bats, organ, matsuri, blocus, portalCells, gameroom: house.room, updateAim, get pad() { return pad; }, get touch() { return touch; }, get down() { return down; }, screenView: (dt) => race?.screen && screenView(dt),
+  quest, takeKey, reveal, startReveal, cave, crypt, portals, shootPortal, trapGuide, launcher, bats, organ, matsuri, blocus, mortiers, portalCells, gameroom: house.room, updateAim, get pad() { return pad; }, get touch() { return touch; }, get down() { return down; }, screenView: (dt) => race?.screen && screenView(dt),
   interact: (id) => interact(id === 'van' ? VAN : id === 'lift' ? LIFT : world.interactables.find(i => i.id === id) || (onPlanet() && findNear()?.id === id ? findNear() : null)),
   swing: doDig,
   // the holy bomba (holy.js): the module, and two shortcuts for tests
