@@ -869,3 +869,7 @@ body.touch #voice { bottom: auto; top: 200px; left: 14px; }
 #net .vc.mute { background: var(--danger); }
 @media (min-width: 901px) and (min-height: 521px) { #settings { max-height: 92vh; overflow: hidden auto; } }
 #set-voices .set-row { min-height: 36px; }
+/* the walkie-talkie's touch button (only together, only walking about) */
+.tc-talk { display: none; }
+body.vc #touch[data-ctx="play"] .tc-talk { display: inline-block; }
+.tc-talk.on { background: var(--danger); color: #fff; }

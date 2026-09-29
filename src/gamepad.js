@@ -58,6 +58,7 @@ export function createGamepad({ context, actions, virtual = () => null }) {
       if (lx < -.3) want.add('KeyA'); if (lx > .3) want.add('KeyD');
       if (btn(A)) want.add('Space');
       if (btn(LS)) want.add('ShiftLeft');
+      if (btn(RS)) want.add('KeyN');   // held: the walkie-talkie
       const k = 1150 * dt;
       if (rx || ry) actions.look(Math.sign(rx) * rx * rx * k * 1.2, Math.sign(ry) * ry * ry * k);
       if (hit(RT)) actions.dig(true); else if (!btn(RT) && prev[RT]) actions.dig(false);
@@ -116,7 +117,7 @@ export function createGamepad({ context, actions, virtual = () => null }) {
 }
 
 // the prompts speak the controller's language when it is the one in hand
-const GLYPHS = { e: ['X', 'x'], r: ['B', 'b'], x: ['Y', 'y'], f: ['LT', 'sh'], m: ['view', 'sh'], o: ['↑', 'dp'], t: ['↓', 'dp'], p: ['start', 'sh'], 'échap': ['start', 'sh'], espace: ['A', 'a'], clic: ['RT', 'sh'], 'clic d.': ['LT', 'sh'] };
+const GLYPHS = { e: ['X', 'x'], r: ['B', 'b'], x: ['Y', 'y'], f: ['LT', 'sh'], m: ['view', 'sh'], o: ['↑', 'dp'], t: ['↓', 'dp'], p: ['start', 'sh'], 'échap': ['start', 'sh'], espace: ['A', 'a'], n: ['R3', 'sh'], clic: ['RT', 'sh'], 'clic d.': ['LT', 'sh'] };
 export function padGlyphs(html) {
   return html.replace(/<b( class="[^"]*")?>([^<]+)<\/b>/g, (m, cls, k) => {
     const g = GLYPHS[k.trim().toLowerCase()];

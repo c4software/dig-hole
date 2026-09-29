@@ -5,6 +5,7 @@
 // jumps and falls, sitting, the tool swing, the hands of the empty-handed, and the emotes.
 import * as THREE from 'three';
 import { resolve } from './outfits.js';
+import { talkieModel } from './talkie.js';
 
 const TAU = Math.PI * 2;
 const clamp01 = (v) => v < 0 ? 0 : v > 1 ? 1 : v;
@@ -30,6 +31,8 @@ const HC = new THREE.Vector3(0, 1.705, .008);       // the middle of the head
 const SIDES = [[1, 'L'], [-1, 'R']];
 // where the eye is (set once a frame by the game): far bodies are drawn with fewer triangles
 export const EYE = new THREE.Vector3(0, 1e6, 0);
+// the arm raising a walkie-talkie to the mouth, and the radio in the fist (hand bone space)
+export const TALKIE_POSE = { sh: [-1, -.6, 0], elb: [-2, 0, 0], at: [0, .02, .02], rot: [0, 0, Math.PI] };
 
 // ---------- geometry helpers ----------
 const _c = new THREE.Color(), _v = new THREE.Vector3();
@@ -685,6 +688,17 @@ export function createRig(outfit, { detail = 'hi', lod = false, shadow = true, p
     }
     rig.tool = want;
   }
+  // the walkie-talkie in the left hand (talkie.js), made the first time it's used
+  let radio = null;
+  function talkie(on, color) {
+    st.talkie = !!on;
+    if (on && !radio) {
+      radio = talkieModel(color);
+      radio.g.position.set(...TALKIE_POSE.at); radio.g.rotation.set(...TALKIE_POSE.rot);
+      bones[BI.handL].add(radio.g);
+    }
+    if (radio) { radio.led(!!on); radio.g.visible = !!on; }
+  }
   // no tool in the hand while dancing, clapping, sitting…
   let hidden = false;
   const showTool = () => { const h = !!rig.emote; if (h === hidden) return; hidden = h; for (const k in held) held[k].visible = k === rig.tool && !h; };
@@ -692,7 +706,7 @@ export function createRig(outfit, { detail = 'hi', lod = false, shadow = true, p
   // ---- animation ----
   const T = makePose(), E = makePose(), cur = makePose();
   let t = Math.random() * 10, ph = 0, blinkT = 2 + Math.random() * 3, blink = 0, emT = 0, emW = 0, digP = 0, lastEm = null;
-  const st = { speed: 0, vy: 0, ground: true, sit: false, hands: -1, dig: false };
+  const st = { speed: 0, vy: 0, ground: true, sit: false, hands: -1, dig: false, talkie: false };
 
   function base(P) {
     P.clear();
@@ -749,6 +763,8 @@ export function createRig(outfit, { detail = 'hi', lod = false, shadow = true, p
       const k = l - 1, m = (a, b) => a + (b - a) * k;
       P.r('sh' + n, m(-1.25, -2.85), m(0, -s * 1.5), m(s * .12, s * .28)); P.r('elb' + n, m(-.35, -.2), m(-s * 1.4, 0), 0); P.curl(n, m(.05, .02));
     }
+    // on the walkie-talkie: the left hand holds it at the mouth (the right keeps its tool)
+    if (st.talkie) { P.r('shL', TALKIE_POSE.sh[0], TALKIE_POSE.sh[1], TALKIE_POSE.sh[2]); P.r('elbL', TALKIE_POSE.elb[0], TALKIE_POSE.elb[1], TALKIE_POSE.elb[2]); P.curl('L', 1.2); P.add('head', .06, .1, 0); }
     if (rig.tool) {
       // carrying: the right arm swings less, the elbow a little bent
       P.a[BI.shR * 3] *= .45; P.add('elbR', -.35, 0, 0); P.curl('R', 1.3);
@@ -793,6 +809,7 @@ export function createRig(outfit, { detail = 'hi', lod = false, shadow = true, p
     for (let i = 0; i < NB; i++) bones[i].rotation.set(a[i * 3], a[i * 3 + 1], a[i * 3 + 2]);
     bones[0].position.set(bind[0].x + cur.hx, bind[0].y + cur.hy, bind[0].z);
     showTool();
+    if (radio) radio.g.visible = st.talkie;
     bones[BI.jaw].scale.set(1 + (cur.jaw - 1) * .12, Math.max(.3, cur.jaw), 1);
     bones[BI.eyes].scale.y = Math.max(.06, cur.eyes);
     bones[BI.brows].position.y = bind[BI.brows].y + cur.brow;
@@ -806,7 +823,7 @@ export function createRig(outfit, { detail = 'hi', lod = false, shadow = true, p
   const rig = {
     root, mesh, bones, skeleton, st, tool: null, emote: null,
     get look() { return look; },
-    dress, hold, update,
+    dress, hold, update, talkie,
     play(id) { if (!EMOTES[id]) return; rig.emote = id; lastEm = id; emT = 0; },
     stop() { rig.emote = null; },
     get emoting() { return !!rig.emote; },

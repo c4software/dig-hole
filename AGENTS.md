@@ -64,5 +64,8 @@ retiré proprement), `events-play.js` (chasse, stand).
 - Le dallage de la nef et la pelouse ont des trous au-dessus des zones creusables (`cutDig`, `lawnShape.holes`) :
   un nouveau sol posé sur du terrain creusable doit faire pareil.
 - La carte d'indice `#quest` est partagée (clé, trappe, boussole) : la rendre dans l'état où on l'a trouvée.
+- `n` (maintenu) est le talkie de la voix de proximité (`voice.js`, `talkie.js`, R3 à la manette) : un jeu qui
+  veut `n` l'attrape en capture avec `stopImmediatePropagation` (comme le taiko de `matsuri.js`).
+  Un `fx` avec `only: id` ne va qu'à ce joueur (signalisation WebRTC de la voix).
 - `deploy.sh` redémarre le serveur de production : prévenir quand des joueurs sont connectés.
 - Ne jamais commiter `data/`, `dist*/`, `core`, `node_modules/`.
