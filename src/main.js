@@ -35,6 +35,8 @@ import { createOrgan, createDiscLauncher, createBats, createReliquary, SONGS } f
 import { createMatsuri } from './matsuri.js';
 import { createBlocus } from './blocus.js';
 import { createMortiers } from './mortier.js';
+import { createFlashball } from './flashball.js';
+import { createFreeze, hitForMe, fire as fbFire, refill as fbRefill, nextSlot, createWheelSteps, toolCycle } from './flashball-rules.js';
 import { createCaddieStand } from './caddies-stand.js';
 import { createCrypt, inChurchDig, DIG, cutDig } from './crypt.js';
 import { createHoly } from './holy.js';
@@ -191,6 +193,7 @@ createCaddieStand({ parent: homeRoot, colliders: world.colliders, interactables:
 const matsuri = createMatsuri({ parent: world.china.group, origin: CHINA, colliders: world.colliders, interactables: world.interactables, rooms: world.china.interiors.rooms, ui, send: (fx) => net?.sendFx(fx) });
 // the lycée behind the back lane, and its blockade on school days
 const blocus = createBlocus({ parent: homeRoot, colliders: world.colliders, interactables: world.interactables, ui, renderer: world.renderer, shake: (s) => { shakeT = Math.max(shakeT, s); }, insideOf: (p) => world.neighbours.insideOf?.(p), walkers: world.walkers.home,
+  takeFlashball: () => { const first = !eco.s.flashball, n = fbRefill(eco.s, tun.get('fbAmmo')); if (first) eco.s.tool = 'flashball'; if (n) audio.pickup(); return n; },
   steal: () => { const n = Math.max(0, Math.min(tun.get('mortierVol'), ITEMS.mortier.max - (eco.s.items.mortier || 0))); if (n) { eco.give('mortier', n); audio.pickup(); } return n; } });
 // the mortars pinched from its bag: f fires one, the others see it through one fx
 const mortiers = createMortiers({ scene, sfx: blocus.sfx, hooks: {
@@ -270,7 +273,7 @@ function applyUpgrades() {
   player.stats.kite = eco.s.lv.kite > 0;
   shovel.setLevel(eco.s.lv.shovel);
   drill.setLevel(eco.s.lv.drill);
-  if ((eco.s.tool === 'drill' && !eco.s.lv.drill) || (eco.s.tool === 'portal' && !eco.s.portal) || (eco.s.tool === 'disc' && !eco.s.discs)) eco.s.tool = 'shovel';
+  if ((eco.s.tool === 'drill' && !eco.s.lv.drill) || (eco.s.tool === 'portal' && !eco.s.portal) || (eco.s.tool === 'disc' && !eco.s.discs) || (eco.s.tool === 'flashball' && !eco.s.flashball)) eco.s.tool = 'shovel';
   elevator.setOwned(eco.s.lv.lift > 0);
   eco.s.battery = Math.min(eco.s.battery, eco.batteryMax);
   ui.setBag(eco.s.sackN, eco.cap);
@@ -517,7 +520,7 @@ function start() {
   else if (!eco.s.upKey) setTimeout(() => hintOnce('key', 'une clef est enterrée dans le potager : suis le thermomètre en bas à droite · clic gauche pour creuser', 7000), 1400);
   else if (eco.s.best < 0.5) setTimeout(() => hintOnce('dig', 'clic gauche pour creuser · e pour interagir · la maison est ouverte', 6000), 1400);
   // the portal gun is put away between two visits: say where it is
-  if (eco.s.portal && !gunOut()) setTimeout(() => hintOnce('portaltool', 'molette ou x : changer d\'outil · le pistolet à portails est avec la pelle', 6000), 9000);
+  if (eco.s.portal && !gunOut()) setTimeout(() => hintOnce('portaltool', 'x : changer d\'outil · le pistolet à portails est avec la pelle', 6000), 9000);
 }
 document.getElementById('play').addEventListener('click', start);
 resetBtn.addEventListener('click', (e) => {
@@ -554,6 +557,7 @@ addEventListener('mousedown', (e) => {
   if (looks.mouse(e.button)) return;
   if (gunOut() && !mg.armed && (e.button === 0 || e.button === 2)) { shootPortal(e.button === 0 ? 0 : 1); return; }
   if (eco.s.tool === 'disc' && eco.s.discs && !mg.armed && e.button === 0) { fireDisc(); return; }
+  if (eco.s.tool === 'flashball' && eco.s.flashball && !mg.armed && e.button === 0) { fireFlashball(); return; }
   if (e.button === 0) digging = true;
   if (e.button === 2) { throwing = true; throwT = THROW_EVERY; useItem(); }
 });
@@ -563,7 +567,13 @@ addEventListener('mousemove', (e) => { if (state === 'kart' && race?.mod.look &&
 const THROW_EVERY = 0.35;
 let throwing = false, throwT = 0;
 const EXPLOSIVES = new Set(['dyn', 'sup', 'fus', 'met', 'holy']);
-addEventListener('wheel', () => { if (state === 'play' && (eco.s.lv.drill || eco.s.portal || eco.s.discs) && (!onPlanet() || eco.s.portal || eco.s.discs)) switchTool(); }, { passive: true });
+// the wheel goes through the hotbar (x changes the tool)
+const wheelStep = createWheelSteps();
+addEventListener('wheel', (e) => {
+  if (state !== 'play' || looks.wheelOpen) return;
+  const d = wheelStep(e.deltaMode === 1 ? e.deltaY * 40 : e.deltaY);
+  if (d) { eco.s.slot = nextSlot(hotSlots(), eco.s.slot, d); audio.tick(); }
+}, { passive: true });
 addEventListener('keydown', (e) => {
   if (e.repeat || e.target.closest?.('input, textarea')) return;
   if (state === 'drive') {
@@ -758,11 +768,11 @@ function activeTool() {
   if (eco.s.tool === 'drill' && eco.s.lv.drill > 0) return { kind: 'drill', ...eco.cur('drill') };
   return { kind: 'shovel', ...eco.cur('shovel'), cost: 1 };
 }
-// the tools you own, in turn: shovel, drill, portal gun
+// the tools you own, in turn (x): shovel, drill, portal gun, disc launcher, flashball, empty hands
 function switchTool() {
-  const tools = ['shovel', ...(eco.s.lv.drill ? ['drill'] : []), ...(eco.s.portal ? ['portal'] : []), ...(eco.s.discs ? ['disc'] : []), 'hands'];
+  const tools = toolCycle(eco.s);
   eco.s.tool = tools[(tools.indexOf(eco.s.tool) + 1) % tools.length];
-  ui.toast(eco.s.tool === 'portal' ? 'pistolet à portails · clic gauche : bleu · clic droit : orange' : eco.s.tool === 'disc' ? 'lance-disques chasse-vampire · clic pour tirer' : eco.s.tool === 'hands' ? 'mains vides · maintiens clic gauche / droit : lève la main gauche / droite' : activeTool().name);
+  ui.toast(eco.s.tool === 'portal' ? 'pistolet à portails · clic gauche : bleu · clic droit : orange' : eco.s.tool === 'disc' ? 'lance-disques chasse-vampire · clic pour tirer' : eco.s.tool === 'flashball' ? `flashball · ${eco.s.fbAmmo || 0} balle${eco.s.fbAmmo > 1 ? 's' : ''} en mousse · clic pour tirer · ça fige les autres joueurs` : eco.s.tool === 'hands' ? 'mains vides · maintiens clic gauche / droit : lève la main gauche / droite' : activeTool().name);
   audio.tick();
 }
 let drillT = 0, drillBite = 0;
@@ -1115,6 +1125,66 @@ function explode(kind, pos, power = 1) {
   } else if (d < 25 && (kind !== 'air' || inDigZone())) shakeT = Math.max(shakeT, 0.15);
   // the holy one shakes the whole village
   if (kind === 'holy' && d < 60) shakeT = Math.max(shakeT, 1.1 * (1 - d / 60) + .3);
+}
+
+// the flashball pinched from the police: foam balls that freeze whoever they hit (for a moment)
+const fb = createFlashball({ scene, camera, sfx: blocus.sfx });
+const freeze = createFreeze();
+let frozenWas = false, iceVeil = null;
+function fireFlashball() {
+  if (!fbFire(eco.s)) { audio.deny(); ui.toast('plus de balles · la caisse de la police, derrière leur cordon, en a d\'autres', true, 2400); return; }
+  camera.getWorldPosition(eye); camera.getWorldDirection(dir);
+  blocus.sfx.ensure();
+  const shot = fb.fire(eye, dir);
+  if (!shot) { eco.s.fbAmmo++; return; }
+  net?.sendFx({ k: 'fb', w: here, ...shot });
+  if (!eco.s.fbAmmo) ui.toast('dernière balle en mousse', false, 1400);
+}
+// a ball of mine touching someone: another player (frozen by their own client), passers-by, moles…
+function fbHit(b) {
+  const p = b.pos;
+  if (net) for (const [id, q] of net.peers) {
+    if (q.w !== here) continue;
+    const g = q.avatar.g.position;
+    if (p.y > g.y + .05 && p.y < g.y + 1.9 && (p.x - g.x) ** 2 + (p.z - g.z) ** 2 < .45 * .45) {
+      net.sendFx({ k: 'fbhit', to: id });
+      ui.toast(`touché ! ${q.name ?? 'quelqu\'un'} est figé`, false, 1800);
+      return true;
+    }
+  }
+  if (here === 'home' && blocus.knock(p.x, p.y, p.z, b.vel.x, b.vel.z)) return true;
+  const W = world.walkers[here], who = W?.hitTest(p);
+  if (who) { W.knock(who, b.vel); return true; }
+  for (const m of moles.list) if (m.state !== 'dead' && m.state !== 'gone' && m.g.position.distanceTo(p) < .7) { moles.burrow(m); return true; }
+  for (const a of animals[here].list) if (animals[here].touches(a, p)) { animals[here].knock(a, b.vel); audio.squeak(); return true; }
+  return false;
+}
+// the flashball's messages: a shot to fly, a hit (for me?), someone frozen (the ice on them)
+function flashFx(id, peer, fx) {
+  if (fx.k === 'fb') { if (fx.w === here) fb.remote(fx); return true; }
+  if (fx.k === 'fbhit') {
+    // only in the open world: not in a game, not in a menu
+    if (!hitForMe(fx, myId()) || state !== 'play') return true;
+    const dur = tun.get('fbFreeze');
+    if (!freeze.hit(performance.now() / 1000, dur)) return true;
+    player.stats.frozen = true;
+    ui.toast(`figé ! une balle en mousse de ${peer?.name ?? 'quelqu\'un'} · ${dur} s sans bouger`, true, 2400);
+    audio.clink?.(); shakeT = Math.max(shakeT, .15);
+    net?.sendFx({ k: 'fbfroze', t: dur });
+    return true;
+  }
+  if (fx.k === 'fbfroze') { const q = net?.peers.get(id); if (q && Number.isFinite(fx.t)) fb.ice(q.avatar.g, Math.min(10, Math.max(0, fx.t))); return true; }
+  return false;
+}
+function updateFreeze(dt) {
+  const now = performance.now() / 1000, on = freeze.frozen(now) && state === 'play';
+  player.stats.frozen = on;
+  if (on !== frozenWas) {
+    frozenWas = on;
+    if (!iceVeil) { iceVeil = document.createElement('div'); Object.assign(iceVeil.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: '5', boxShadow: 'inset 0 0 160px 50px rgba(190,230,255,.85)', background: 'rgba(200,235,255,.18)', display: 'none' }); document.body.appendChild(iceVeil); }
+    iceVeil.style.display = on ? 'block' : 'none';
+    if (!on) ui.toast('dégelé · tu peux bouger', false, 1400);
+  }
 }
 
 // a stolen firework bursting: a shove if you're close, passers-by run off, moles dive
@@ -2494,11 +2564,11 @@ function takeGun() {
   eco.s.portal = true; eco.s.tool = 'portal';
   // gone for everyone, back in two minutes for the next one
   cave.takeGun(); net?.sendFx({ k: 'pgun', left: GUN_REGEN });
-  audio.win(); ui.layer('le pistolet à portails', 'clic gauche : portail bleu · clic droit : orange · molette ou x : changer d\'outil'); save();
+  audio.win(); ui.layer('le pistolet à portails', 'clic gauche : portail bleu · clic droit : orange · x : changer d\'outil'); save();
 }
 function takeLauncher() {
   if (!reliquary.ready) { audio.deny(); ui.toast('le reliquaire est vide · il en revient un bientôt', true); return; }
-  if (eco.s.discs) { ui.toast('tu as déjà le tien · molette ou x pour le sortir'); return; }
+  if (eco.s.discs) { ui.toast('tu as déjà le tien · x pour le sortir'); return; }
   eco.s.discs = true; eco.s.tool = 'disc';
   reliquary.take(DGUN_REGEN); net?.sendFx({ k: 'dgun', left: DGUN_REGEN });
   // the church answers: the toccata, the vampire hunter's anthem, for everyone
@@ -3050,6 +3120,7 @@ if (MULTI) {
     },
     onOp(op) { applyOp(op, false); },
     onFx(id, peer, fx) {
+      if (flashFx(id, peer, fx)) return;
       if (fx.k === 'lobby') onLobby(id, peer, fx);
       else if (fx.k === 'mgp') { if (mg.active === fx.g) mg.onRival(id, fx); }
       // a game's own message rides whole in f: its keys can't clash with the routing
@@ -3483,14 +3554,17 @@ function loop(ts) {
   holy.update(dt, { here, pos: onPlanet() ? moonP.pos : player.pos, live: bombs.live });
   launcher.held = eco.s.tool === 'disc' && eco.s.discs && holding && !mg.armed;
   launcher.update(dt, Math.hypot(player.vel.x, player.vel.z) > 0.5, solidAt, discHit);
+  fb.held = eco.s.tool === 'flashball' && eco.s.flashball && holding && !mg.armed;
+  fb.update(dt, Math.hypot(player.vel.x, player.vel.z) > 0.5, solidAt, fbHit);
+  updateFreeze(dt);
   reliquary.update(dt); organ.update(dt, camera.position, camera, organHearing(camera.position, { here, crypt: here === 'home' && crypt.inside(camera.position), cave: inCave }, organEar));
   matsuri.update(dt, camera, { here, view: viewNow(), can: state === 'play' && here === 'china', night: world.env.night });
   blocus.update(dt, camera, { here, view: viewNow(), can: state === 'play' && here === 'home', player, now: Date.now() / 1000, mode: tun.get('blocus'), hour: hourNow, day: Math.floor(clockNow() / DAY), night: world.env.night });
   mortiers.update(dt, camera, world.renderer);
   if (here === 'home') bats.update(dt, t, world.env.night);
-  shovel.root.visible = holding && !drilling && !mg.armed && !portals.held && !launcher.held && !looks.handsOut;
+  shovel.root.visible = holding && !drilling && !mg.armed && !portals.held && !launcher.held && !fb.held && !looks.handsOut;
   mg.updateBlaster(dt, holding && mg.armed && state === 'play', Math.hypot(player.vel.x, player.vel.z) > 0.5);
-  drill.root.visible = holding && drilling && !portals.held && !launcher.held;
+  drill.root.visible = holding && drilling && !portals.held && !launcher.held && !fb.held;
   drillBite = Math.max(0, drillBite - dt);
   const biting = drillBite > 0;
   if (!biting) drillHeat = Math.max(0, drillHeat - dt * (overheated ? .28 : .4));
@@ -3660,7 +3734,7 @@ window.__dig = {
   test: false,
   skipSwoop() { swoop = 1; this.test = true; },
   start, toSurface, travel, win, save, useItem, applyUpgrades, openPanel, closePanel, enterVan, exitVan, useLift, explode,
-  quest, takeKey, reveal, startReveal, cave, crypt, portals, shootPortal, trapGuide, launcher, bats, organ, matsuri, blocus, mortiers, portalCells, gameroom: house.room, updateAim, get pad() { return pad; }, get touch() { return touch; }, get down() { return down; }, screenView: (dt) => race?.screen && screenView(dt),
+  quest, takeKey, reveal, startReveal, cave, crypt, portals, shootPortal, trapGuide, launcher, bats, organ, matsuri, blocus, mortiers, fb, freeze, flashFx, fireFlashball, switchTool, portalCells, gameroom: house.room, updateAim, get pad() { return pad; }, get touch() { return touch; }, get down() { return down; }, screenView: (dt) => race?.screen && screenView(dt),
   interact: (id) => interact(id === 'van' ? VAN : id === 'lift' ? LIFT : world.interactables.find(i => i.id === id) || (onPlanet() && findNear()?.id === id ? findNear() : null)),
   swing: doDig,
   // the holy bomba (holy.js): the module, and two shortcuts for tests

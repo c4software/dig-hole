@@ -331,7 +331,7 @@ export function createLooks(game) {
       r.root.rotation.y = player.yaw + Math.PI + spin;
       r.st.speed = Math.hypot(player.vel.x, player.vel.z); r.st.ground = player.onGround; r.st.vy = player.vel.y;
       r.st.hands = out ? [hand.L, hand.R] : -1; r.st.dig = !out && game.digging();
-      r.hold(kind === 'drill' && eco.s.lv.drill ? 'drill' : kind === 'portal' || kind === 'disc' ? 'gun' : kind ? 'shovel' : null);
+      r.hold(kind === 'drill' && eco.s.lv.drill ? 'drill' : kind === 'portal' || kind === 'disc' ? 'gun' : kind === 'flashball' ? 'flashball' : kind ? 'shovel' : null);
       if (r === meMirror && me.emote && meMirror.emote !== me.emote) meMirror.play(me.emote);
       if (r === meMirror && !me.emote && meMirror.emote) meMirror.stop();
       r.update(dt);

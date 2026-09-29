@@ -45,6 +45,8 @@ export const DEFS = [
   X('dangers', 'moleRate', 'taupes qui surgissent', 6, 0, .1),
   X('dangers', 'moleDamage', 'morsure des taupes', 5, 0, .1),
   { g: 'dangers', k: 'blocus', label: 'blocus du lycée', def: -1, options: [[-1, 'auto (jours de classe, en journée)'], [1, 'en cours'], [0, 'levé']] },
+  { g: 'dangers', k: 'fbAmmo', label: 'flashball piqué : balles en mousse', def: 12, min: 1, max: 60, step: 1, unit: '' },
+  { g: 'dangers', k: 'fbFreeze', label: 'flashball : joueur figé (s)', def: 3, min: 0, max: 10, step: .5, unit: 's' },
   { g: 'dangers', k: 'mortierVol', label: 'mortiers piqués au blocus d\'un coup', def: 3, min: 1, max: 9, step: 1, unit: '' },
   X('boutique', 'shopPrice', 'prix des boutiques (outils, konbini, vêtements)', 5, 0),
   X('boutique', 'parcelPrice', 'prix des colis', 5),

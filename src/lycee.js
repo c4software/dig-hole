@@ -8,7 +8,7 @@
 import * as THREE from 'three';
 import { canvasTex } from './lib/tex.js';
 import { mergeStatic } from './merge.js';
-import { FIRES, TUBES, BARRICADE, BAG } from './blocus-sim.js';
+import { FIRES, TUBES, BARRICADE, BAG, CRATE } from './blocus-sim.js';
 
 export const LYCEE = { x: 38, z: 52 };            // the frame's origin in the world (the lane's edge)
 export const NAME = 'LYCÉE JEAN-CREUSE';
@@ -227,6 +227,17 @@ export function createLycee({ parent, colliders }) {
   for (const s of [-1, 1]) { const hdl = new THREE.Mesh(new THREE.TorusGeometry(.12, .02, 5, 10, Math.PI), mat(0x1a1a1e)); hdl.position.set(s * .12, .44, 0); bagG.add(hdl); }
   for (let k = 0; k < 6; k++) { const c = cyl(.045, .38, tubeMats[k % tubeMats.length], -.22 + k * .09, .5, (k % 2 - .5) * .1, bagG, 8); c.rotation.set((k % 2 - .5) * .5, 0, (k - 2.5) * .12); }
   solid(BAG[0] - .45, 0, BAG[1] - .35, BAG[0] + .45, .5, BAG[1] + .35).blocus = true;
+  // behind the police line: their kit box, a spare launcher leaning on it
+  const kit = new THREE.Group(); kit.position.set(CRATE[0], 0, CRATE[1]); kit.rotation.y = -.2; props.add(kit);
+  box(.9, .5, .55, mat(0x1c2230), 0, .25, 0, kit); box(.94, .06, .59, mat(0x2a3246), 0, .52, 0, kit);
+  const kitTag = new THREE.Mesh(new THREE.PlaneGeometry(.5, .12), new THREE.MeshLambertMaterial({ map: lettering('POLICE', { w: 256, h: 64, size: 44, color: '#f4f4f2', bg: '#1c2230', font: 'Arial, sans-serif', spacing: 4 }) }));
+  kitTag.position.set(0, .3, .28); kit.add(kitTag);
+  const spare = new THREE.Group(); spare.position.set(.3, .55, .1); spare.rotation.set(-.2, .4, -1.1); kit.add(spare);
+  const lb = mat(0x1a1a1e);
+  const barrelS = new THREE.Mesh(new THREE.CylinderGeometry(.042, .042, .34, 12), lb); barrelS.position.y = .2; spare.add(barrelS);
+  const tipS = new THREE.Mesh(new THREE.CylinderGeometry(.048, .048, .04, 12), mat(0xf2c21e)); tipS.position.y = .37; spare.add(tipS);
+  const bodyS = new THREE.Mesh(new THREE.BoxGeometry(.07, .22, .09), lb); spare.add(bodyS);
+  solid(CRATE[0] - .5, 0, CRATE[1] - .35, CRATE[0] + .5, .55, CRATE[1] + .35).blocus = true;
   const propCols = colliders.filter(c => c.blocus);
   propCols.push(barricadeCol);
 
@@ -240,6 +251,7 @@ export function createLycee({ parent, colliders }) {
     root, props, fires, tubes, sheet,
     gate: { x: LYCEE.x, z: LYCEE.z + GATE_Z },
     bag: { x: LYCEE.x + BAG[0], z: LYCEE.z + BAG[1] },
+    crate: { x: LYCEE.x + CRATE[0], z: LYCEE.z + CRATE[1] },
     // the blockade on (props out, gate shut and blocked) or off (gate open, the yard's free)
     setBlocked(on) {
       props.visible = on; sheet.visible = on;

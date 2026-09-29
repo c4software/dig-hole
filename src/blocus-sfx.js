@@ -184,9 +184,9 @@ export function createBlocusSfx() {
       if (!mine && cheerT <= 0 && far(x, y, z) < 90) { cheerT = 3; cheer(ctx.currentTime + late + .5, .9); }
     },
     // the launcher's « pomp », then the « poc » where the ball lands
-    shot(x, z) {
-      if (!ctx || !on) return;
-      const p = at(x, 1.3, z, 'poc'); if (!p) return;
+    shot(x, z, y = 1.3, mine = false) {
+      if (!ctx || (!on && !mine)) return;
+      const p = at(x, y, z, 'poc'); if (!p) return;
       S.blip(190, .12, { to: 70, vol: .9, out: p.out }); S.hiss(.07, 1300, { vol: .5, out: p.out });
     },
     poc(x, y, z, close = false) {

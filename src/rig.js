@@ -549,7 +549,12 @@ function tools() {
   const bit = new THREE.ConeGeometry(.018, .18, 8); bit.rotateX(Math.PI / 2); bit.translate(0, .02, .26);
   const gun = new THREE.BoxGeometry(.07, .1, .3); gun.translate(0, .03, .08);
   const tank = new THREE.CylinderGeometry(.03, .03, .16, 10); tank.rotateX(Math.PI / 2); tank.translate(0, .09, .08);
-  toolKit = { shovel: [[shaft, wood], [blade, steel], [grip, dark]], drill: [[body, orange], [handle, dark], [bit, steel]], gun: [[gun, dark], [tank, glow]] };
+  // the flashball: a fat black barrel with a yellow muzzle, a stock
+  const fbBarrel = new THREE.CylinderGeometry(.04, .04, .34, 10); fbBarrel.rotateX(Math.PI / 2); fbBarrel.translate(0, .04, .2);
+  const fbTip = new THREE.CylinderGeometry(.046, .046, .04, 10); fbTip.rotateX(Math.PI / 2); fbTip.translate(0, .04, .38);
+  const fbBody = new THREE.BoxGeometry(.07, .08, .3); fbBody.translate(0, .02, 0);
+  const yellow = new THREE.MeshLambertMaterial({ color: 0xf2c21e });
+  toolKit = { shovel: [[shaft, wood], [blade, steel], [grip, dark]], drill: [[body, orange], [handle, dark], [bit, steel]], gun: [[gun, dark], [tank, glow]], flashball: [[fbBarrel, dark], [fbTip, yellow], [fbBody, dark]] };
   return toolKit;
 }
 
@@ -677,7 +682,7 @@ export function createRig(outfit, { detail = 'hi', lod = false, shadow = true, p
   dress(outfit);
 
   function hold(kind) {
-    const want = kind === 'shovel' || kind === 'drill' || kind === 'gun' ? kind : kind === 'portal' || kind === 'disc' ? 'gun' : null;
+    const want = kind === 'shovel' || kind === 'drill' || kind === 'gun' || kind === 'flashball' ? kind : kind === 'portal' || kind === 'disc' ? 'gun' : null;
     for (const k in held) held[k].visible = k === want && !rig.emote;
     if (want && !held[want]) {
       const g = new THREE.Group();

@@ -99,6 +99,8 @@ export function createPlayer(camera, getTerrain, colliders) {
     if (keys.has('KeyS') || keys.has('ArrowDown')) wish.z += 1;
     if (keys.has('KeyA') || keys.has('ArrowLeft')) wish.x -= 1;
     if (keys.has('KeyD') || keys.has('ArrowRight')) wish.x += 1;
+    // frozen by a foam ball (flashball-rules.js): the feet don't answer
+    if (stats.frozen) wish.set(0, 0, 0);
     if (wish.lengthSq()) wish.normalize().applyAxisAngle(THREE.Object3D.DEFAULT_UP, yaw);
     const speed = (keys.has('ShiftLeft') || keys.has('ShiftRight') ? 6.2 : 4.3) * (stats.inWater ? 0.55 : 1) * (stats.speed || 1) * tun.get('walk');
     const G = G0 * tun.get('gravity');
@@ -106,7 +108,7 @@ export function createPlayer(camera, getTerrain, colliders) {
     vel.x += (wish.x * speed - vel.x) * Math.min(1, accel * dt);
     vel.z += (wish.z * speed - vel.z) * Math.min(1, accel * dt);
 
-    const space = keys.has('Space');
+    const space = keys.has('Space') && !stats.frozen;
     if (stats.onLadder) {
       // on a ladder: forward or space climbs, back climbs down, nothing holds you there
       const up = space || keys.has('KeyW') || keys.has('ArrowUp'), down = keys.has('KeyS') || keys.has('ArrowDown');

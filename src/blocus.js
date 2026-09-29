@@ -24,7 +24,7 @@ const BANNERS = ['lycée en lutte', 'on veut des profs !', 'non à la réforme']
 const HITS = ['poc ! une balle en mousse · rien de cassé', 'poc ! en plein dans le sac à dos', 'aïe… non, même pas mal : c\'est de la mousse', 'poc ! touché, pas coulé', 'poc ! la mousse, ça rebondit'];
 const TOPS = [0xd8403a, 0x3f7fd8, 0x3aa060, 0xe8b830, 0x8a52c8, 0xee7a2a, 0xf2efe8, 0x2a2c32, 0xe87aa8, 0x3ab8b0];
 
-export function createBlocus({ parent, colliders, interactables, ui, shake = () => {}, renderer, insideOf = null, walkers = null, steal = () => 0 }) {
+export function createBlocus({ parent, colliders, interactables, ui, shake = () => {}, renderer, insideOf = null, walkers = null, steal = () => 0, takeFlashball = () => 0 }) {
   const lycee = createLycee({ parent, colliders });
   const root = new THREE.Group(); root.userData.keep = true; parent.add(root);
   const OX = LYCEE.x, OZ = LYCEE.z;
@@ -207,23 +207,29 @@ export function createBlocus({ parent, colliders, interactables, ui, shake = () 
   const doorIt = { id: 'lycee', door: true, pos: new THREE.Vector3(OX, 1.1, OZ + 8.8), reach: 2.6 };
   // the holdall of mortars (only there during the blockade): a handful for whoever dares
   const bagIt = { id: 'lycee', bag: true, pos: new THREE.Vector3(lycee.bag.x, .6, lycee.bag.z), reach: 2.2, off: true };
-  interactables.push(gateIt, doorIt, bagIt);
-  let bagCool = 0;
+  // the police's kit box behind their line: a spare flashball, if their backs are turned
+  const crateIt = { id: 'lycee', crate: true, pos: new THREE.Vector3(lycee.crate.x, .6, lycee.crate.z), reach: 2.2, off: true };
+  interactables.push(gateIt, doorIt, bagIt, crateIt);
+  let bagCool = 0, crateCool = 0, aimAtMe = 0;
   const chase = { ids: [], t: 0 };
-  let shoutTex = null;
+  const bubbles = new Map();
+  const bubble = (text) => {
+    if (!bubbles.has(text)) bubbles.set(text, canvasTex(256, 80, (c) => {
+      c.font = '700 25px Rubik, sans-serif'; c.fillStyle = '#fffdf6'; c.strokeStyle = '#1a130d'; c.lineWidth = 5;
+      c.beginPath(); c.roundRect(8, 6, 240, 50, 22); c.moveTo(118, 55); c.lineTo(128, 74); c.lineTo(140, 55); c.fill(); c.stroke();
+      c.fillStyle = '#1a130d'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(text, 128, 32);
+    }));
+    return bubbles.get(text);
+  };
+  const say = (a, text, time = 3.5) => {
+    if (!a.say) { a.say = new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true, depthWrite: false })); a.say.scale.set(1.3, .4, 1); a.say.position.y = 2.25; a.g.add(a.say); }
+    a.say.material.map = bubble(text); a.say.material.needsUpdate = true; a.say.visible = true; a.sayT = time;
+  };
   // two of them run after me, shouting, for a few seconds (only I see it)
   function outrage(px, pz) {
     const near = agents.filter(a => !a.police && a.role !== 'banner' && !a.sat).map(a => [a, Math.hypot(OX + a.x - px, OZ + a.z - pz)]).sort((p, q) => p[1] - q[1]).slice(0, 2);
     chase.ids = near.map(([a]) => a.i); chase.t = 5;
-    if (!shoutTex) shoutTex = canvasTex(256, 80, (c) => {
-      c.font = '700 25px Rubik, sans-serif'; c.fillStyle = '#fffdf6'; c.strokeStyle = '#1a130d'; c.lineWidth = 5;
-      c.beginPath(); c.roundRect(8, 6, 240, 50, 22); c.moveTo(118, 55); c.lineTo(128, 74); c.lineTo(140, 55); c.fill(); c.stroke();
-      c.fillStyle = '#1a130d'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText('hé ! nos mortiers !', 128, 32);
-    });
-    for (const [a] of near) {
-      if (!a.say) { a.say = new THREE.Sprite(new THREE.SpriteMaterial({ map: shoutTex, transparent: true, depthWrite: false })); a.say.scale.set(1.3, .4, 1); a.say.position.y = 2.25; a.g.add(a.say); }
-      a.say.visible = true;
-    }
+    for (const [a] of near) say(a, 'hé ! nos mortiers !', 3.5);
   }
 
   let indoorNow = false;
@@ -245,12 +251,29 @@ export function createBlocus({ parent, colliders, interactables, ui, shake = () 
     prompt(near) {
       if (near === gateIt) return active ? 'le lycée est bloqué · blocus en cours, personne n\'entre' : 'le portail du lycée · ouvert, la cour est libre';
       if (near === doorIt) return '<b>e</b> la porte du lycée';
+      if (near === crateIt) return crateCool > 0 ? `la caisse de la police · ils se méfient (${Math.ceil(crateCool)} s)` : '<b>e</b> piquer le flashball';
       if (near === bagIt) return bagCool > 0 ? `un sac de mortiers d'artifice · surveillé de près (${Math.ceil(bagCool)} s)` : '<b>e</b> piquer des mortiers';
       return undefined;
     },
     act(near) {
       if (near === gateIt) { ui?.toast(active ? 'pas moyen de passer : le portail est bloqué par les poubelles et les palettes' : 'la cour est ouverte · entre donc', active, 2400); return true; }
       if (near === doorIt) { ui?.toast('fermé · les cours ont lieu… ailleurs, aujourd\'hui', false, 2400); return true; }
+      if (near === crateIt) {
+        if (!active) return true;
+        if (crateCool > 0) { ui?.toast(`ils surveillent leur caisse · reviens dans ${Math.ceil(crateCool)} s`, true, 2000); return true; }
+        const got = takeFlashball();
+        crateCool = 45;
+        ui?.toast(got ? `flashball piqué · +${got} balles en mousse · x pour le sortir, clic pour tirer` : 'ton flashball est déjà plein', false, 3200);
+        // seen? the nearest one turns round, shouts and fires
+        if (rnd() < .4) {
+          let best = null, bd = 1e9;
+          for (const a of agents) if (a.police) { const d = Math.hypot(a.g.position.x - near.pos.x, a.g.position.z - near.pos.z); if (d < bd) { bd = d; best = a; } }
+          if (best) say(best, 'rends ça !', 3);
+          aimAtMe = 2; localShotT = .5;
+          setTimeout(() => ui?.toast('« rends ça ! » · ils t\'ont vu', true, 1800), 300);
+        }
+        return true;
+      }
       if (near === bagIt) {
         if (!active) return true;
         if (bagCool > 0) { ui?.toast(`ils ont l'œil sur leur sac · reviens dans ${Math.ceil(bagCool)} s`, true, 2000); return true; }
@@ -267,7 +290,8 @@ export function createBlocus({ parent, colliders, interactables, ui, shake = () 
     update(dt, camera, { here = 'home', view = here, can = true, player = null, now, mode = -1, hour = 12, day = 0, night = 0 }) {
       t += dt; frame++;
       hitCool = Math.max(0, hitCool - dt); bagCool = Math.max(0, bagCool - dt);
-      bagIt.off = !active;
+      bagIt.off = crateIt.off = !active;
+      crateCool = Math.max(0, crateCool - dt); aimAtMe = Math.max(0, aimAtMe - dt);
       const on = SIM.blocusOn(mode, hour, day);
       if (on !== active) {
         active = on; lycee.setBlocked(on); root.visible = on;
@@ -352,7 +376,8 @@ export function createBlocus({ parent, colliders, interactables, ui, shake = () 
         // pose: down on their bum, running with arms up, or their role
         const st = a.rig.st;
         if (!a.police) {
-          const down = sim.down[i] > 0, fleeing = sim.flee[i] > 0;
+          if (a.localSit > 0) a.localSit -= dt;
+          const down = sim.down[i] > 0 || a.localSit > 0, fleeing = sim.flee[i] > 0;
           if (down && !a.sat) { a.sat = true; a.rig.play('assis'); }
           else if (!down && a.sat) { a.sat = false; a.rig.stop(); }
           st.speed = a.sat ? 0 : a.sp;
@@ -438,11 +463,11 @@ export function createBlocus({ parent, colliders, interactables, ui, shake = () 
       }
       smokeToast = Math.max(0, smokeToast - dt); pushToast = Math.max(0, pushToast - dt);
       const inZone = can && lx > -12.5 && lx < 12.5 && lz > SIM.LINE_Z + adv + .6 && lz < 5 && py < 2;
-      if (inZone) {
+      if (inZone || aimAtMe > 0) {
         localShotT -= dt;
         if (localShotT <= 0) {
           // the nearest launcher takes aim at me (only I see this one)
-          localShotT = 4 + rnd() * 5;
+          localShotT = 4 + rnd() * 5; aimAtMe = 0;
           let best = null, bd = 1e9;
           for (const c of SIM.LAUNCHERS) { const a = agents[SIM.NP + c], d = Math.hypot(a.g.position.x - px, a.g.position.z - pz); if (d < bd) { bd = d; best = a; } }
           if (best && bd < 18) {
@@ -452,6 +477,7 @@ export function createBlocus({ parent, colliders, interactables, ui, shake = () 
           }
         }
       } else localShotT = Math.max(localShotT, 2.5);
+      for (const a of agents) if (a.sayT > 0 && (a.sayT -= dt) <= 0 && a.say) a.say.visible = false;
       balls.update(dt);
       if (player && can) for (const b of balls.B) {
         if (!b.on || b.hit) continue;
@@ -470,6 +496,22 @@ export function createBlocus({ parent, colliders, interactables, ui, shake = () 
     },
     // for tests: the nearest launcher aims at me now (if I'm in front of the line)
     testShot() { localShotT = 0; },
+    crateIt,
+    // a foam ball of mine at (x, y, z) going (vx, vz): a protester sits down, an officer flinches
+    knock(x, y, z, vx, vz) {
+      if (!active || !built) return false;
+      for (const a of agents) {
+        if (!a.g.visible) continue;
+        const dx = x - a.g.position.x, dz = z - a.g.position.z;
+        if (y < .05 || y > 1.9 || dx * dx + dz * dz > .45 * .45) continue;
+        const l = Math.hypot(vx, vz) || 1;
+        a.offX += vx / l * .5; a.offZ += vz / l * .5;
+        if (a.police) { a.flinch = .6; say(a, rnd() < .5 ? 'hé !' : 'ça va pas ?!', 1.6); }
+        else { a.localSit = 1.4; say(a, rnd() < .5 ? 'aïe !' : 'ouille !', 1.6); }
+        return true;
+      }
+      return false;
+    },
     dispose() { veil?.remove(); sfx.close(); },
   };
   function d2c(p) { return (p.x - _c.x) * (p.x - _c.x) + (p.z - _c.z) * (p.z - _c.z); }
