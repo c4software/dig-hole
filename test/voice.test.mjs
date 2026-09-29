@@ -11,6 +11,7 @@ const flush = async (n = 6) => { for (let i = 0; i < n; i++) await new Promise(r
 
 // ---------- a fake RTCPeerConnection: an offer and an answer pair up by their sdp ----------
 const offers = new Map();
+const fake = { failIce: 0, clock: 0 };
 let uid = 0;
 class FakePC {
   constructor() { this.id = ++uid; this.tracks = []; this.connectionState = 'new'; this.remote = null; this.ice = []; this.closed = false; }
@@ -27,6 +28,7 @@ class FakePC {
   addIceCandidate(c) { this.ice.push(c); return Promise.resolve(); }
   up() {
     if (this.closed || this.connectionState === 'connected') return;
+    if (fake.failIce > 0) { fake.failIce--; this.connectionState = 'failed'; setTimeout(() => this.onconnectionstatechange?.()); return; }
     this.connectionState = 'connected';
     setTimeout(() => { if (this.closed) return; this.ontrack?.({ streams: [{ from: this.id }], track: {} }); this.onconnectionstatechange?.(); });
   }
@@ -35,13 +37,14 @@ class FakePC {
 const mic = { getAudioTracks: () => [{ kind: 'audio' }] };
 
 // n players in a fake room: fx broadcast, or to one (`only`)
-function world(n, o = VOICE) {
+// drop(fx, from, to): true loses that message on the way
+function world(n, o = VOICE, { drop = () => false, now } = {}) {
   const P = [];
   for (let i = 1; i <= n; i++) {
     const p = { id: i, pos: [i * 2, 0, 0], w: 'home', heard: new Set(), sent: [] };
     p.mesh = createMesh({
-      send: (fx) => { p.sent.push(fx); for (const q of P) if (q !== p && (fx.only == null || fx.only === q.id)) q.mesh.onSignal(p.id, JSON.parse(JSON.stringify(fx))); },
-      makePc: () => new FakePC(), stream: () => mic, opts: o,
+      send: (fx) => { p.sent.push(fx); for (const q of P) if (q !== p && (fx.only == null || fx.only === q.id) && !drop(fx, p.id, q.id)) q.mesh.onSignal(p.id, JSON.parse(JSON.stringify(fx))); },
+      makePc: () => new FakePC(), stream: () => mic, opts: o, ...(now ? { now } : {}),
       onTrack: (id) => p.heard.add(id), onGone: (id) => p.heard.delete(id),
     });
     P.push(p);
@@ -122,6 +125,54 @@ test('mesh: a player without the voice chat is never dialled; a newcomer hears w
   P[1].sent.length = 0;
   P[1].mesh.hello();
   assert.deepEqual(P[1].sent, [{ k: 'vc', a: 'on' }]);
+});
+
+// a fake clock: each tick is a second
+function clocked(n, extra = {}) {
+  let t = 1e6;
+  const w = world(n, VOICE, { ...extra, now: () => t });
+  const tick = async (sec = 1) => { for (let i = 0; i < sec; i++) { t += 1000; await w.tick(); } };
+  return { ...w, tick, get t() { return t; } };
+}
+
+test('mesh heals: a lost « on » (joined late) is said again, and they link', async () => {
+  let lost = 0;
+  const { P, tick } = clocked(2, { drop: (fx) => fx.a === 'on' && lost++ < 2 });
+  P[0].mesh.start(1); P[1].mesh.start(2);
+  await tick(3);
+  assert.equal(P[0].mesh.links.size, 0, 'nobody heard the other one');
+  await tick(VOICE.hello / 1000 + 1);
+  assert.ok(P[0].heard.has(2) && P[1].heard.has(1), 'the periodic « on » linked them');
+});
+
+test('mesh heals: a lost offer is dropped after a few seconds and dialled again', async () => {
+  let lost = 0;
+  const { P, tick } = clocked(2, { drop: (fx) => fx.a === 'offer' && lost++ < 1 });
+  P[0].mesh.start(1); P[1].mesh.start(2);
+  await tick(2);
+  assert.ok(!P[0].heard.size && P[0].mesh.links.get(2)?.st === 'dial', 'waiting on an answer that never comes');
+  await tick(VOICE.dial / 1000 + VOICE.retry[0] / 1000 + 2);
+  assert.ok(P[0].heard.has(2) && P[1].heard.has(1), 'the second offer went through');
+  assert.equal(P[0].sent.filter(f => f.a === 'offer').length, 2);
+});
+
+test('mesh heals: ice failed → retried with a growing wait (2, 5, 10 s), then linked', async () => {
+  fake.failIce = 6;   // both ends of each try fail
+  const { P, tick } = clocked(2);
+  P[0].mesh.start(1); P[1].mesh.start(2);
+  const offersAt = [];
+  let seen = 0;
+  for (let s = 0; s < 30 && !P[0].heard.size; s++) {
+    await tick(1);
+    const n = P[0].sent.filter(f => f.a === 'offer').length;
+    if (n > seen) { offersAt.push(s); seen = n; }
+  }
+  assert.ok(P[0].heard.has(2) && P[1].heard.has(1), 'linked in the end');
+  assert.equal(fake.failIce, 0);
+  assert.equal(offersAt.length, 4, 'three failures, four offers');
+  const gaps = offersAt.slice(1).map((v, i) => v - offersAt[i]);
+  assert.ok(gaps[0] < gaps[1] && gaps[1] < gaps[2], `the wait grows: ${gaps}`);
+  assert.ok(gaps[0] <= 3 && gaps[2] >= 9, `2 s then 10 s: ${gaps}`);
 });
 
 test('room: an fx with `only` goes to that digger alone', () => {

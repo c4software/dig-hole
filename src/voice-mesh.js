@@ -8,7 +8,9 @@
 //   bye { only, n }                link n is over (out of range, refused, failed)
 
 // range: a walkie-talkie's (tunables: talkieRange); drop: a linked one stays up to here
-export const VOICE = { range: 100, drop: 110, max: 6, accept: 8, retry: 8000, dial: 12000 };
+// retry: the wait before dialling again after each failure in a row (lost offer, ice failed, refused);
+// dial: a link not up by then is dropped and retried; hello: 'on' said again this often (lost ones)
+export const VOICE = { range: 100, drop: 110, max: 6, accept: 8, retry: [2000, 5000, 10000], dial: 6000, hello: 10000 };
 
 const d2 = (a, b) => { const x = a[0] - b[0], y = a[1] - b[1], z = a[2] - b[2]; return x * x + y * y + z * z; };
 
@@ -32,7 +34,8 @@ export function createMesh({ send, makePc, stream, onTrack, onGone, now = () => 
   const links = new Map();    // id → { pc, n, st: 'dial'|'ring'|'up', t, q: [] }
   const voiced = new Set();   // peers who said 'on'
   const cool = new Map();     // id → time before which we don't dial again
-  let myId = null, me = null, cands = [], live = false;
+  const fails = new Map();    // id → failures in a row (the backoff)
+  let myId = null, me = null, cands = [], live = false, saidAt = 0;
 
   const nonce = () => Math.random().toString(36).slice(2, 9);
   const say = (id, a, extra = {}) => send({ k: 'vc', a, only: id, ...extra });
@@ -44,7 +47,10 @@ export function createMesh({ send, makePc, stream, onTrack, onGone, now = () => 
     if (tell) say(id, 'bye', { n: L.n });
     try { L.pc.close(); } catch {}
     onGone?.(id);
-    if (why !== 'range') cool.set(id, now() + opts.retry);
+    if (why !== 'range' && why !== 'off' && why !== 'left') {
+      const n = (fails.get(id) || 0) + 1, R = [].concat(opts.retry);
+      fails.set(id, n); cool.set(id, now() + R[Math.min(n, R.length) - 1]);
+    }
     log(`voix · ${id} coupé (${why})`);
   }
 
@@ -53,10 +59,10 @@ export function createMesh({ send, makePc, stream, onTrack, onGone, now = () => 
     const s = stream();
     if (s) for (const tr of s.getAudioTracks()) pc.addTrack(tr, s);
     pc.onicecandidate = (e) => { if (e.candidate && links.get(id) === L) say(id, 'ice', { n: L.n, c: e.candidate.toJSON ? e.candidate.toJSON() : e.candidate }); };
-    pc.ontrack = (e) => { if (links.get(id) === L) { L.st = 'up'; onTrack?.(id, e.streams?.[0] || { getAudioTracks: () => [e.track] }); } };
+    pc.ontrack = (e) => { if (links.get(id) === L) { L.st = 'up'; fails.delete(id); onTrack?.(id, e.streams?.[0] || { getAudioTracks: () => [e.track] }); } };
     pc.onconnectionstatechange = () => {
       const st = pc.connectionState;
-      if (st === 'connected') L.st = 'up';
+      if (st === 'connected') { L.st = 'up'; fails.delete(id); }
       if ((st === 'failed' || st === 'closed') && links.get(id) === L) hang(id, 'failed');
     };
   }
@@ -103,18 +109,20 @@ export function createMesh({ send, makePc, stream, onTrack, onGone, now = () => 
     links, voiced,
     get live() { return live; },
     // on: joined the voice chat (the mic is ready); everyone hears about it
-    start(id) { myId = id; live = true; send({ k: 'vc', a: 'on' }); },
-    stop() { if (!live) return; live = false; for (const id of [...links.keys()]) hang(id, 'off'); send({ k: 'vc', a: 'off' }); cool.clear(); },
+    start(id) { myId = id; live = true; saidAt = now(); send({ k: 'vc', a: 'on' }); },
+    stop() { if (!live) return; live = false; for (const id of [...links.keys()]) hang(id, 'off'); send({ k: 'vc', a: 'off' }); cool.clear(); fails.clear(); },
     // someone new in the room: tell them I'm in the chat
     hello() { if (live) send({ k: 'vc', a: 'on' }); },
-    peerLeft(id) { voiced.delete(id); hang(id, 'left', false); cool.delete(id); },
+    peerLeft(id) { voiced.delete(id); hang(id, 'left', false); cool.delete(id); fails.delete(id); },
     // ~1 Hz: me { id, pos, w }, list [{ id, pos, w }] (voiced is known here)
     tick(meNow, list) {
       me = meNow; myId = meNow.id ?? myId;
       cands = list.map(p => ({ ...p, on: voiced.has(p.id) }));
       if (!live) return;
-      const want = pickPeers(me, cands, new Set(links.keys()), opts);
       const t = now();
+      // said again now and then: someone who missed it (joined late, a lost message) still finds me
+      if (t - saidAt >= opts.hello) { saidAt = t; send({ k: 'vc', a: 'on' }); }
+      const want = pickPeers(me, cands, new Set(links.keys()), opts);
       for (const [id, L] of links) {
         // a link they dialled stays while they're near: their six nearest aren't exactly mine
         if (!want.has(id) && !(id < myId && near(id))) hang(id, voiced.has(id) ? 'range' : 'off');
@@ -126,8 +134,9 @@ export function createMesh({ send, makePc, stream, onTrack, onGone, now = () => 
       }
     },
     onSignal(id, fx) {
-      if (fx.a === 'on') { voiced.add(id); return; }
       if (fx.a === 'off') { voiced.delete(id); hang(id, 'off', false); return; }
+      voiced.add(id);   // an offer, an answer: they're on, even if their 'on' got lost
+      if (fx.a === 'on') return;
       const L = links.get(id);
       if (fx.a === 'offer') {
         if (!(id < myId) || !welcome(id)) { say(id, 'bye', { n: fx.n }); return; }
