@@ -306,7 +306,7 @@ export function createEurope({ scene, addBox }) {
   for (let k = 0; k < 3; k++) flat(2.6, .5, white, FX, .03, ROAD_Z - 1 + k * 1);
   for (let x = SQ.x0 + 1; x < SQ.x1; x += 2.2) if (Math.abs(x - FX) > 2) { box(.16, .75, .16, iron, x, .38, -10.4); const cap = new THREE.Mesh(new THREE.SphereGeometry(.1, 8, 6), iron); cap.position.set(x, .78, -10.4); g.add(cap); }
   const bench = (x, z, rot) => { const b = new THREE.Group(); b.position.set(x, 0, z); b.rotation.y = rot; g.add(b); box(1.8, .06, .42, mat(0x6a8a5a), 0, .45, 0, b); box(1.8, .42, .05, mat(0x6a8a5a), 0, .72, -.2, b); for (const sx of [-.8, .8]) box(.06, .45, .45, iron, sx, .22, 0, b); addBox(x - .9, 0, z - .3, x + .9, .8, z + .3); contact.blob(x, z, 1.2, .12); };
-  bench(FX - 5, FZ + 4, Math.PI * .8); bench(FX + 5, FZ + 4, -Math.PI * .8); bench(FX, FZ + 7.8, Math.PI);
+  bench(FX - 5, FZ + 4, Math.PI * .8); bench(FX + 5, FZ + 4, -Math.PI * .8); bench(FX - 7, FZ - .8, Math.PI);   // (the church front stays clear: the trolley race)
   const post = new THREE.Group(); post.position.set(52, 0, 9); g.add(post);
   box(.5, .7, .4, mat(0xf2c21e), 0, 1.05, 0, post); box(.12, .7, .12, mat(0xf2c21e), 0, .35, 0, post);
   const pl = new THREE.Mesh(new THREE.PlaneGeometry(.42, .14), new THREE.MeshLambertMaterial({ map: lettering('LA POSTE', { w: 256, h: 64, color: '#1d3a78', size: 40, font: SANS }), transparent: true })); pl.position.set(0, 1.25, .21); post.add(pl);
@@ -367,7 +367,7 @@ export function createEurope({ scene, addBox }) {
   contact.rect(FX, 28, 11, 22); contact.rect(FX, 15.5, 6.5, 6.5, 0, .12);
   // parked cars along the square's east side
   const CARC = [0xc8282e, 0xf4f4f2, 0x2a4a78, 0x9ec4a0, 0xd8d0b8, 0x3a3e46, 0xe8b830];
-  for (const z of [7, 9.6]) cars(69.5, z, Math.PI, pick(CARC), 'hatch');
+  for (const z of [-3.2, -5.8]) cars(70.3, z, Math.PI, pick(CARC), 'hatch');
   cars(66, -7.8, Math.PI / 2, 0xc8282e, 'hatch');
 
   // ---------- the town hall: stone, three floors, flags over the door ----------
@@ -416,7 +416,7 @@ export function createEurope({ scene, addBox }) {
 
   // ---------- cherry trees on the square, in the park, along the street ----------
   const blossoms = createBlossoms({ parent: g, addBox, seed: 77 });
-  for (const [x, z, s] of [[48.5, 11, 1.05], [73, 11.5, 1.1], [56, 8, .85], [MX - 9, 4, 1], [MX + 9, 3.5, .95], [MX, 14, 1.1], [85, 3, .9], [-80, 3, .95], [-44.5, -6, .85], [40, 3, .9]]) blossoms.tree(x, z, s);
+  for (const [x, z, s] of [[48.5, 11, 1.05], [73, 11.5, 1.1], [53, 4, .85], [MX - 9, 4, 1], [MX + 9, 3.5, .95], [MX, 14, 1.1], [85, 3, .9], [-80, 3, .95], [-44.5, -6, .85], [40, 3, .9]]) blossoms.tree(x, z, s);
   blossoms.finish({ scatter: [[FX, FZ + 6, 2], [FX - 6, -4, 1.5], [MX, 11, 2]] });
   for (const t of blossoms.trees) contact.blob(t.x, t.z, t.r * .8, .125);
 
@@ -587,7 +587,7 @@ export function createEurope({ scene, addBox }) {
   const walkers = createWalkers({ parent: g, clothes: [0x2a4a78, 0xc8282e, 0xf4f0e6, 0x3a6a4a, 0xe8b830, 0x8a4a8a, 0x5a6a7a, 0xd88aa0], seed: 41, paths: [
     [[-110, -14.95], [-6, -14.95]], [[6, -14.95], [110, -14.95]],
     [[-110, -11.1], [-42, -11.1]], [[80, -11.1], [110, -11.1]],
-    [[53, -10.3], [58, 8], [70, 10], [72.5, -9.5]], [[FX - 5, FZ + 6.4], [FX + 5, FZ + 6.4]],
+    [[53, -10.3], [58, 8], [70, 10], [73.4, -9.5]], [[FX - 5, FZ + 6.4], [FX + 5, FZ + 6.4]],
     [[MX - 12, -12.4], [MX + 12, -12.4]], [[-100, LZ - 1.4], [100, LZ - 1.4]], [[-120, GZ + 3.4], [120, GZ + 3.4]],
   ] });
   for (const [x, z, rot] of [[53.3, -8.4, Math.PI / 2], [54.7, -5.2, -Math.PI / 2], [57.4 - .7, -3.6, Math.PI / 2], [58.1, -6.8, -Math.PI / 2]]) walkers.sit(x, .45, z, rot);

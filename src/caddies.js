@@ -17,7 +17,7 @@ import { tun } from './tunables.js';
 import { mergeStatic } from './merge.js';
 import * as V from './vehicles.js';
 import { buildTrack, groundY, solidsFrom } from './caddies-track.js';
-import { TUNE, newCart, placeCart, stepCart, collideCarts, botInput, trackProgress, stepMelon, throwOff } from './caddies-physics.js';
+import { TUNE, newCart, placeCart, stepCartSub, collideCarts, botInput, trackProgress, stepMelon, throwOff, stepBody, pushOut } from './caddies-physics.js';
 import { CART, cartModel, barrierMat, coneMat, crateMat, startGate, promoMesh, melon as melonMesh, splatMat, flourMat } from './caddies-art.js';
 import { createCaddieSfx } from './caddies-sfx.js';
 
@@ -30,9 +30,9 @@ const BOTS = [['mamie jo', 0xe8384f], ['le boucher', 0xf2c230], ['kévin', 0x3a8
 const ITEMS = { baguette: 'baguette', melon: 'pastèque', flour: 'farine' };
 const ITEM_CODE = { baguette: 1, melon: 2, flour: 3 }, CODE_ITEM = [null, 'baguette', 'melon', 'flour'];
 // the people watching, round the course
-const CROWD = [[49.4, 11.6], [50.3, 13.3], [48.6, 12.6], [65.2, 13.9], [66.6, 14.4], [58.2, -15.9], [60.3, -15.9], [63.6, -15.9], [66.1, -15.9], [73.9, -3.6], [73.9, -6.7], [75.6, 9.6], [76.4, 11.1], [51.1, 11.9]];
+const CROWD = [[47.4, 14.6], [46.6, 18.2], [44.6, 22.4], [44.4, 25.6], [44.7, 29.3], [44.5, 33.2], [56.8, 49.3], [60.2, 49.8], [63.6, 49.6], [67.4, 48.8], [77.3, 23.2], [77.5, 27.6], [77.2, 32.4], [76.2, 36.8]];
 // the trolley corrals: [x, z, yaw]
-const CORRALS = [[48.7, 9.6, PI / 2], [73.95, 1.2, 0]];
+const CORRALS = [[44.2, 37.6, 0], [77.4, 18.6, 0]];
 
 export function createCaddies({ scene, camera, audio, ui, world, lookOf = () => null, getNet = () => null }) {
   const root = new THREE.Group(); root.visible = false; scene.add(root);
@@ -90,7 +90,7 @@ export function createCaddies({ scene, camera, audio, ui, world, lookOf = () => 
       mergeStatic(g);
     }
     // the promos: three rows across the course
-    for (const f of [.2, .56, .76]) {
+    for (const f of [.24, .5, .74]) {
       const i = Math.round(f * N), p = TR.pts[i];
       for (const s of [-1, 0, 1]) {
         const m = promoMesh(), x = p.x + p.sx * s * p.hw * .55, z = p.z + p.sz * s * p.hw * .55;
@@ -185,7 +185,7 @@ export function createCaddies({ scene, camera, audio, ui, world, lookOf = () => 
     carts = list.map((u, n) => {
       const c = makeCart(u, n);
       // the grid behind the line: two by two
-      placeCart(c, TR, (N - 5 - Math.floor(n / 2) * 7) % N, (n % 2 ? .45 : -.45) * Math.min(1, TR.pts[N - 5].hw / .9));
+      placeCart(c, TR, (N - 5 - Math.floor(n / 3) * 12) % N, list.length > 1 ? (n % 3 - 1) * 1.6 : 0);
       c.k = c.idx - N; c.lane = (rnd() - .5) * 1.3;
       return c;
     });
@@ -369,7 +369,7 @@ export function createCaddies({ scene, camera, audio, ui, world, lookOf = () => 
       }
       if (!racing) inp = NOKEYS;
       evs.length = 0;
-      stepCart(c, inp, dt, env, evs);
+      stepCartSub(c, inp, dt, env, evs);
       for (const e of evs) cartEvent(c, e);
       if (racing) {
         const pr = trackProgress(c, TR, LAPS, dt);
@@ -492,8 +492,11 @@ export function createCaddies({ scene, camera, audio, ui, world, lookOf = () => 
     if (c.fall >= 0) {
       if (!v.wasFall) {
         v.wasFall = true;
-        const k = Math.min(1, 5 / Math.max(.1, sp));
-        v.fx0 = c.x - fx * .7; v.fz0 = c.z - fz * .7; v.fx1 = v.fx0 + c.vx * k * .45; v.fz1 = v.fz0 + c.vz * k * .45;
+        // the body flies on from the rail, the way the cart went (props and barriers stop it)
+        const k = Math.min(1, 6 / Math.max(.1, sp));
+        v.b = { x: c.x - fx * .84, z: c.z - fz * .84, y: c.y + .45, vx: c.vx * k * .85, vz: c.vz * k * .85, vy: 2 + Math.min(1.5, sp * .15) };
+        pushOut(v.b, env);
+        v.face = sp > .3 ? Math.atan2(c.vx, c.vz) : c.yaw; v.flip = null;
         if (c !== me && !mine(c)) sfx.crash(c);
       }
       tumble(c, v, dt);
@@ -537,28 +540,34 @@ export function createCaddies({ scene, camera, audio, ui, world, lookOf = () => 
   }
   // off the cart: flying, rolling on the paving, up, and running back to the cart
   function tumble(c, v, dt) {
-    const R = v.rig, rr = R.root, t = c.fall;
-    if (t < .7) {
-      const u = t / .7;
-      rr.position.set(v.fx0 + (v.fx1 - v.fx0) * u, c.y + .3 + Math.sin(u * PI) * .6 - u * .3, v.fz0 + (v.fz1 - v.fz0) * u);
-      rr.rotation.set(u * PI * 1.5, Math.atan2(v.fx1 - v.fx0, v.fz1 - v.fz0), 0, 'YXZ');
+    const R = v.rig, rr = R.root, t = c.fall, b = v.b;
+    if (t < 1.5) stepBody(b, dt, env);
+    if (t < .8) {
+      rr.position.set(b.x, b.y, b.z);
+      rr.rotation.set(t / .8 * PI * 1.5, v.face, 0, 'YXZ');
       R.st.ground = false; R.st.vy = -3; R.st.speed = 0;
-    } else if (t < 1.5) {
-      rr.position.set(v.fx1, groundY(v.fx1, v.fz1) + .12, v.fz1);
-      rr.rotation.set(-PI / 2 + Math.sin(t * 9) * .05 * (1.5 - t), rr.rotation.y, 0, 'YXZ');
-      R.st.ground = true; R.st.speed = 0;
     } else if (t < 1.85) {
-      const u = (t - 1.5) / .35;
-      rr.position.set(v.fx1, groundY(v.fx1, v.fz1) + .12 * (1 - u), v.fz1);
-      rr.rotation.set(-PI / 2 * (1 - u * u), rr.rotation.y, 0, 'YXZ');
+      // lying on the back, the head the way it came from; if that's inside a wall, the other way
+      if (v.flip == null) {
+        const hx = b.x - Math.sin(v.face) * 1.4, hz = b.z - Math.cos(v.face) * 1.4, h = { x: hx, z: hz };
+        v.flip = pushOut(h, env, .2);
+        if (v.flip) v.face += PI;
+      }
+      const u = t < 1.5 ? 0 : (t - 1.5) / .35;
+      rr.position.set(b.x, b.y + .12 * (1 - u), b.z);
+      rr.rotation.set(-PI / 2 * (1 - u * u) + (t < 1.5 ? Math.sin(t * 9) * .04 * (1.5 - t) : 0), v.face, 0, 'YXZ');
       R.st.ground = true; R.st.speed = 0;
     } else {
-      // run back to the rail
+      // run back to the rail, round the props on the way
       const u = Math.min(1, (t - 1.85) / Math.max(.1, TUNE.FALL_T - 1.85));
       tmpV.set(0, CART.railY + .016, CART.railZ - .06).applyAxisAngle(THREE.Object3D.DEFAULT_UP, c.yaw);
       const tx = c.x + tmpV.x, tz = c.z + tmpV.z;
-      rr.position.set(v.fx1 + (tx - v.fx1) * u, groundY(v.fx1, v.fz1) + (c.y + tmpV.y - groundY(v.fx1, v.fz1)) * u * u, v.fz1 + (tz - v.fz1) * u);
-      rr.rotation.set(0, Math.atan2(tx - v.fx1, tz - v.fz1) + (u > .8 ? wrap(c.yaw - Math.atan2(tx - v.fx1, tz - v.fz1)) * (u - .8) * 5 : 0), 0, 'YXZ');
+      const p = { x: b.x + (tx - b.x) * u, z: b.z + (tz - b.z) * u };
+      if (u < .85) pushOut(p, env, .25);
+      const g = groundY(p.x, p.z);
+      rr.position.set(p.x, g + (c.y + tmpV.y - g) * u * u, p.z);
+      const run = Math.atan2(tx - b.x, tz - b.z);
+      rr.rotation.set(0, run + (u > .8 ? wrap(c.yaw - run) * (u - .8) * 5 : 0), 0, 'YXZ');
       R.st.ground = true; R.st.speed = 3.5;
     }
     R.update(dt, camera.position);

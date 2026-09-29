@@ -1,11 +1,11 @@
-// caddies-stand.js, where the trolley race starts: a row of nested shopping trolleys by the church
+// caddies-stand.js, where the trolley race starts: a row of nested shopping trolleys on the church square
 // portal, a board on a post, and the « e » to play. Light enough to stay on the square all the time.
 import * as THREE from 'three';
 import { cartModel } from './caddies-art.js';
 import { canvasTex } from './lib/tex.js';
 import { mergeStatic } from './merge.js';
 
-export const STAND = { x: 56.3, z: 13.9 };
+export const STAND = { x: 46.6, z: 11.8 };
 
 export function createCaddieStand({ parent, colliders, interactables, at = STAND }) {
   const g = new THREE.Group(); g.position.set(at.x, .1, at.z); parent.add(g);
