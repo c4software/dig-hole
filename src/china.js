@@ -596,7 +596,8 @@ export function createChina({ scene, colliders, interactables, label }) {
   addBox(B.x1 + 1, 0, A.z0 - 1.3, B.x1 + 1.2, 3.2, A.z0 - 1.1);
 
   // ---------- utility poles along both streets, wires dropping to the houses ----------
-  const polesA = createPoles({ parent: g, addBox, points: Array.from({ length: 21 }, (_, k) => -150 + k * 15).filter(x => Math.abs(x - bx) > 6 && Math.abs(x - SX) > 3).map(x => [x, A.z0 - 1.05]), seed: 3 });
+  // (none at x 30: the matsuri's stage stands there, matsuri.js)
+  const polesA = createPoles({ parent: g, addBox, points: Array.from({ length: 21 }, (_, k) => -150 + k * 15).filter(x => Math.abs(x - bx) > 6 && Math.abs(x - SX) > 3 && x !== 30).map(x => [x, A.z0 - 1.05]), seed: 3 });
   createPoles({ parent: g, addBox, points: Array.from({ length: 10 }, (_, k) => A.z1 + 6 + k * 15).map(z => [B.x1 + .8, z, Math.PI / 2]), seed: 8 });
   createPoles({ parent: g, addBox, points: [RAIL.z1 + 3, RAIL.z1 + 18, A.z0 - 3.2].map(z => [B.x0 - .9, z, Math.PI / 2]), seed: 9 });
   polesA.heads.forEach((p, k) => { if (k % 2 === 0) polesA.drop(k, new THREE.Vector3(p.position.x + 3, 5.2, A.z1 + 2.4 + 2.6 + 3.7 - 3.6)); });

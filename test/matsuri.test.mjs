@@ -208,5 +208,7 @@ test('kingyo solo: two kids at the tub, a round ends with a place and the fish i
   assert.equal(res.fish, 2);
   assert.ok(res.value > 0 && res.place >= 1 && res.of === 3);
   assert.ok(K.seats.filter(s => s.bot).some(s => s.fish > 0), 'the kids caught something');
+  // human-paced: a fish every few seconds at best, not a net
+  for (const s of K.seats.filter(s => s.bot)) assert.ok(s.fish <= 15, `${s.name}: ${s.fish} fish in a round`);
   K.stop();
 });

@@ -4,6 +4,7 @@
 // heard from the camera (spatialize, below), loud on the stage, fading across the town, muffled
 // indoors and underground, silent on the other worlds. The rhythm game borrows a dry bus (lend).
 import { SONGS, makeChart } from './taiko-songs.js';
+import { listen, panner, place } from './lib/spatial.js';
 
 const hz = (m) => 440 * Math.pow(2, (m - 69) / 12);
 
@@ -26,8 +27,9 @@ export function createTaikoVoice({ at }) {
     lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 14000; lp.Q.value = .5;
     const wet = ctx.createGain(); wet.gain.value = .22;
     spatIn.connect(lp); spatIn.connect(rev); rev.connect(wet); wet.connect(lp);
-    pan = ctx.createPanner(); pan.panningModel = 'equalpower'; pan.distanceModel = 'linear'; pan.refDistance = 1; pan.maxDistance = 1e4; pan.rolloffFactor = 0;
-    setPos(pan, at.x, at.y + 1, at.z);
+    // the shared panner for left/right; the fading with distance is ours (below), heard across the town
+    pan = panner(ctx, { ref: 1, max: 1e4, roll: 0 });
+    place(ctx, pan, at.x, at.y + 1, at.z);
     dist = ctx.createGain(); dist.gain.value = 0;
     lp.connect(pan); pan.connect(dist); dist.connect(comp);
     // the rhythm game's bus: straight to the ears, a touch of the echo
@@ -37,9 +39,6 @@ export function createTaikoVoice({ at }) {
     return ctx;
   }
   const resume = () => { if (ctx?.state === 'suspended') ctx.resume(); };
-  function setPos(node, x, y, z) {
-    if (node.positionX) { node.positionX.value = x; node.positionY.value = y; node.positionZ.value = z; } else node.setPosition(x, y, z);
-  }
 
   // ---------- the voices ----------
   function env(t, peak, attack, decay, dest) {
@@ -140,21 +139,12 @@ export function createTaikoVoice({ at }) {
   }
 
   // ---------- where it's heard from ----------
-  // SPATIAL: the one place the stage's sound is placed in the world. `ear` the camera (position,
-  // quaternion); opts.on false on another world; opts.indoor, opts.under muffle it. The shared
-  // spatial helper can take its place: it only has to feed spatIn into a positioned source at `at`.
-  const _f = { x: 0, y: 0, z: -1 }, _u = { x: 0, y: 1, z: 0 };
+  // the ears on the camera (lib/spatial.js), then how far, indoors, underground;
+  // opts.on false on another world
   function spatialize(ear, { on = true, indoor = false, under = false } = {}) {
     if (!ctx) return;
-    const L = ctx.listener, p = ear.position, q = ear.quaternion, t = ctx.currentTime;
-    // the camera's forward and up out of its quaternion
-    const x = q.x, y = q.y, z = q.z, w = q.w;
-    _f.x = -(2 * (x * z + w * y)); _f.y = -(2 * (y * z - w * x)); _f.z = -(1 - 2 * (x * x + y * y));
-    _u.x = 2 * (x * y - w * z); _u.y = 1 - 2 * (x * x + z * z); _u.z = 2 * (y * z + w * x);
-    if (L.positionX) {
-      L.positionX.value = p.x; L.positionY.value = p.y; L.positionZ.value = p.z;
-      L.forwardX.value = _f.x; L.forwardY.value = _f.y; L.forwardZ.value = _f.z; L.upX.value = _u.x; L.upY.value = _u.y; L.upZ.value = _u.z;
-    } else { L.setPosition(p.x, p.y, p.z); L.setOrientation(_f.x, _f.y, _f.z, _u.x, _u.y, _u.z); }
+    listen(ctx, ear);
+    const p = ear.position, t = ctx.currentTime;
     const d = Math.hypot(p.x - at.x, p.y - at.y - 1, p.z - at.z);
     let g = d < 6 ? 1 : Math.pow(Math.max(0, 1 - (d - 6) / 150), 1.6);
     let f = 14000 * (1 - Math.min(d, 150) / 150 * .75);

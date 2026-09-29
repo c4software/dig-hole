@@ -166,17 +166,23 @@ export function createKingyo({ camera, audio, ui, matsuri }) {
       s.target = best; s.phase = 'go';
     }
     let want = false;
+    // after each lift a kid looks at the bowl, shows it off, picks a new fish: a few seconds
+    if (s.rest > 0) { s.rest -= dt; poiStep(s, dt, false, px, pz); return; }
     if (s.target) {
       fishAt(s.target, t + .4, _p);
       const dx = _p.x - P.x, dz = _p.z - P.z, d = Math.hypot(dx, dz);
       // a careful kid moves slowly in the water, a hasty one tears paper
-      const sp = P.wet ? .11 + (1 - s.skill) * .35 : .5;
+      const sp = P.wet ? .08 + (1 - s.skill) * .2 : .5;
       if (d > .01) move(s, dx / d * Math.min(d, sp * dt), dz / d * Math.min(d, sp * dt));
       want = d < .25 || (P.wet && P.dip < .5);
       if (P.wet && P.dip > .3 + R() * .2 && d < .04) want = false;
+      // an impatient kid comes up too soon, now and then
+      if (P.wet && P.dip > .08 && R() < dt * (1 - s.skill) * 3) want = false;
       if (P.dip > 2) want = false;
     }
+    const wet = P.wet;
     poiStep(s, dt, want, px, pz);
+    if (wet && !P.wet) { s.rest = 1.2 + R() * 2; s.think = 0; }
   }
 
   // ---------- network ----------
