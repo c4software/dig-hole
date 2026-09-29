@@ -6,6 +6,7 @@ export const GAME_CODE = {
   kart: () => import('./kart.js').then(m => m.createKart),
   rc: () => import('./rcrace.js').then(m => m.createRC),
   jetski: () => import('./jetski.js').then(m => m.createJetski),
+  caddies: () => import('./caddies.js').then(m => m.createCaddies),
   bomber: () => import('./bomber.js').then(m => m.createBomber),
   canards: () => import('./canards.js').then(m => m.createCanards),
   moto: () => import('./moto.js').then(m => m.createMoto),
