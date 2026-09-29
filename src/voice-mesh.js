@@ -7,7 +7,8 @@
 //   ice { only, n, c }             a candidate for link n
 //   bye { only, n }                link n is over (out of range, refused, failed)
 
-export const VOICE = { range: 25, drop: 30, max: 6, accept: 8, retry: 8000, dial: 12000 };
+// range: a walkie-talkie's (tunables: talkieRange); drop: a linked one stays up to here
+export const VOICE = { range: 100, drop: 110, max: 6, accept: 8, retry: 8000, dial: 12000 };
 
 const d2 = (a, b) => { const x = a[0] - b[0], y = a[1] - b[1], z = a[2] - b[2]; return x * x + y * y + z * z; };
 

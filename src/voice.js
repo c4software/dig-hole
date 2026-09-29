@@ -1,14 +1,16 @@
 // voice.js, a walkie-talkie « de proximité »: hold n (R3, the touch button) and talk; the
-// diggers around you hear you where your body is (a panner each, louder when close, silent past
-// 25 m, muffled through the ground), with a radio's colour and a « kssht » at each end. The
+// diggers around you hear you from where your body is (a panner each for the direction; full to
+// 60 m, gone at 100 m: talkieRange), with a radio's colour, static near the edge or through the
+// ground, and a « kssht » at each end. The
 // walkie shows in your hand and at your avatar's mouth, a ring over the head of whoever speaks.
 // Opt-in: the mic is asked for at the first press (or in the settings). The links are
 // voice-mesh.js, the radio itself talkie.js; this is the sound, the keys and the hud.
 import * as THREE from 'three';
 import { createMesh, VOICE } from './voice-mesh.js';
+import { tun } from './tunables.js';
 import { iceServers } from './rtc.js';
 import { panner, place } from './lib/spatial.js';
-import { talkieModel, createPtt, squelch, radioChain, normMode } from './talkie.js';
+import { talkieModel, createPtt, squelch, radioChain, normMode, radioLevel } from './talkie.js';
 
 const KEY = 'a-hole-voice';
 const MODES = [['off', 'coupé'], ['ptt', 'talkie']];
@@ -28,7 +30,10 @@ export function createVoice(game) {
   const buf = new Uint8Array(256);
 
   const net = () => getNet();
-  const mesh = createMesh({
+  // the range is a live value (tunables: talkieRange); the mesh reads these each tick
+  const opts = { ...VOICE };
+  const reach = () => { opts.range = Math.max(5, +tun.get('talkieRange') || VOICE.range); opts.drop = opts.range * 1.1; return opts.range; };
+  const mesh = createMesh({ opts,
     send: (fx) => net()?.sendFx(fx),
     makePc: () => new RTCPeerConnection({ iceServers: iceServers() }),
     stream: () => mic,
@@ -98,16 +103,26 @@ export function createVoice(game) {
     const radio = radioChain(ctx);
     const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 16000;
     const g = ctx.createGain(); g.gain.value = 0;
-    const pan = panner(ctx, { ref: 2, max: VOICE.range, roll: 1.2 });
+    // a radio: the panner gives the direction only (no rolloff), radioLevel() the distance
+    const pan = panner(ctx, { ref: 1, max: 10000, roll: 0 });
     src.connect(an); src.connect(radio.input); radio.output.connect(lp); lp.connect(g); g.connect(pan); pan.connect(out());
-    talk.set(id, { el, src, an, lp, g, pan, radio, level: 0, ring: null, occT: Math.random() * .25, muff: false });
+    // its static: noise through the speaker's band, louder near the edge or through the ground
+    let hiss = null, hs = null;
+    if (audio.noiseBuf) {
+      hs = ctx.createBufferSource(); hs.buffer = audio.noiseBuf; hs.loop = true;
+      const hf = ctx.createBiquadFilter(); hf.type = 'bandpass'; hf.frequency.value = 2200; hf.Q.value = .8;
+      hiss = ctx.createGain(); hiss.gain.value = 0;
+      hs.connect(hf); hf.connect(hiss); hiss.connect(pan); hs.start();
+    }
+    talk.set(id, { el, src, an, lp, g, pan, radio, hiss, hs, level: 0, ring: null, occT: Math.random() * .25, muff: false });
     render();
   }
   function unplug(id) {
     const v = talk.get(id);
     if (!v) return;
     talk.delete(id);
-    for (const n of [v.src, v.an, ...v.radio.nodes, v.lp, v.g, v.pan]) try { n.disconnect(); } catch {}
+    try { v.hs?.stop(); } catch {}
+    for (const n of [v.src, v.an, ...v.radio.nodes, v.lp, v.g, v.hiss, v.pan]) try { n?.disconnect(); } catch {}
     try { v.el.srcObject = null; } catch {}
     if (v.ring) v.ring.visible = false;
     render();
@@ -164,12 +179,13 @@ export function createVoice(game) {
     const p = net()?.peers.get(id);
     if (!p) return;
     p.avatar.rig.talkie(on, p.color);
+    const v = talk.get(id); if (v) v.keyed = on;
     const ctx = audio.ctx;
     if (!ctx || !audio.out || pref.muted[p.name] || !mic) return;
     game.camera.getWorldPosition(at);
     const d = at.distanceTo(p.avatar.g.position);
-    if (p.w !== game.getMe().w || d > VOICE.range) return;
-    const pan = panner(ctx, { ref: 2, max: VOICE.range, roll: 1.2 });
+    if (p.w !== game.getMe().w || d > reach()) return;
+    const pan = panner(ctx, { ref: 1, max: 10000, roll: 0 });
     place(ctx, pan, p.avatar.g.position.x, p.avatar.g.position.y + 1.6, p.avatar.g.position.z);
     pan.connect(out());
     squelch(ctx, audio.noiseBuf, pan, !!on);
@@ -188,32 +204,33 @@ export function createVoice(game) {
     tickT -= dt;
     if (tickT <= 0 && n?.online && n.id != null) {
       tickT = 1;
-      const me = game.getMe();
+      const me = game.getMe(); reach();
       mesh.tick({ id: n.id, ...me }, [...n.peers].map(([id, p]) => ({ id, w: p.w, pos: p.avatar.g.position.toArray() })));
     }
     if (micAn) level += (rms(micAn) * (micLive() ? 1 : 0) - level) * Math.min(1, dt * 12);
     if (!talk.size) { hudTick(dt); return; }
     const ctx = audio.ctx;
     camera().getWorldPosition(ears);
-    const myW = game.getMe().w;
+    const myW = game.getMe().w, range = reach();
     for (const [id, v] of talk) {
       const p = n?.peers.get(id);
       if (!p) continue;
       head.copy(p.avatar.g.position); head.y += 1.6;
       place(ctx, v.pan, head.x, head.y, head.z);
       const d = head.distanceTo(ears);
-      // past 20 m it fades, at 25 m it's gone (the panner alone never quite reaches silence)
-      const fade = p.w === myW ? Math.max(0, Math.min(1, (VOICE.range - d) / 5)) : 0;
       const mute = pref.muted[p.name] ? 0 : 1;
-      v.g.gain.setTargetAtTime(fade * mute, ctx.currentTime, .1);
-      // through the ground: muffled (a look along the line, 4 times a second)
+      // through the ground or a wall (a look along the line, 4 times a second): a radio only crackles more
       v.occT -= dt;
       if (v.occT <= 0) {
         v.occT = .25;
         const deep = (ears.y < -2) !== (head.y < -2) && Math.abs(ears.y - head.y) > 3;
-        const muff = d > 1.5 && (deep || !!game.blocked?.(ears, head));
-        if (muff !== v.muff) { v.muff = muff; v.lp.frequency.setTargetAtTime(muff ? 650 : 16000, ctx.currentTime, .08); }
+        v.muff = d > 1.5 && (deep || !!game.blocked?.(ears, head));
       }
+      const R = p.w === myW ? radioLevel(d, range, v.muff) : { voice: 0, hiss: 0, lp: 16000 };
+      const fade = R.voice, t = ctx.currentTime;
+      v.g.gain.setTargetAtTime(fade * mute, t, .1);
+      v.lp.frequency.setTargetAtTime(R.lp, t, .08);
+      v.hiss?.gain.setTargetAtTime(v.keyed ? R.hiss * mute : 0, t, .05);
       v.level += (rms(v.an) * mute - v.level) * Math.min(1, dt * 10);
       const on = v.level > TALK && fade > 0;
       if (on && !v.ring) v.ring = ringFor(p);

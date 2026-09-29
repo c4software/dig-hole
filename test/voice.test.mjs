@@ -57,13 +57,13 @@ test('pickPeers: range, hysteresis, the nearest few, same world, only the voiced
   const me = { pos: [0, 0, 0], w: 'home' };
   const L = [
     { id: 1, pos: [5, 0, 0], w: 'home', on: true },
-    { id: 2, pos: [27, 0, 0], w: 'home', on: true },   // between range (25) and drop (30)
+    { id: 2, pos: [105, 0, 0], w: 'home', on: true },   // between range (100) and drop (110)
     { id: 3, pos: [3, 0, 0], w: 'china', on: true },
     { id: 4, pos: [2, 0, 0], w: 'home', on: false },
-    { id: 5, pos: [40, 0, 0], w: 'home', on: true },
+    { id: 5, pos: [140, 0, 0], w: 'home', on: true },
   ];
   assert.deepEqual([...pickPeers(me, L)], [1]);
-  assert.deepEqual([...pickPeers(me, L, new Set([2]))].sort(), [1, 2], 'a linked one stays until 30 m');
+  assert.deepEqual([...pickPeers(me, L, new Set([2]))].sort(), [1, 2], 'a linked one stays until 110 m');
   const many = Array.from({ length: 10 }, (_, i) => ({ id: i + 1, pos: [i + 1, 0, 0], w: 'home', on: true }));
   assert.deepEqual([...pickPeers(me, many)], [1, 2, 3, 4, 5, 6], 'the six nearest');
 });
@@ -71,7 +71,7 @@ test('pickPeers: range, hysteresis, the nearest few, same world, only the voiced
 test('mesh: two near players link, a far one does not, then comes and goes', async () => {
   const { P, tick } = world(3);
   const [a, b, c] = P;
-  c.pos = [100, 0, 0];
+  c.pos = [300, 0, 0];
   for (const p of P) p.mesh.start(p.id);
   await tick(); await tick();
   assert.ok(a.heard.has(2) && b.heard.has(1), 'a and b hear each other');
@@ -82,11 +82,11 @@ test('mesh: two near players link, a far one does not, then comes and goes', asy
   assert.ok(b.sent.some(f => f.a === 'answer' && f.only === 1));
   assert.ok(b.sent.some(f => f.a === 'ice'), 'candidates trickle through the room');
   // c walks over
-  c.pos = [6, 0, 0];
+  c.pos = [80, 0, 0];
   await tick(); await tick();
   assert.ok(c.heard.has(1) && c.heard.has(2) && a.heard.has(3) && b.heard.has(3), 'all three linked');
   // b walks away past the drop distance: both sides hang up
-  b.pos = [60, 0, 0];
+  b.pos = [400, 0, 0];
   await tick(); await tick();
   assert.ok(!a.heard.has(2) && !b.heard.has(1) && !b.heard.has(3), 'b is out');
   assert.ok(a.mesh.links.size === 1 && b.mesh.links.size === 0);
@@ -243,6 +243,21 @@ test('organ: loud in the nave, ~ -30 dB at 150 m, never silent; muffled outside,
 });
 
 // ---------- the walkie-talkie ----------
+test('talkie: heard through the radio: full to 60 m, fading to nothing at 100 m, static near the edge and through the ground', async () => {
+  const { radioLevel } = await import('../src/talkie.js');
+  const { VOICE } = await import('../src/voice-mesh.js');
+  const { DEFS } = await import('../src/tunables.js');
+  assert.equal(VOICE.range, 100); assert.ok(VOICE.drop > VOICE.range);
+  assert.equal(DEFS.find(d => d.k === 'talkieRange').def, 100);
+  assert.equal(radioLevel(10, 100).voice, 1); assert.equal(radioLevel(60, 100).voice, 1); assert.equal(radioLevel(10, 100).hiss, 0);
+  const e = radioLevel(90, 100);
+  assert.ok(e.voice > 0 && e.voice < .5 && e.hiss > .04, 'near the edge: fainter, crackling');
+  assert.equal(radioLevel(100, 100).voice, 0); assert.equal(radioLevel(150, 100).voice, 0);
+  const b = radioLevel(20, 100, true);
+  assert.ok(b.voice === 1 && b.hiss > 0 && b.lp > 2000, 'through the ground: a little dull, some crackle, not muffled');
+  assert.ok(radioLevel(150, 200).voice > 0, 'the range is a setting');
+});
+
 test('talkie: modes are off or the walkie (an old open mic becomes the walkie)', async () => {
   const { normMode } = await import('../src/talkie.js');
   assert.equal(normMode('off'), 'off'); assert.equal(normMode(undefined), 'off');

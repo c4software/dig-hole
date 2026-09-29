@@ -72,6 +72,14 @@ export function squelch(ctx, noiseBuf, dest, press = true) {
   o.connect(og); og.connect(dest); o.start(t); o.stop(t + .15);
 }
 
+// through the radio: full up to 60 % of the range, then fading to nothing at the range, with static
+// growing near the edge; a wall or the ground in between only adds some crackle (and dulls a little)
+export function radioLevel(d, range, blocked = false) {
+  if (!(d < range)) return { voice: 0, hiss: 0, lp: 16000 };
+  const edge = Math.max(0, (d - range * .6) / (range * .4));
+  return { voice: 1 - edge, hiss: .07 * edge + (blocked ? .035 : 0), lp: blocked ? 2600 : 16000 };
+}
+
 // the radio's colour for a voice: 300–3400 Hz and a little grit. Returns { input, output, nodes }
 let curve = null;
 export function radioChain(ctx) {
