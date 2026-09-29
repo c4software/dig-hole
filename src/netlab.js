@@ -62,6 +62,7 @@ async function go(join) {
       else if (m.t === 'tun') { tun.load(m.v); log('réglages ' + JSON.stringify(m.v)); }
       else if (m.t === 'admin') { lab.admin.push(m.a); log('hôte : ' + m.a); }
       else if (m.t === 'kicked') { log('renvoyé : ' + m.why); }
+      else if (m.t === 'fx' && m.fx?.k === 'talkie') { (V.keys ||= []).push([m.id, m.fx.on]); log('talkie ' + m.id + (m.fx.on ? ' parle' : ' lâche')); }
       else if (m.t === 'fx' && m.fx?.k === 'vc') { if (mesh) mesh.onSignal(m.id, m.fx); else early.push([m.id, m.fx]); if (m.fx.a === 'on') log('voix : ' + m.id + ' a le micro'); }
       else if (m.t === 'fx') { if ((lab.got.fx || 0) < 20) log('fx ' + JSON.stringify(m.fx).slice(0, 100)); }
       else if (m.t === 'state') pos[m.id] = m.p;

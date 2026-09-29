@@ -3025,7 +3025,7 @@ if (MULTI) {
       else if (fx.k === 'disc' && fx.p && fx.d) launcher.remote(fx);
       else if (fx.k === 'dv') delivery.remote(id, fx, peer);
       else if (fx.k === 'holyfx') holy.remote(fx, here);
-      else if (fx.k === 'vc') voice.onFx(id, fx);
+      else if (fx.k === 'vc' || fx.k === 'talkie') voice.onFx(id, fx);
       else if (fx.k === 'scream') remoteScream(id, peer, fx);
       else mg.onFx(id, peer, fx);
     },

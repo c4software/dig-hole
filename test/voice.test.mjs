@@ -241,3 +241,67 @@ test('organ: loud in the nave, ~ -30 dB at 150 m, never silent; muffled outside,
   assert.ok(crypt.lp > square.lp && crypt.lp < nave.lp, 'the crypt: slightly muffled');
   assert.equal(organHearing({ x: 61, y: 1, z: 30 }, { here: 'moon' }).on, false);
 });
+
+// ---------- the walkie-talkie ----------
+test('talkie: modes are off or the walkie (an old open mic becomes the walkie)', async () => {
+  const { normMode } = await import('../src/talkie.js');
+  assert.equal(normMode('off'), 'off'); assert.equal(normMode(undefined), 'off');
+  assert.equal(normMode('open'), 'ptt'); assert.equal(normMode('ptt'), 'ptt');
+});
+
+test('talkie: push to talk: on air only while held; the first press asks for the mic', async () => {
+  const { createPtt } = await import('../src/talkie.js');
+  let mic = false, asked = 0; const air = [];
+  const p = createPtt({ ready: () => mic, join: async () => { asked++; await flush(1); mic = true; return true; }, talk: (on) => air.push(on) });
+  // first press: the mic is asked for, and it talks once granted if still held
+  p.down(); p.down();
+  assert.equal(asked, 1); assert.deepEqual(air, []);
+  await flush(4);
+  assert.deepEqual(air, [true]); assert.ok(p.on);
+  p.up(); assert.deepEqual(air, [true, false]); assert.ok(!p.on && !p.held);
+  p.up(); assert.deepEqual(air, [true, false], 'a second release says nothing');
+  // held and released before the mic came: no air at all
+  mic = false; air.length = 0;
+  p.down(); p.up();
+  await flush(4);
+  assert.deepEqual(air, []);
+  // mic ready: press and release are immediate
+  p.down(); p.up();
+  assert.deepEqual(air, [true, false]);
+  // refused: nothing, and the next press asks again
+  const q = createPtt({ ready: () => false, join: async () => false, talk: (on) => air.push(on) });
+  air.length = 0; q.down(); await flush(2); q.up();
+  assert.deepEqual(air, []);
+});
+
+test('talkie: the radio model, the avatar lifting it, the squelch and the radio colour', async () => {
+  const { talkieModel, squelch, radioChain } = await import('../src/talkie.js');
+  const { createRig } = await import('../src/rig.js');
+  const { DEFAULT } = await import('../src/outfits.js');
+  const m = talkieModel(0x39c07a);
+  assert.ok(m.g.children.length > 8);
+  m.led(true); m.led(false);
+  const rig = createRig(DEFAULT);
+  rig.hold('shovel');
+  for (let i = 0; i < 20; i++) rig.update(1 / 30);
+  const hand0 = rig.bone('handL').getWorldPosition(new (await import('three')).Vector3());
+  rig.talkie(true, 0x39c07a);
+  for (let i = 0; i < 40; i++) rig.update(1 / 30);
+  rig.root.updateMatrixWorld(true);
+  const hand = rig.bone('handL').getWorldPosition(hand0.clone());
+  assert.ok(rig.st.talkie && hand.y > 1.35 && hand.y > hand0.y + .4, `the left hand up at the mouth (${hand.y.toFixed(2)})`);
+  assert.equal(rig.tool, 'shovel', 'the right hand keeps its tool');
+  rig.play('salut'); rig.update(.1); rig.stop();
+  rig.talkie(false); for (let i = 0; i < 40; i++) rig.update(1 / 30);
+  rig.root.updateMatrixWorld(true);
+  assert.ok(rig.bone('handL').getWorldPosition(hand0.clone()).y < 1.1, 'back down');
+  // sound, in a fake WebAudio
+  let nodes = 0;
+  const param = () => ({ value: 0, setValueAtTime() {}, linearRampToValueAtTime() {}, exponentialRampToValueAtTime(v) { if (!(v > 0)) throw new RangeError('exp ramp to ' + v); } });
+  const node = () => { nodes++; return { gain: param(), frequency: param(), Q: param(), connect() {}, start() {}, stop() {}, curve: null }; };
+  const ctx = { currentTime: 1, createGain: node, createOscillator: node, createBiquadFilter: node, createBufferSource: node, createWaveShaper: node };
+  squelch(ctx, {}, node(), true); squelch(ctx, null, node(), false);
+  assert.ok(nodes >= 8, 'kssht and beep');
+  const r = radioChain(ctx);
+  assert.ok(r.input && r.output && r.nodes.length === 5 && r.nodes[3].curve.length === 512);
+});

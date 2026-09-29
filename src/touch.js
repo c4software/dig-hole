@@ -19,7 +19,7 @@ export function createTouch({ look }) {
   const root = document.createElement('div');
   root.id = 'touch';
   root.innerHTML = `<div class="tc-stick"><i class="tc-base"></i><i class="tc-knob"></i></div><div class="tc-btns"></div>
-    <div class="tc-top"><button type="button" class="tc-mini" data-b="${START}" aria-label="pause">❚❚</button><button type="button" class="tc-mini" data-b="${BACK}" aria-label="carte">carte</button><button type="button" class="tc-mini tc-ready" data-b="${UP}" aria-label="prêt">prêt</button></div>
+    <div class="tc-top"><button type="button" class="tc-mini" data-b="${START}" aria-label="pause">❚❚</button><button type="button" class="tc-mini" data-b="${BACK}" aria-label="carte">carte</button><button type="button" class="tc-mini tc-ready" data-b="${UP}" aria-label="prêt">prêt</button><button type="button" class="tc-mini tc-talk" data-b="11" aria-label="talkie">talkie</button></div>
     <div class="tc-turn"><b>tourne ton téléphone</b><span>le jeu se joue à l'horizontale</span></div>`;
   document.body.appendChild(root);
   const btnBox = root.querySelector('.tc-btns'), stickEl = root.querySelector('.tc-stick'), base = root.querySelector('.tc-base'), knob = root.querySelector('.tc-knob');

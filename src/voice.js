@@ -1,14 +1,17 @@
-// voice.js, talking to the diggers around you: your micro, their voices where their bodies are
-// (a panner each, louder when close, silent past 25 m, muffled through the ground), a ring over
-// the head of whoever speaks. Opt-in: the mic is asked for only when turned on (n, or the
-// settings). The links themselves are voice-mesh.js; this is the sound, the keys and the hud.
+// voice.js, a walkie-talkie « de proximité »: hold n (R3, the touch button) and talk; the
+// diggers around you hear you where your body is (a panner each, louder when close, silent past
+// 25 m, muffled through the ground), with a radio's colour and a « kssht » at each end. The
+// walkie shows in your hand and at your avatar's mouth, a ring over the head of whoever speaks.
+// Opt-in: the mic is asked for at the first press (or in the settings). The links are
+// voice-mesh.js, the radio itself talkie.js; this is the sound, the keys and the hud.
 import * as THREE from 'three';
 import { createMesh, VOICE } from './voice-mesh.js';
 import { iceServers } from './rtc.js';
 import { panner, place } from './lib/spatial.js';
+import { talkieModel, createPtt, squelch, radioChain, normMode } from './talkie.js';
 
 const KEY = 'a-hole-voice';
-const MODES = [['off', 'coupé'], ['open', 'ouvert'], ['ptt', 'talkie (n)']];
+const MODES = [['off', 'coupé'], ['ptt', 'talkie']];
 const TALK = .018;   // rms above which someone is talking
 
 // game: { audio, ui, camera, getNet, getState, getMe() → { pos:[x,y,z], w }, blocked(a, b) → bool, multi }
@@ -16,9 +19,10 @@ export function createVoice(game) {
   const { audio, ui, getNet, getState, multi } = game;
   const pref = { mode: 'off', vol: 1, muted: {} };
   try { Object.assign(pref, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch {}
+  pref.mode = normMode(pref.mode);
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(pref)); } catch {} };
   const $ = (id) => document.getElementById(id);
-  let mic = null, micSrc = null, micAn = null, hush = false, held = false, asking = false;
+  let mic = null, micSrc = null, micAn = null, asking = false;
   let bus = null, level = 0, tickT = 0, hudT = 0;
   const talk = new Map();   // id → { el, src, an, lp, g, pan, level, ring, occT, muff }
   const buf = new Uint8Array(256);
@@ -31,39 +35,50 @@ export function createVoice(game) {
     onTrack: plug, onGone: unplug,
   });
 
-  // ---------- the mic ----------
-  function micLive() { const on = pref.mode === 'open' ? !hush : pref.mode === 'ptt' ? held : false; for (const t of mic?.getAudioTracks() || []) t.enabled = on; return on; }
+  // ---------- the mic: on air only while the button is held ----------
+  const ptt = createPtt({ ready: () => !!mic && pref.mode !== 'off', join: () => setMode('ptt'), talk: onAir });
+  function micLive() { const on = !!mic && pref.mode !== 'off' && ptt.on; for (const t of mic?.getAudioTracks() || []) t.enabled = on; return on; }
+  function onAir(on) {
+    micLive();
+    audio.init();
+    if (audio.ctx && audio.out) squelch(audio.ctx, audio.noiseBuf, audio.out, on);
+    net()?.sendFx({ k: 'talkie', on: on ? 1 : 0 });
+    fp.led(on);
+  }
   async function setMode(m) {
-    if (!multi) return;
+    if (!multi) return false;
+    m = normMode(m);
     if (m === 'off') {
+      ptt.up();
       pref.mode = 'off'; save();
       mesh.stop();
       for (const t of mic?.getTracks() || []) t.stop();
       mic = null; try { micSrc?.disconnect(); } catch {} micSrc = micAn = null;
-      render(); return;
+      render(); return false;
     }
     if (!mic) {
-      if (asking) return;
-      if (!navigator.mediaDevices?.getUserMedia) { ui.toast('micro indisponible ici (il faut https)', true, 3500); return; }
+      if (asking) return false;
+      if (!navigator.mediaDevices?.getUserMedia) { ui.toast('micro indisponible ici (il faut https)', true, 3500); return false; }
       asking = true;
       try {
         mic = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false });
       } catch (x) {
         asking = false;
         ui.toast(x?.name === 'NotAllowedError' ? 'micro refusé · autorise-le dans le navigateur' : 'pas de micro trouvé', true, 3500);
-        pref.mode = 'off'; render(); return;
+        pref.mode = 'off'; render(); return false;
       }
       asking = false;
       audio.init();
       const ctx = audio.ctx;
       if (ctx) { micSrc = ctx.createMediaStreamSource(mic); micAn = ctx.createAnalyser(); micAn.fftSize = 256; micSrc.connect(micAn); }
     }
-    pref.mode = m; hush = false; save();
+    pref.mode = m; save();
     micLive();
     const n = net();
     if (n?.online && n.id != null && !mesh.live) mesh.start(n.id);
-    ui.toast(m === 'ptt' ? 'micro : maintiens n pour parler' : 'micro ouvert · n : sourdine', false, 2600);
+    ui.toast('talkie allumé · maintiens n pour parler', false, 2600);
     render();
+    return true;
   }
 
   // ---------- their voices ----------
@@ -80,18 +95,19 @@ export function createVoice(game) {
     const el = new Audio(); el.srcObject = stream; el.muted = true; el.play?.().catch(() => {});
     const src = ctx.createMediaStreamSource(stream);
     const an = ctx.createAnalyser(); an.fftSize = 256;
+    const radio = radioChain(ctx);
     const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 16000;
     const g = ctx.createGain(); g.gain.value = 0;
     const pan = panner(ctx, { ref: 2, max: VOICE.range, roll: 1.2 });
-    src.connect(an); src.connect(lp); lp.connect(g); g.connect(pan); pan.connect(out());
-    talk.set(id, { el, src, an, lp, g, pan, level: 0, ring: null, occT: Math.random() * .25, muff: false });
+    src.connect(an); src.connect(radio.input); radio.output.connect(lp); lp.connect(g); g.connect(pan); pan.connect(out());
+    talk.set(id, { el, src, an, lp, g, pan, radio, level: 0, ring: null, occT: Math.random() * .25, muff: false });
     render();
   }
   function unplug(id) {
     const v = talk.get(id);
     if (!v) return;
     talk.delete(id);
-    for (const n of [v.src, v.an, v.lp, v.g, v.pan]) try { n.disconnect(); } catch {}
+    for (const n of [v.src, v.an, ...v.radio.nodes, v.lp, v.g, v.pan]) try { n.disconnect(); } catch {}
     try { v.el.srcObject = null; } catch {}
     if (v.ring) v.ring.visible = false;
     render();
@@ -117,10 +133,55 @@ export function createVoice(game) {
     return s;
   }
 
+  // ---------- the walkie in my hand: raised to the face while on air ----------
+  const fp = (() => {
+    let m = null, k = 0;
+    const REST = new THREE.Vector3(-.2, -.62, -.38), UP = new THREE.Vector3(-.12, -.2, -.3);
+    return {
+      led(on) { m?.led(on); },
+      update(dt) {
+        const want = ptt.on && getState() === 'play';
+        k += ((want ? 1 : 0) - k) * Math.min(1, dt * 14);
+        if (!m && want) {
+          m = talkieModel(net()?.color ?? 0xd9a125);
+          m.g.traverse(o => { o.renderOrder = 999; });
+          m.g.scale.setScalar(1.6);
+          game.camera.add(m.g);
+          m.led(true);
+        }
+        if (!m) return;
+        m.g.visible = k > .02;
+        m.g.position.lerpVectors(REST, UP, k);
+        m.g.rotation.set(.15 - .25 * k, .5, .12);
+      },
+      get model() { return m; },
+    };
+  })();
+
+  // someone else keys their walkie: up to the mouth, and the « kssht » where they are (if they're heard)
+  const at = new THREE.Vector3();
+  function remoteKey(id, on) {
+    const p = net()?.peers.get(id);
+    if (!p) return;
+    p.avatar.rig.talkie(on, p.color);
+    const ctx = audio.ctx;
+    if (!ctx || !audio.out || pref.muted[p.name] || !mic) return;
+    game.camera.getWorldPosition(at);
+    const d = at.distanceTo(p.avatar.g.position);
+    if (p.w !== game.getMe().w || d > VOICE.range) return;
+    const pan = panner(ctx, { ref: 2, max: VOICE.range, roll: 1.2 });
+    place(ctx, pan, p.avatar.g.position.x, p.avatar.g.position.y + 1.6, p.avatar.g.position.z);
+    pan.connect(out());
+    squelch(ctx, audio.noiseBuf, pan, !!on);
+    setTimeout(() => { try { pan.disconnect(); } catch {} }, 600);
+  }
+
   // ---------- each frame ----------
   const ears = new THREE.Vector3(), head = new THREE.Vector3();
   function update(dt) {
     if (!multi) return;
+    fp.update(dt);
+    if (ptt.held && getState() !== 'play') ptt.up();
     const n = net();
     if (mesh.live && !n?.online) mesh.stop();
     else if (!mesh.live && mic && n?.online && n.id != null && pref.mode !== 'off') mesh.start(n.id);
@@ -184,7 +245,7 @@ export function createVoice(game) {
     const who = [...talk].filter(([, v]) => v.level > TALK && v.ring?.material.opacity > .2).map(([id]) => net()?.peers.get(id)?.name).filter(Boolean);
     const me = live && level > TALK;
     const html = `<i class="${live ? me ? 'on talk' : 'on' : ''}" style="--lv:${Math.min(1, level * 10).toFixed(2)}"></i>` +
-      `<span>${!live ? pref.mode === 'ptt' ? 'n : parler' : 'sourdine · n' : me ? 'tu parles' : 'micro ouvert'}</span>` +
+      `<span>${live ? 'tu parles…' : '<b class="k">n</b> : parler au talkie'}</span>` +
       (who.length ? `<b>${who.slice(0, 3).map(esc).join(', ')} ${who.length > 1 ? 'parlent' : 'parle'}</b>` : '') +
       (talk.size ? `<em>${talk.size} à portée</em>` : '');
     if (chip._h !== html) { chip.innerHTML = html; chip._h = html; }
@@ -221,14 +282,14 @@ export function createVoice(game) {
     });
     setInterval(render, 1000);
     render();
+    // hold n (a pad's R3 and the touch button send it too): the first press asks for the mic
+    document.body.classList.add('vc');
     addEventListener('keydown', (e) => {
       if (e.code !== 'KeyN' || e.repeat || e.target.closest?.('input, textarea') || getState() !== 'play') return;
-      if (!mic || pref.mode === 'off') { setMode(pref.mode === 'ptt' ? 'ptt' : 'open'); return; }
-      if (pref.mode === 'ptt') { held = true; micLive(); }
-      else { hush = !hush; micLive(); ui.toast(hush ? 'micro en sourdine' : 'micro ouvert', false, 1200); }
+      ptt.down();
     });
-    addEventListener('keyup', (e) => { if (e.code === 'KeyN' && held) { held = false; micLive(); } });
-    addEventListener('blur', () => { if (held) { held = false; micLive(); } });
+    addEventListener('keyup', (e) => { if (e.code === 'KeyN') ptt.up(); });
+    addEventListener('blur', () => ptt.up());
   }
 
   return {
@@ -236,7 +297,7 @@ export function createVoice(game) {
     get mode() { return mic ? pref.mode : 'off'; },
     setMode,
     // net hooks: fx { k: 'vc' }, someone new (hears I'm in), someone gone
-    onFx(id, fx) { mesh.onSignal(id, fx); },
+    onFx(id, fx) { if (fx.k === 'talkie') remoteKey(id, !!fx.on); else mesh.onSignal(id, fx); },
     hello() { mesh.hello(); },
     peerLeft(id) { mesh.peerLeft(id); unplug(id); },
     // a mark in the player list: in the voice chat, talking, muted by me
@@ -247,6 +308,7 @@ export function createVoice(game) {
       const v = talk.get(id);
       return `<span class="vc${pref.muted[name] ? ' mute' : v && v.level > TALK ? ' on' : ''}"></span>`;
     },
-    mesh, talk,
+    mesh, talk, ptt, fp,
+    get onAir() { return micLive(); },
   };
 }
