@@ -38,7 +38,8 @@ const GROUPS = [
 
 const CSS = `
 #shortcuts { position: absolute; right: calc(var(--u, 10px) * 3); top: 50%; transform: translateY(-50%); width: min(520px, calc(100vw - 32px));
-  max-height: calc(100vh - 48px); overflow: auto; z-index: 2; }
+  max-height: calc(100vh - 48px); overflow: auto; z-index: 2; padding: 18px 22px 16px; box-sizing: border-box; }
+#shortcuts .seclabel { margin-bottom: 4px; }
 #shortcuts.hidden { display: none; }
 #shortcuts .sk-grp { margin: 10px 0 4px; font: 900 11px/1.2 var(--text, sans-serif); letter-spacing: .14em; text-transform: uppercase; color: var(--a, #ffb020); }
 #shortcuts .sk-row { display: flex; gap: 12px; align-items: baseline; padding: 4px 0; font-size: 14px; }
