@@ -2,10 +2,12 @@
 // (six voices through two formant filters: vowels, no words spoken by a machine), a big drum,
 // whistles, cheers; the police's shields banged together; firework mortars (the fwoosh, the
 // whistle, the bang, the crackle); the foam balls' « poc »; the smoke's hiss, the cough.
-// Every sound comes from a place (lib/spatial.js): heard across the village, fainter far off,
-// muffled indoors and underground, silent on the other worlds.
+// Every sound comes from a place (lib/spatial.js) and carries only so far (blocus-hear.js): sharp
+// up close, duller and fainter with distance, silent past its range, a bang heard late; muffled
+// through walls, silent down the hole and on the other worlds.
 import { createSynth } from './lib/sfx.js';
 import { listen, panner, place } from './lib/spatial.js';
+import { gainAt, lowpassAt, delayAt } from './blocus-hear.js';
 
 // the chant: syllable, start (beats), length (beats), formants F1 F2, pitch (×), consonant
 const CHANT = [
@@ -19,7 +21,8 @@ export function createBlocusSfx() {
   const S = createSynth({ vol: .9 });
   let ctx = null, lp = null, out = null, crowd = null, police = null, spots = [], spotI = 0;
   let voice = null, nextLine = 0, lines = 0, whistleT = 2, murmur = null, on = false;
-  let cheerT = 0;
+  let cheerT = 0, ears = false;
+  const ear = { x: 0, y: 0, z: 0 };
 
   function ensure() {
     S.init();
@@ -28,9 +31,15 @@ export function createBlocusSfx() {
     lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 16000; lp.Q.value = .4;
     out = ctx.createGain(); out.gain.value = 0;
     lp.connect(out); out.connect(S.master);
-    const spot = () => { const g = ctx.createGain(); const p = panner(ctx, { ref: 6, max: 1e4, roll: 1 }); g.connect(p); p.connect(lp); return { g, p }; };
+    // a place: its own air (a lowpass), left or right (the panner), its own distance (a gain)
+    const spot = () => {
+      const g = ctx.createGain(), air = ctx.createBiquadFilter(), p = panner(ctx, { ref: 1, max: 1e4, roll: 0 }), dist = ctx.createGain();
+      air.type = 'lowpass'; air.frequency.value = 16000; dist.gain.value = 0;
+      g.connect(air); air.connect(p); p.connect(dist); dist.connect(lp);
+      return { g, air, p, dist };
+    };
     crowd = spot(); police = spot();
-    spots = [spot(), spot(), spot(), spot(), spot(), spot()];
+    spots = Array.from({ length: 10 }, spot);
     // the crowd's voices: saws around two pitches (low and high voices), always running, gated
     voice = { g: ctx.createGain(), f1: ctx.createBiquadFilter(), f2: ctx.createBiquadFilter(), osc: [] };
     voice.g.gain.value = 0;
@@ -53,8 +62,23 @@ export function createBlocusSfx() {
     src.connect(mf); mf.connect(murmur); murmur.connect(crowd.g); src.start();
     return true;
   }
-  // a spot for a one-off, placed where it happens
-  function at(x, y, z) { const s = spots[spotI]; spotI = (spotI + 1) % spots.length; place(ctx, s.p, x, y, z); return s.g; }
+  // how far from the ears
+  const far = (x, y, z) => Math.hypot(x - ear.x, y - ear.y, z - ear.z);
+  // set a place for a sound of `kind` at d metres
+  function tune(s, d, kind, now = false) {
+    const g = ears ? gainAt(d, kind) : 0, f = lowpassAt(d, kind), t = ctx.currentTime;
+    if (now) { s.dist.gain.cancelScheduledValues(t); s.dist.gain.setValueAtTime(g, t); s.air.frequency.setValueAtTime(f, t); }
+    else { s.dist.gain.setTargetAtTime(g, t, .15); s.air.frequency.setTargetAtTime(f, t, .15); }
+    return g;
+  }
+  // a place for a one-off, where it happens: null if it's out of earshot; `late`: the sound's delay
+  function at(x, y, z, kind) {
+    const d = far(x, y, z);
+    if (!ears || gainAt(d, kind) <= 0) return null;
+    const s = spots[spotI]; spotI = (spotI + 1) % spots.length;
+    place(ctx, s.p, x, y, z); tune(s, d, kind, true);
+    return { out: s.g, late: kind === 'bang' || kind === 'launch' ? delayAt(d) : 0 };
+  }
 
   // ---------- the voices of the street ----------
   function syllable(t, [, , len, F1, F2, pitch, cons], loud) {
@@ -95,17 +119,20 @@ export function createBlocusSfx() {
     ensure,
     get ready() { return !!ctx; },
     // each frame: where the ears are, the crowd and the police, what the crowd is up to
-    //   mood: 'chant' | 'hoot' | 'murmur'; far: 0..1 (1: nobody to hear); muffle: Hz of the walls
-    update(dt, camera, { active, crowdAt, policeAt, mood = 'chant', muffle = 16000 }) {
+    //   mood: 'chant' | 'hoot' | 'murmur'; hear: blocus-hear.js hearing() { on, lp }
+    update(dt, camera, { active, crowdAt, policeAt, mood = 'chant', hear = { on: true, lp: 16000 } }) {
       if (!ctx) return;
       const t = ctx.currentTime;
-      on = active;
-      out.gain.setTargetAtTime(active ? 1 : 0, t, .4);
-      lp.frequency.setTargetAtTime(muffle, t, .1);
-      if (!active) { murmur.gain.setTargetAtTime(0, t, .3); return; }
+      on = active; ears = hear.on;
+      const e = camera.matrixWorld.elements; ear.x = e[12]; ear.y = e[13]; ear.z = e[14];
+      out.gain.setTargetAtTime(ears ? 1 : 0, t, .2);
+      lp.frequency.setTargetAtTime(hear.lp, t, .1);
       listen(ctx, camera);
       place(ctx, crowd.p, crowdAt.x, 1.6, crowdAt.z);
       place(ctx, police.p, policeAt.x, 1.2, policeAt.z);
+      const gc = active ? tune(crowd, far(crowdAt.x, 1.6, crowdAt.z), 'crowd') : tune(crowd, 1e9, 'crowd');
+      tune(police, active ? far(policeAt.x, 1.2, policeAt.z) : 1e9, 'police');
+      if (!active || gc <= 0) { murmur.gain.setTargetAtTime(0, t, .3); nextLine = t + .5; return; }
       murmur.gain.setTargetAtTime(mood === 'murmur' ? .16 : .07, t, .5);
       // the chant, a line at a time, a little ahead; the drum on « on » and « rien »
       if (nextLine < t) nextLine = t + .1;
@@ -132,51 +159,54 @@ export function createBlocusSfx() {
     // the police's shields, all together
     bang(x, z) {
       if (!ctx || !on) return;
-      const t = ctx.currentTime, d = at(x, 1.1, z);
+      const p = at(x, 1.1, z, 'police'); if (!p) return;
       for (let k = 0; k < 3; k++) {
-        S.hiss(.12, 800 + k * 150, { type: 'bandpass', q: 2.5, vol: .7, at: k * .012, out: d });
-        S.blip(170 + k * 20, .14, { type: 'triangle', vol: .45, at: k * .012, out: d });
+        S.hiss(.12, 800 + k * 150, { type: 'bandpass', q: 2.5, vol: .7, at: k * .012, out: p.out });
+        S.blip(170 + k * 20, .14, { type: 'triangle', vol: .45, at: k * .012, out: p.out });
       }
-      void t;
     },
     // a mortar's launch: the fwoosh, the rising whistle
-    launch(x, z, fl) {
-      if (!ctx || !on) return;
-      const d = at(x, 1, z);
-      S.hiss(.35, 900, { type: 'bandpass', to: 3200, vol: 1, q: 1.2, out: d });
-      S.blip(1300, fl * .8, { to: 2600, vol: .12, attack: .1, out: d });
-      S.blip(80, .15, { type: 'sine', vol: .5, to: 40, out: d });
+    launch(x, z, fl, y = 1, mine = false) {
+      if (!ctx || (!on && !mine)) return;
+      const p = at(x, y, z, 'launch'); if (!p) return;
+      S.hiss(.35, 900, { type: 'bandpass', to: 3200, vol: 1, q: 1.2, at: p.late, out: p.out });
+      S.blip(1300, fl * .8, { to: 2600, vol: .12, attack: .1, at: p.late, out: p.out });
+      S.blip(80, .15, { type: 'sine', vol: .5, to: 40, at: p.late, out: p.out });
     },
     // the burst: a bang (late, if far), then the crackle; the crowd cheers
-    burst(x, y, z, dist) {
-      if (!ctx || !on) return;
-      const d = at(x, y, z), late = Math.min(.5, dist / 343);
+    burst(x, y, z, mine = false) {
+      if (!ctx || (!on && !mine)) return;
+      const p = at(x, y, z, 'bang'); if (!p) return;
+      const d = p.out, late = p.late;
       S.hiss(1.4, 1800, { to: 180, vol: 1.6, at: late, out: d });
       S.blip(70, .7, { to: 32, vol: 1.2, at: late, out: d });
       for (let k = 0; k < 14; k++) S.hiss(.03, 3000 + Math.random() * 3000, { type: 'bandpass', q: 3, vol: .35 + Math.random() * .3, at: late + .3 + Math.random() * 1.1, out: d });
-      if (cheerT <= 0) { cheerT = 3; cheer(ctx.currentTime + late + .5, .9); }
+      if (!mine && cheerT <= 0 && far(x, y, z) < 90) { cheerT = 3; cheer(ctx.currentTime + late + .5, .9); }
     },
     // the launcher's « pomp », then the « poc » where the ball lands
     shot(x, z) {
       if (!ctx || !on) return;
-      const d = at(x, 1.3, z);
-      S.blip(190, .12, { to: 70, vol: .9, out: d }); S.hiss(.07, 1300, { vol: .5, out: d });
+      const p = at(x, 1.3, z, 'poc'); if (!p) return;
+      S.blip(190, .12, { to: 70, vol: .9, out: p.out }); S.hiss(.07, 1300, { vol: .5, out: p.out });
     },
     poc(x, y, z, close = false) {
       if (!ctx) return;
-      const d = close ? S.master : at(x, y, z), v = close ? .5 : 1;
+      const p = close ? { out: S.master } : at(x, y, z, 'poc'); if (!p) return;
+      const d = p.out, v = close ? .5 : 1;
       S.blip(1050, .06, { to: 380, vol: .8 * v, out: d }); S.hiss(.02, 4000, { type: 'highpass', vol: .5 * v, out: d });
     },
     // the canister: a long hiss
     smoke(x, z) {
       if (!ctx || !on) return;
-      const d = at(x, .3, z);
+      const p = at(x, .3, z, 'poc'); if (!p) return;
+      const d = p.out;
       S.hiss(3.5, 3500, { type: 'highpass', to: 2500, vol: .5, out: d });
     },
     // a fire's crackle, now and then
     crackle(x, y, z) {
       if (!ctx || !on) return;
-      const d = at(x, y, z);
+      const p = at(x, y, z, 'poc'); if (!p) return;
+      const d = p.out;
       for (let k = 0; k < 3; k++) S.hiss(.02, 2200 + Math.random() * 2500, { type: 'bandpass', q: 2, vol: .25 + Math.random() * .3, at: Math.random() * .25, out: d });
     },
     // me, coughing in the smoke (in my own head: no place)

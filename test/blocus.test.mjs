@@ -110,3 +110,31 @@ test('blocus: the schedule and the admin setting', () => {
   const d = tun.DEFS.find(x => x.k === 'blocus');
   assert.ok(d && d.g && d.label.includes('blocus'));
 });
+
+test('blocus: how far it carries (gain, lowpass, delay, walls, the hole, other worlds)', async () => {
+  const H = await import('../src/blocus-hear.js');
+  for (const [kind, max] of [['bang', 120], ['crowd', 70], ['poc', 40]]) {
+    assert.equal(H.RANGE[kind].max, max);
+    assert.ok(H.gainAt(0, kind) > .99, kind);
+    let last = 2, lastF = 1e9;
+    for (let d = 0; d <= max + 30; d += .5) {
+      const g = H.gainAt(d, kind), f = H.lowpassAt(d, kind);
+      assert.ok(g >= 0 && g <= 1 && g <= last + 1e-12, `${kind} gain at ${d}`);
+      assert.ok(f <= lastF && f >= 900, `${kind} lowpass at ${d}`);
+      last = g; lastF = f;
+    }
+    assert.equal(H.gainAt(max, kind), 0); assert.equal(H.gainAt(max + 50, kind), 0); assert.equal(H.gainAt(1e6, kind), 0);
+    assert.ok(H.lowpassAt(0, kind) >= 15000 && H.lowpassAt(max, kind) <= 1100);
+  }
+  // the bang: quiet already past 60 m; the crowd carries much less far than the bang
+  assert.ok(H.gainAt(60, 'bang') < .12 && H.gainAt(60, 'bang') > 0);
+  assert.equal(H.gainAt(80, 'crowd'), 0); assert.ok(H.gainAt(80, 'bang') > 0);
+  assert.equal(H.gainAt(45, 'poc'), 0);
+  // seen 150 m away, heard ~0.44 s later
+  assert.ok(Math.abs(H.delayAt(150) - .437) < .01); assert.equal(H.delayAt(0), 0);
+  // the ears: other worlds and the hole hear nothing, walls muffle
+  assert.deepEqual(H.hearing({ home: false, y: 1.6, indoor: false }), { on: false, lp: 16000 });
+  assert.equal(H.hearing({ home: true, y: -5, indoor: false }).on, false);
+  assert.deepEqual(H.hearing({ home: true, y: 1.6, indoor: true }), { on: true, lp: 650 });
+  assert.deepEqual(H.hearing({ home: true, y: 1.6, indoor: false }), { on: true, lp: 16000 });
+});

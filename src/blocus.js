@@ -16,6 +16,7 @@ import * as SIM from './blocus-sim.js';
 import { createLycee, LYCEE } from './lycee.js';
 import { createPoints, createBalls } from './blocus-fx.js';
 import { createBlocusSfx } from './blocus-sfx.js';
+import { hearing } from './blocus-hear.js';
 
 const SEED = 4217;
 const SIGNS = ['non à la réforme', 'on veut des profs', 'lycée en lutte', 'le bac pour tous', 'on lâche rien', 'des profs, pas des trous', 'rendez-nous la récré', 'même pas peur', 'la cantine avec nous', 'des moyens pour l\'école'];
@@ -165,7 +166,7 @@ export function createBlocus({ parent, colliders, interactables, ui, shake = () 
       fx.spawn(x, y, z, 0, 0, 0, .25, 9, 14, 1, .9, .7, .9);
       for (let k = 0; k < 20; k++) fx.spawn(x + (rnd() - .5) * 6, y - rnd() * 2, z + (rnd() - .5) * 6, 0, -.5, 0, .3 + rnd() * .9, .25, .1, 1, 1, .9, 1);
       const d = cam.distanceTo(_c.set(x, y, z));
-      sfx.burst(x, y, z, d);
+      sfx.burst(x, y, z);
       if (d < 30) shake(.08 + .3 * (1 - d / 30));
       for (const a of agents) if (a.police) a.flinch = .6;
     } else if (e.k === 'shot') {
@@ -212,6 +213,7 @@ export function createBlocus({ parent, colliders, interactables, ui, shake = () 
   interactables.push(gateIt, doorIt);
 
   let indoorNow = false;
+  const ear = {};
   const stats = { mortar: 0, burst: 0, shot: 0, impact: 0, smoke: 0, cloud: 0, shove: 0 };
   let active = null, t = 0, frame = 0, lastBeat = -1, crackleT = 0, sawFirst = false;
   const mood = (m, tau) => tau < 4 || tau >= SIM.E - SIM.SETTLE ? 'chant' : !m ? 'chant' : m.kind === 'surge' ? 'hoot' : m.kind === 'mill' ? 'chant' : 'murmur';
@@ -251,11 +253,10 @@ export function createBlocus({ parent, colliders, interactables, ui, shake = () 
       const dx = _c.x - OX, dz = _c.z - (OZ + 1), dist = Math.hypot(dx, dz);
       lycee.update(dt, home && dist < 90);
       // the sound: only at home, fading with distance, muffled indoors and underground
-      if (home && active && dist < 220 && (navigator.userActivation?.hasBeenActive ?? true)) sfx.ensure();
+      if (home && active && dist < 130 && (navigator.userActivation?.hasBeenActive ?? true)) sfx.ensure();
       const m = active ? SIM.moveAt(sim.plan || SIM.makePlan(SEED, 0), sim.tau) : null;
-      if ((frame & 7) === 0) indoorNow = home && active && dist < 220 && inside(_c);
-      const muffle = _c.y < -1.5 ? Math.max(260, 700 + _c.y * 8) : indoorNow ? 650 : 16000;
-      sfx.update(dt, camera, { active: home && active && dist < 220, crowdAt, policeAt, mood: mood(m, sim.tau), muffle });
+      if ((frame & 7) === 0) indoorNow = home && dist < 130 && inside(_c);
+      sfx.update(dt, camera, { active: home && active, crowdAt, policeAt, mood: mood(m, sim.tau), hear: hearing({ home, y: _c.y, indoor: indoorNow }, ear) });
       if (!home || !active) { setVeil(blur = 0); return; }
       if (dist > 200) { root.visible = false; return; }
       root.visible = true;
