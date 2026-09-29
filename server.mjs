@@ -32,7 +32,7 @@ if (!ADMIN_TOKEN) {
 const digest = (s) => crypto.createHash('sha256').update(String(s)).digest();
 const tokenOk = (t) => typeof t === 'string' && crypto.timingSafeEqual(digest(t), digest(ADMIN_TOKEN));
 
-const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.json': 'application/json' };
+const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.json': 'application/json', '.mp3': 'audio/mpeg', '.woff2': 'font/woff2' };
 
 // ---------- the guest book on the table in the house ----------
 const NOTES = path.resolve('data/notes');

@@ -53,6 +53,38 @@ const SOUND = 343;
 // audio: audio.js (ctx, out, noiseBuf once started)
 export function createScreamer(audio) {
   const live = new Set();
+  // the recorded scream (assets/wilhelmscream.mp3, made for the game): fetched with the page, decoded
+  // as soon as the sound is on (the first click); until then (or if it fails) the synthesised one stands in
+  let clip = null, raw = null, decoding = false;
+  fetch(new URL('../assets/wilhelmscream.mp3', import.meta.url))
+    .then(r => r.ok ? r.arrayBuffer() : Promise.reject(new Error('http ' + r.status)))
+    .then(a => { raw = a; load(); })
+    .catch(e => { console.warn('cri de chute : fichier indisponible, voix de synthèse', e?.message || e); });
+  function load() {
+    if (clip || decoding || !raw || !audio.ctx) return;
+    decoding = true;
+    audio.ctx.decodeAudioData(raw).then(b => { clip = b; raw = null; })
+      .catch(e => { decoding = false; raw = null; console.warn('cri de chute : décodage raté, voix de synthèse', e?.message || e); });
+  }
+
+  // the clip, a touch higher or lower per player (the same seed, the same voice everywhere)
+  function startClip(v, pos, local, vol) {
+    const ctx = audio.ctx, t = ctx.currentTime;
+    const src = ctx.createBufferSource(); src.buffer = clip;
+    src.playbackRate.value = .88 + (v.f0 - 560) / 200 * .22;
+    const env = ctx.createGain();
+    env.gain.value = (local ? .45 : 1) * vol;
+    src.connect(env);
+    const nodes = [src, env];
+    let pan = null;
+    if (local || !pos) env.connect(audio.out);
+    else { pan = panner(ctx, { ref: 2.5, max: 120, roll: 1.1 }); env.connect(pan); pan.connect(audio.out); nodes.push(pan); }
+    src.start(t);
+    const h = { osc: src, env, pan, pos, nodes, srcs: [src], t0: t, dist: null, vr: 0, last: null, done: false, end: (kind) => end(h, kind) };
+    if (pan) move(h, 0, null);
+    live.add(h);
+    return h;
+  }
 
   // pos(): where the body is now ({x,y,z}, or null: gone); local: my own voice, in the head.
   // A Wilhelm-style imitation (synthesised, no sample): a sharp strained attack jumping up, a
@@ -61,6 +93,8 @@ export function createScreamer(audio) {
   function start({ seed = 1, pos = null, local = false, vol = 1 } = {}) {
     const ctx = audio.ctx;
     if (!ctx || !audio.out) return null;
+    load();
+    if (clip) return startClip(voiceOf(seed), pos, local, vol);
     const v = voiceOf(seed), t = ctx.currentTime, F = v.f0;
     const osc = ctx.createOscillator(); osc.type = 'sawtooth';
     const f = osc.frequency;
@@ -175,6 +209,7 @@ export function createScreamer(audio) {
     update(dt, ears) {
       const ctx = audio.ctx;
       if (!ctx) return;
+      if (!clip) load();
       for (const h of [...live]) {
         if (ctx.currentTime - h.t0 > 6.2) { end(h, 'cut'); continue; }
         if (h.pan) move(h, dt, ears);
