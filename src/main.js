@@ -30,6 +30,7 @@ import { createMiniGames, GAMES, fmtRecord } from './minigames.js';
 import { GAME_CODE } from './games.js';
 import { createCave, createTrapGuide, GUN_REGEN, slotAt } from './cave.js';
 import { createPartCompass } from './compass.js';
+import { createShortcuts } from './shortcuts.js';
 import { createPortals } from './portal.js';
 import { createOrgan, createDiscLauncher, createBats, createReliquary, SONGS } from './church.js';
 import { createMatsuri } from './matsuri.js';
@@ -3277,6 +3278,8 @@ function watchFrames(ms) {
 const settings = { volume: .7, sens: 1, fov: 72, minimap: true, invert: false, full: true };
 try { Object.assign(settings, JSON.parse(localStorage.getItem('a-hole-settings') || '{}')); } catch {}
 const $s = (id) => document.getElementById(id);
+// the pause menu's « raccourcis »: every key, by category, in place of the settings panel
+createShortcuts({ resume: ui.el.resume, settings: $s('settings'), menu: document.querySelector('#resume .pause-menu') });
 function applySettings() {
   audio.setVolume(settings.volume);
   player.feel.sens = settings.sens; player.feel.invert = settings.invert;

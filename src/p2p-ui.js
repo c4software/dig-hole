@@ -10,10 +10,10 @@ import { CONFIG } from './config.js';
 import { esc } from './lib/fmt.js';
 
 const CSS = `
-.p2p-card { position: fixed; z-index: 70; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(460px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto;
+.p2p-card { position: fixed; z-index: 97; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(460px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto;
   background: #261c14; color: #fff; border: 3px solid #1a130d; border-radius: 20px; padding: 18px 18px 16px; box-shadow: 0 10px 0 rgba(0,0,0,.35), 0 30px 80px rgba(0,0,0,.6);
   font: 500 14px/1.4 'Rubik', system-ui, sans-serif; }
-.p2p-dim { position: fixed; inset: 0; z-index: 69; background: rgba(11,13,18,.55); }
+.p2p-dim { position: fixed; inset: 0; z-index: 96; background: rgba(11,13,18,.55); }
 .p2p-card h2 { font: 400 26px/1.05 'Titan One', 'Rubik', system-ui, sans-serif; margin-bottom: 4px; }
 .p2p-card .sub { opacity: .7; margin-bottom: 12px; }
 .p2p-card label { display: block; font: 900 10.5px/1 'Rubik', system-ui, sans-serif; letter-spacing: .14em; text-transform: uppercase; opacity: .7; margin: 12px 0 6px; }

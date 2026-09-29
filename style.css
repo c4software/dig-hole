@@ -329,6 +329,7 @@ input[type=range]:active::-moz-range-thumb { scale: 1.22; }
 #gm-count-n.tick { animation: count-tick .5s var(--spring2); }
 #gm-count.hot #gm-count-n { color: var(--danger); }
 body.in-menu #hud, body.in-menu #lobby, body.in-menu #quest, body.in-menu #relock { display: none !important; }
+body:has(#resume:not(.hidden)) #quest, body:has(#resume:not(.hidden)) #evcard { display: none !important; }   /* the pause menu covers the hints (the compass, the fête card) */
 @media (max-width: 900px) { .gm-head { left: 16px; right: 16px; max-width: none; font-size: 38px; } .gm-menu { top: 150px; } }
 
 /* ------------------------------------------------------------------ PAUSE */
