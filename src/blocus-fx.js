@@ -101,6 +101,23 @@ export function createPoints(parent, { max = 600, additive = true } = {}) {
   return { pts, spawn, update, clear() { n = 0; geo.setDrawRange(0, 0); }, get count() { return n; } };
 }
 
+// a firework's burst: a sphere of sparks in one pure colour (every third in a second one),
+// spread wide so they don't pile up into white, bright enough for the bloom; a coloured flash
+// and its lit smoke. low: a half sphere (it went off on the ground)
+export const FIRE_COLS = [[1, .12, .06], [.1, 1, .2], [.2, .35, 1], [1, .72, 0], [.85, .15, 1]];
+export function fireworkBurst(fx, puffs, x, y, z, col, { low = false, n = 120, speed = 9, rnd = Math.random } = {}) {
+  const [r, g, b] = FIRE_COLS[col % FIRE_COLS.length], [r2, g2, b2] = FIRE_COLS[(col + 2) % FIRE_COLS.length];
+  for (let k = 0; k < n; k++) {
+    const u = low ? rnd() : rnd() * 2 - 1, th = rnd() * Math.PI * 2, s = Math.sqrt(1 - u * u), v = speed * (.75 + rnd() * .4), two = k % 3 === 0;
+    fx.spawn(x, y, z, Math.cos(th) * s * v, u * v, Math.sin(th) * s * v, 1.4 + rnd() * .8, .75, .25, (two ? r2 : r) * 1.8, (two ? g2 : g) * 1.8, (two ? b2 : b) * 1.8, .75, 1.3, 2);
+  }
+  // the flash, in the burst's colour, and glitter falling after
+  fx.spawn(x, y, z, 0, 0, 0, .3, 10, 16, r * 1.5 + .2, g * 1.5 + .2, b * 1.5 + .2, .8);
+  for (let k = 0; k < 24; k++) fx.spawn(x + (rnd() - .5) * 7, y - rnd() * 2, z + (rnd() - .5) * 7, 0, -.6, 0, .4 + rnd() * .9, .35, .12, r * 1.4 + .3, g * 1.4 + .3, b * 1.4 + .3, 1);
+  // its smoke, lit in its colour for a moment
+  for (let k = 0; k < 10; k++) puffs.spawn(x + (rnd() - .5) * 2, y, z + (rnd() - .5) * 2, (rnd() - .5) * 1.5, rnd() * .6, (rnd() - .5) * 1.5, 1.8, 1, 3, .55 + r * .45, .55 + g * .45, .55 + b * .45, .45, 1, -.05);
+}
+
 // the foam balls: flying from a launcher to where they're sent, then bouncing away
 export function createBalls(parent, max = 16) {
   const mesh = new THREE.InstancedMesh(new THREE.SphereGeometry(.06, 10, 7), new THREE.MeshLambertMaterial({ color: 0xffd23a, emissive: 0x6a4a00 }), max);

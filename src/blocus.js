@@ -14,14 +14,13 @@ import { canvasTex } from './lib/tex.js';
 import { mulberry } from './lib/math.js';
 import * as SIM from './blocus-sim.js';
 import { createLycee, LYCEE } from './lycee.js';
-import { createPoints, createBalls } from './blocus-fx.js';
+import { createPoints, createBalls, fireworkBurst } from './blocus-fx.js';
 import { createBlocusSfx } from './blocus-sfx.js';
 import { hearing } from './blocus-hear.js';
 
 const SEED = 4217;
 const SIGNS = ['non à la réforme', 'on veut des profs', 'lycée en lutte', 'le bac pour tous', 'on lâche rien', 'des profs, pas des trous', 'rendez-nous la récré', 'même pas peur', 'la cantine avec nous', 'des moyens pour l\'école'];
 const BANNERS = ['lycée en lutte', 'on veut des profs !', 'non à la réforme'];
-const BURST = [[1, .25, .2], [.35, 1, .35], [1, .8, .25], [.35, .55, 1], [1, .4, .85]];
 const HITS = ['poc ! une balle en mousse · rien de cassé', 'poc ! en plein dans le sac à dos', 'aïe… non, même pas mal : c\'est de la mousse', 'poc ! touché, pas coulé', 'poc ! la mousse, ça rebondit'];
 const TOPS = [0xd8403a, 0x3f7fd8, 0x3aa060, 0xe8b830, 0x8a52c8, 0xee7a2a, 0xf2efe8, 0x2a2c32, 0xe87aa8, 0x3ab8b0];
 
@@ -31,7 +30,7 @@ export function createBlocus({ parent, colliders, interactables, ui, shake = () 
   const OX = LYCEE.x, OZ = LYCEE.z;
   const sim = SIM.createCrowd({ seed: SEED });
   const sfx = createBlocusSfx();
-  const fx = createPoints(root, { max: 900, additive: true });
+  const fx = createPoints(root, { max: 1400, additive: true });
   const puffs = createPoints(root, { max: 420, additive: false });
   const balls = createBalls(root, 16);
   const rnd = mulberry(99);
@@ -158,13 +157,8 @@ export function createBlocus({ parent, colliders, interactables, ui, shake = () 
       sfx.launch(OX + tb.x, OZ + tb.z, e.fl);
       for (let k = 0; k < 14; k++) puffs.spawn(OX + tb.x, .9, OZ + tb.z, (rnd() - .5) * 1.5, 1 + rnd(), (rnd() - .5) * 1.5, 1.4, .3, 1.2, .8, .8, .78, .5, 1.5, -.2);
     } else if (e.k === 'burst') {
-      const x = OX + e.x, y = e.y, z = OZ + e.z, [r, g, b] = BURST[e.col % BURST.length], [r2, g2, b2] = BURST[(e.col + 2) % BURST.length];
-      for (let k = 0; k < 110; k++) {
-        const u = rnd() * 2 - 1, th = rnd() * Math.PI * 2, s = Math.sqrt(1 - u * u), sp = 6 + rnd() * 3.5, two = k % 3 === 0;
-        fx.spawn(x, y, z, Math.cos(th) * s * sp, u * sp, Math.sin(th) * s * sp, 1.3 + rnd() * .8, .5, .15, two ? r2 : r, two ? g2 : g, two ? b2 : b, 1, 1.4, 2.2);
-      }
-      fx.spawn(x, y, z, 0, 0, 0, .25, 9, 14, 1, .9, .7, .9);
-      for (let k = 0; k < 20; k++) fx.spawn(x + (rnd() - .5) * 6, y - rnd() * 2, z + (rnd() - .5) * 6, 0, -.5, 0, .3 + rnd() * .9, .25, .1, 1, 1, .9, 1);
+      const x = OX + e.x, y = e.y, z = OZ + e.z;
+      fireworkBurst(fx, puffs, x, y, z, e.col, { rnd });
       const d = cam.distanceTo(_c.set(x, y, z));
       sfx.burst(x, y, z);
       if (d < 30) shake(.08 + .3 * (1 - d / 30));
@@ -187,7 +181,7 @@ export function createBlocus({ parent, colliders, interactables, ui, shake = () 
   }
 
   // ---------- the player's part: a shove, a ball, the smoke ----------
-  let localShotT = 5, hitCool = 0, coughT = 0, blur = 0, smokeToast = 0, veil = null, pushToast = 0;
+  let contactT = 0, localShotT = 5, hitCool = 0, coughT = 0, blur = 0, smokeToast = 0, veil = null, pushToast = 0;
   function setVeil(k) {
     if (!veil) {
       veil = document.createElement('div');
@@ -313,7 +307,7 @@ export function createBlocus({ parent, colliders, interactables, ui, shake = () 
       const k = 1 - Math.exp(-dt * 10);
       if (chase.t > 0) { chase.t -= dt; if (chase.t <= 1.5) for (const i of chase.ids) if (agents[i].say) agents[i].say.visible = false; if (chase.t <= 0) ui?.toast('ils ont laissé tomber · file !', false, 1600); }
       const chant = mood(m, tau) === 'chant', hoot = mood(m, tau) === 'hoot';
-      let n = 0;
+      let n = 0, touch = 0, near = 1e9;
       for (const a of agents) {
         const i = a.i;
         // where the script has them (between its last two steps), smoothed; nudged by me (locally)
@@ -326,14 +320,17 @@ export function createBlocus({ parent, colliders, interactables, ui, shake = () 
         const mx = tx - a.x, mz = tz - a.z, md = Math.hypot(mx, mz), lim = (chasing ? 3.8 : 6.5) * dt;
         if (md > lim) { a.x += mx / md * lim; a.z += mz / md * lim; } else { a.x += mx * (chasing ? 1 : k); a.z += mz * (chasing ? 1 : k); }
         const ex = lx - (a.x + a.offX), ez = lz - (a.z + a.offZ), ed = Math.hypot(ex, ez);
-        if (ed < .7 && py < 1.6 && py > -.5) {
-          const nx = ex / (ed || 1), nz = ez / (ed || 1), f = 1 - ed / .7;
+        if (ed < near) near = ed;
+        if (ed < .8 && py < 1.6 && py > -.5) {
+          const nx = ex / (ed || 1), nz = ez / (ed || 1), f = 1 - ed / .8;
           // they give a little, and shove back
           a.offX -= nx * f * .03; a.offZ -= nz * f * .03;
           if (player && can) {
             const sp = Math.hypot(sim.vx[i], sim.vz[i]), push = (a.police ? 26 : 16) + sp * 8;
             player.vel.x += nx * push * f * dt * 6; player.vel.z += nz * push * f * dt * 6;
-            if (f > .25 && pushToast <= 0) { pushToast = 8; stats.shove++; ui?.toast(a.police ? 'on ne passe pas ! le cordon te repousse' : 'ça bouscule !', false, 1400); }
+            // bodies don't walk through bodies
+            if (ed < .6) { player.pos.x += nx * (.6 - ed) * .6; player.pos.z += nz * (.6 - ed) * .6; }
+            touch = a.police ? 2 : Math.max(touch, 1);
           }
         }
         a.offX *= Math.exp(-dt * 1.2); a.offZ *= Math.exp(-dt * 1.2);
@@ -374,6 +371,10 @@ export function createBlocus({ parent, colliders, interactables, ui, shake = () 
         if ((frame + i) % every === 0) { a.rig.update(a.acc); a.acc = 0; }
       }
       blobs.count = n; blobs.instanceMatrix.needsUpdate = true;
+      // in among them for a moment: say so
+      stats.near = +near.toFixed(2);
+      contactT = touch ? contactT + dt : Math.max(0, contactT - dt * .5);
+      if (contactT > .12 && pushToast <= 0) { pushToast = 8; contactT = 0; stats.shove++; ui?.toast(touch === 2 ? 'on ne passe pas ! le cordon te repousse' : 'ça bouscule !', false, 1400); }
       // the banners, stretched between their holders (dropped if they're parted)
       for (const b of banners) {
         const A = b.a.g.position, B = b.b.g.position, bx = B.x - A.x, bz = B.z - A.z, d = Math.hypot(bx, bz);

@@ -4,10 +4,9 @@
 // and moles run off; one that hits the ground first bursts there and leaves a small hole.
 // The others see it through one fx (where from, which way): every client flies the same rocket.
 import * as THREE from 'three';
-import { createPoints } from './blocus-fx.js';
+import { createPoints, fireworkBurst, FIRE_COLS } from './blocus-fx.js';
 
 export const FUSE = 1.2, SPEED = 17, LIFT = 7, HOLE = .8;
-const COLS = [[1, .25, .2], [.35, 1, .35], [1, .8, .25], [.35, .55, 1], [1, .4, .85]];
 
 // where a rocket is `t` s after leaving `p` going `d` (unit): straight on, lifted, a little gravity
 export function rocketAt(p, d, t, out = {}) {
@@ -37,14 +36,7 @@ export function createMortiers({ scene, sfx = null, hooks = {} }) {
   let next = 0;
 
   function burst(x, y, z, r, mine, low) {
-    const [cr, cg, cb] = COLS[r.col], [c2r, c2g, c2b] = COLS[(r.col + 2) % COLS.length];
-    const n = low ? 50 : 90, sp = low ? 5 : 7;
-    for (let k = 0; k < n; k++) {
-      const u = low ? Math.random() : Math.random() * 2 - 1, th = Math.random() * Math.PI * 2, s = Math.sqrt(1 - u * u), v = sp * (.7 + Math.random() * .5), two = k % 3 === 0;
-      fx.spawn(x, y, z, Math.cos(th) * s * v, u * v, Math.sin(th) * s * v, 1 + Math.random() * .7, .45, .12, two ? c2r : cr, two ? c2g : cg, two ? c2b : cb, 1, 1.4, 2.2);
-    }
-    fx.spawn(x, y, z, 0, 0, 0, .22, 6, 9, 1, .9, .7, .9);
-    for (let k = 0; k < 10; k++) puffs.spawn(x, y, z, (Math.random() - .5) * 2, Math.random(), (Math.random() - .5) * 2, 1.6, .4, 1.8, .75, .74, .72, .45, 1.2, -.1);
+    fireworkBurst(fx, puffs, x, y, z, r.col, { low, n: low ? 60 : 110, speed: low ? 6 : 8.5 });
     sfx?.burst(x, y, z, true);
     if (low && mine) hooks.carve?.(x, y, z, HOLE);
     hooks.burst?.(x, y, z, mine);
@@ -55,7 +47,7 @@ export function createMortiers({ scene, sfx = null, hooks = {} }) {
     // from p (array), towards d (unit array); mine: mine to dig with
     fire(p, d, mine = true) {
       const r = pool[next]; next = (next + 1) % pool.length;
-      Object.assign(r, { on: true, p: [...p], d: [...d], t: 0, mine, col: Math.floor(Math.random() * COLS.length) });
+      Object.assign(r, { on: true, p: [...p], d: [...d], t: 0, mine, col: Math.floor(Math.random() * FIRE_COLS.length) });
       r.g.visible = true;
       if (globalThis.navigator?.userActivation?.hasBeenActive ?? true) sfx?.ensure?.();
       sfx?.launch(p[0], p[2], FUSE, p[1], true);
