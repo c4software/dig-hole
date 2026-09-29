@@ -81,8 +81,8 @@ async function go(join) {
       stat();
     }, 100);
   } catch (x) {
-    // the host may not be up on /sig yet: a few more tries
-    if (/aucune partie/.test(x.message) && (lab.tries = (lab.tries || 0) + 1) < 6) { log('pas encore d\'hôte, on réessaie'); setTimeout(() => go(join), 2000); return; }
+    // the host may not be up on /sig yet (a game tab takes ~12 s to load): ~30 s of tries
+    if (/aucune partie/.test(x.message) && (lab.tries = (lab.tries || 0) + 1) < 16) { log('pas encore d\'hôte, on réessaie'); setTimeout(() => go(join), 2000); return; }
     lab.state = 'failed'; lab.error = x.message + (x.hint ? ' · ' + x.hint : ''); stat(); log('échec : ' + lab.error);
   }
 }
