@@ -15,7 +15,8 @@ export const SETTLE = 6;             // the last seconds: back to the spots
 export const SHOT_T = .34;           // a foam ball's flight
 export const ZONE = { x0: -13, x1: 13, z0: -1.9, z1: 4.4 };
 export const LINE_Z = -3.4;          // the police line at rest
-export const LINE_X = (c) => -9.9 + c * 1.8;
+// two groups, a gap in front of the gate (the lane's view of the school stays open)
+export const LINE_X = (c) => c < 6 ? -11.4 + c * 1.75 : 2.65 + (c - 6) * 1.75;
 export const LAUNCHERS = [2, 5, 8, 10];            // the police with a launcher, a step behind
 export const FIRES = [[-7.2, 2.3], [6.4, 1.1], [10.6, 3.4]];   // bins on fire, loose in the crowd
 export const TUBES = [[-4.6, 3.7], [4.7, 3.8]];    // the mortar batteries, on crates by the gate
@@ -80,13 +81,14 @@ export function makePlan(seed, k) {
     const j = Math.floor(r() * NP), fall = r() < .5;
     ev.push({ t: ts, k: 'shot', c, j, fall }, { t: ts + SHOT_T, k: 'impact', c, j, fall });
   };
-  // mortars from the crowd, burst over the police; the police answer with foam balls
-  const nm = 1 + Math.floor(r() * 3);
-  for (let m = 0; m < nm; m++) {
-    const t0 = 5 + r() * 19, tube = Math.floor(r() * TUBES.length), fl = 1.3 + r() * .4;
-    const x = (r() - .5) * 16, y = 8 + r() * 4, z = LINE_Z - 1 - r() * 3, col = Math.floor(r() * 5);
-    ev.push({ t: t0, k: 'mortar', tube, x, y, z, fl, col }, { t: t0 + fl, k: 'burst', tube, x, y, z, col });
-    for (let s = 1 + Math.floor(r() * 2); s > 0; s--) shot(t0 + fl + .6 + r() * 1.5);
+  // mortars from the crowd, a volley every 8 to 14 s, burst over the police; they answer with foam balls
+  for (let t0 = 4 + r() * 4; t0 < E - SETTLE - 4; t0 += 8 + r() * 6) {
+    for (let m = 1 + Math.floor(r() * 3), dt = 0; m > 0; m--, dt += .35 + r() * .5) {
+      const tube = Math.floor(r() * TUBES.length), fl = 1.2 + r() * .4;
+      const x = (r() - .5) * 16, y = 6.5 + r() * 3, z = LINE_Z - .5 - r() * 2, col = Math.floor(r() * 5);
+      ev.push({ t: t0 + dt, k: 'mortar', tube, x, y, z, fl, col }, { t: t0 + dt + fl, k: 'burst', tube, x, y, z, col });
+    }
+    for (let s = 1 + Math.floor(r() * 2); s > 0; s--) shot(t0 + 2 + r() * 1.5);
   }
   for (let s = 1 + Math.floor(r() * 3); s > 0; s--) shot(5 + r() * 22);
   // a smoke canister, lobbed into the crowd

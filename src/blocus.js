@@ -150,6 +150,7 @@ export function createBlocus({ parent, colliders, interactables, ui, shake = () 
 
   // what the script says happened this frame: show it
   function play(e, cam) {
+    stats[e.k]++;
     if (e.k === 'mortar') {
       const tb = lycee.tubes[e.tube];
       rockets.push({ x0: OX + tb.x, y0: tb.y, z0: OZ + tb.z, x1: OX + e.bx, y1: e.by, z1: OZ + e.bz, t: 0, fl: e.fl });
@@ -159,7 +160,7 @@ export function createBlocus({ parent, colliders, interactables, ui, shake = () 
       const x = OX + e.x, y = e.y, z = OZ + e.z, [r, g, b] = BURST[e.col % BURST.length], [r2, g2, b2] = BURST[(e.col + 2) % BURST.length];
       for (let k = 0; k < 110; k++) {
         const u = rnd() * 2 - 1, th = rnd() * Math.PI * 2, s = Math.sqrt(1 - u * u), sp = 6 + rnd() * 3.5, two = k % 3 === 0;
-        fx.spawn(x, y, z, Math.cos(th) * s * sp, u * sp, Math.sin(th) * s * sp, 1.2 + rnd() * .8, .35, .12, two ? r2 : r, two ? g2 : g, two ? b2 : b, 1, 1.4, 2.2);
+        fx.spawn(x, y, z, Math.cos(th) * s * sp, u * sp, Math.sin(th) * s * sp, 1.3 + rnd() * .8, .5, .15, two ? r2 : r, two ? g2 : g, two ? b2 : b, 1, 1.4, 2.2);
       }
       fx.spawn(x, y, z, 0, 0, 0, .25, 9, 14, 1, .9, .7, .9);
       for (let k = 0; k < 20; k++) fx.spawn(x + (rnd() - .5) * 6, y - rnd() * 2, z + (rnd() - .5) * 6, 0, -.5, 0, .3 + rnd() * .9, .25, .1, 1, 1, .9, 1);
@@ -211,6 +212,7 @@ export function createBlocus({ parent, colliders, interactables, ui, shake = () 
   interactables.push(gateIt, doorIt);
 
   let indoorNow = false;
+  const stats = { mortar: 0, burst: 0, shot: 0, impact: 0, smoke: 0, cloud: 0, shove: 0 };
   let active = null, t = 0, frame = 0, lastBeat = -1, crackleT = 0, sawFirst = false;
   const mood = (m, tau) => tau < 4 || tau >= SIM.E - SIM.SETTLE ? 'chant' : !m ? 'chant' : m.kind === 'surge' ? 'hoot' : m.kind === 'mill' ? 'chant' : 'murmur';
   const crowdAt = { x: OX, z: OZ + 1.5 }, policeAt = { x: OX, z: OZ + SIM.LINE_Z };
@@ -219,7 +221,7 @@ export function createBlocus({ parent, colliders, interactables, ui, shake = () 
   const inside = (p) => { if (!rooms) { rooms = []; parent.traverse(o => { if (o.userData.inner?.box) rooms.push(o.userData.inner.box); }); } return rooms.some(b => b.containsPoint(p)) || !!insideOf?.(p); };
 
   return {
-    lycee, sim, sfx,
+    lycee, sim, sfx, stats,
     get active() { return !!active; },
     get agents() { return agents; },
     get built() { return built; },
@@ -286,14 +288,14 @@ export function createBlocus({ parent, colliders, interactables, ui, shake = () 
         const ox = a.x, oz = a.z;
         a.x += (sx - a.x) * k; a.z += (sz - a.z) * k;
         const ex = lx - (a.x + a.offX), ez = lz - (a.z + a.offZ), ed = Math.hypot(ex, ez);
-        if (ed < .62 && py < 1.6 && py > -.5) {
-          const nx = ex / (ed || 1), nz = ez / (ed || 1), f = 1 - ed / .62;
+        if (ed < .7 && py < 1.6 && py > -.5) {
+          const nx = ex / (ed || 1), nz = ez / (ed || 1), f = 1 - ed / .7;
           // they give a little, and shove back
           a.offX -= nx * f * .03; a.offZ -= nz * f * .03;
           if (player && can) {
             const sp = Math.hypot(sim.vx[i], sim.vz[i]), push = (a.police ? 26 : 16) + sp * 8;
             player.vel.x += nx * push * f * dt * 6; player.vel.z += nz * push * f * dt * 6;
-            if (sp > 1.5 && pushToast <= 0) { pushToast = 6; ui?.toast('ça bouscule !', false, 1200); }
+            if (f > .25 && pushToast <= 0) { pushToast = 8; stats.shove++; ui?.toast(a.police ? 'on ne passe pas ! le cordon te repousse' : 'ça bouscule !', false, 1400); }
           }
         }
         a.offX *= Math.exp(-dt * 1.2); a.offZ *= Math.exp(-dt * 1.2);
