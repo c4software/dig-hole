@@ -4,6 +4,9 @@ Un jeu où l'on creuse un trou (three.js, modules ES, sans étape de build).
 
 ![le menu du jeu](docs/menu.jpg)
 
+Pour contribuer : [`ARCHITECTURE.md`](ARCHITECTURE.md) (comment c'est construit, les règles à tenir) et
+[`AGENTS.md`](AGENTS.md) (recettes pour ajouter un jeu, un objet, un réglage, une fête…).
+
 ## lancer
 
 ```sh
