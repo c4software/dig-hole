@@ -170,10 +170,13 @@ export function createLycee({ parent, colliders }) {
 
   // ---------- the blockade's props (shown while it's on) ----------
   const props = new THREE.Group(); props.userData.keep = true; root.add(props);
+  // in parts that come and go one after the other (blocus.js: the blockade's arrival and its end)
+  const part = () => { const g = new THREE.Group(); props.add(g); return g; };
+  const barG = part(), fireG = part(), tubeG = part(), kitG = part(), kerbG = part();
   const binG = new THREE.Group();
   const binBody = mat(0x3a7a3a), binLid = mat(0x2e5e2e), wheelM = mat(0x1a1a1c), char = mat(0x2a2624), charred = mat(0x3a3430);
   // a wheelie bin, in props' frame; burnt: black, lid gone
-  const bin = (x, z, rot = 0, tip = 0, burnt = false, y = 0, p = props) => {
+  const bin = (x, z, rot = 0, tip = 0, burnt = false, y = 0, p = barG) => {
     const g = new THREE.Group(); g.position.set(x, y, z); g.rotation.set(tip, rot, 0); p.add(g);
     const m = burnt ? charred : binBody;
     const b = new THREE.Mesh(new THREE.BoxGeometry(.62, .95, .7), m); b.position.y = .5; g.add(b);
@@ -185,14 +188,14 @@ export function createLycee({ parent, colliders }) {
   // pallets: slats on three bearers
   const palletM = mat(0xb8905e);
   const pallet = (x, y, z, rot = 0, tilt = 0) => {
-    const g = new THREE.Group(); g.position.set(x, y, z); g.rotation.set(tilt, rot, 0); props.add(g);
+    const g = new THREE.Group(); g.position.set(x, y, z); g.rotation.set(tilt, rot, 0); barG.add(g);
     for (let k = 0; k < 5; k++) { const s = new THREE.Mesh(new THREE.BoxGeometry(1.2, .025, .14), palletM); s.position.set(0, .13, -.4 + k * .2); g.add(s); }
     for (const x2 of [-.5, 0, .5]) { const b = new THREE.Mesh(new THREE.BoxGeometry(.1, .1, .95), palletM); b.position.set(x2, .06, 0); g.add(b); }
   };
   // the crowd barriers (grey tubes, bars)
   const barrierM = mat(0xa8adb4);
   const barrier = (x, z, rot, tilt = 0) => {
-    const g = new THREE.Group(); g.position.set(x, 0, z); g.rotation.set(tilt, rot, 0); props.add(g);
+    const g = new THREE.Group(); g.position.set(x, 0, z); g.rotation.set(tilt, rot, 0); barG.add(g);
     const tube = (w, h, d, px2, py) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), barrierM); m.position.set(px2, py, 0); g.add(m); };
     tube(2, .05, .05, 0, 1.05); tube(2, .05, .05, 0, .25);
     for (const s of [-1, 1]) { tube(.05, 1.1, .05, s * 1, .55); const f = new THREE.Mesh(new THREE.BoxGeometry(.05, .03, .5), barrierM); f.position.set(s * .85, .02, 0); g.add(f); }
@@ -203,32 +206,35 @@ export function createLycee({ parent, colliders }) {
   for (let k = 0; k < 5; k++) bin(B.x0 + .55 + k * 1.45, 4.55, (k % 2 - .5) * .3, 0, k === 2);
   pallet(-2.1, 0, 3.55, .2, -.9); pallet(1.8, 0, 3.6, -.3, -1); pallet(-.3, 1, 4.6, .1, 0); pallet(-.1, 1.12, 4.5, -.2, 0); pallet(1.1, 0, 3.5, 1.4, 0);
   barrier(-1.8, 3.3, .08); barrier(1.9, 3.35, -.12); barrier(0, 3.2, 0, -.25);
-  for (const [x, z] of [[-3.1, 3.6], [3.2, 3.7]]) { const t = new THREE.Mesh(new THREE.TorusGeometry(.32, .13, 8, 14), wheelM); t.rotation.x = Math.PI / 2; t.position.set(x, .13, z); props.add(t); }
+  for (const [x, z] of [[-3.1, 3.6], [3.2, 3.7]]) { const t = new THREE.Mesh(new THREE.TorusGeometry(.32, .13, 8, 14), wheelM); t.rotation.x = Math.PI / 2; t.position.set(x, .13, z); barG.add(t); }
   const barricadeCol = solid(B.x0, 0, B.z0, B.x1, 1.7, GATE_Z - .12);
+  // once cleared: the bins lined up along the railing, as on any school morning
+  for (let k = 0; k < 5; k++) bin(4.2 + k * .75, GATE_Z - .5, Math.PI, 0, false, 0, kerbG);
   // the burning bins: loose in the crowd, and the one on the barricade (burns too)
   const fires = [];
-  for (const [x, z] of FIRES) { bin(x, z, x * .7, 0, true); fires.push({ x, y: 1, z }); solid(x - .4, 0, z - .4, x + .4, 1, z + .4).blocus = true; }
+  const fireCols = [];
+  for (const [x, z] of FIRES) { bin(x, z, x * .7, 0, true, 0, fireG); fires.push({ x, y: 1, z }); fireCols.push(solid(x - .4, 0, z - .4, x + .4, 1, z + .4)); }
   fires.push({ x: 0, y: 1.25, z: 4.55 });
   // an overturned one, charred, beside the first
-  bin(FIRES[0][0] + .9, FIRES[0][1] - .5, 1.2, Math.PI / 2 - .1, true);
+  bin(FIRES[0][0] + .9, FIRES[0][1] - .5, 1.2, Math.PI / 2 - .1, true, 0, fireG);
   // the mortar batteries: a crate, cardboard tubes in bright wraps
   const tubeMats = [0xd8403a, 0x3f7fd8, 0xe8b830, 0x8a52c8].map(c => mat(c));
-  const tubes = [];
+  const tubes = [], tubeCols = [];
   for (const [x, z] of TUBES) {
-    box(.6, .45, .5, palletM, x, .225, z, props);
-    for (let k = 0; k < 4; k++) { const c = cyl(.07, .5, tubeMats[k], x - .18 + (k % 2) * .36 - (k > 1 ? .05 : 0), .7, z - .1 + (k > 1 ? .2 : 0), props, 8); c.rotation.x = -.15; }
+    box(.6, .45, .5, palletM, x, .225, z, tubeG);
+    for (let k = 0; k < 4; k++) { const c = cyl(.07, .5, tubeMats[k], x - .18 + (k % 2) * .36 - (k > 1 ? .05 : 0), .7, z - .1 + (k > 1 ? .2 : 0), tubeG, 8); c.rotation.x = -.15; }
     tubes.push({ x, y: .95, z });
-    solid(x - .3, 0, z - .25, x + .3, .95, z + .25).blocus = true;
+    tubeCols.push(solid(x - .3, 0, z - .25, x + .3, .95, z + .25));
   }
   // the holdall full of mortars, unzipped, by the railing
-  const bagG = new THREE.Group(); bagG.position.set(BAG[0], 0, BAG[1]); bagG.rotation.y = .4; props.add(bagG);
+  const bagG = new THREE.Group(); bagG.position.set(BAG[0], 0, BAG[1]); bagG.rotation.y = .4; kitG.add(bagG);
   const holdall = new THREE.Mesh(new THREE.CapsuleGeometry(.24, .5, 4, 10), mat(0x2a4aa8)); holdall.rotation.z = Math.PI / 2; holdall.scale.set(1, 1, .85); holdall.position.y = .24; bagG.add(holdall);
   const stripe = new THREE.Mesh(new THREE.CylinderGeometry(.245, .245, .08, 12), mat(0xf4f0e6)); stripe.rotation.z = Math.PI / 2; stripe.scale.set(1, 1, .86); stripe.position.set(-.2, .24, 0); bagG.add(stripe);
   for (const s of [-1, 1]) { const hdl = new THREE.Mesh(new THREE.TorusGeometry(.12, .02, 5, 10, Math.PI), mat(0x1a1a1e)); hdl.position.set(s * .12, .44, 0); bagG.add(hdl); }
   for (let k = 0; k < 6; k++) { const c = cyl(.045, .38, tubeMats[k % tubeMats.length], -.22 + k * .09, .5, (k % 2 - .5) * .1, bagG, 8); c.rotation.set((k % 2 - .5) * .5, 0, (k - 2.5) * .12); }
-  solid(BAG[0] - .45, 0, BAG[1] - .35, BAG[0] + .45, .5, BAG[1] + .35).blocus = true;
+  const kitCols = [solid(BAG[0] - .45, 0, BAG[1] - .35, BAG[0] + .45, .5, BAG[1] + .35)];
   // behind the police line: their kit box, a spare launcher leaning on it
-  const kit = new THREE.Group(); kit.position.set(CRATE[0], 0, CRATE[1]); kit.rotation.y = -.2; props.add(kit);
+  const kit = new THREE.Group(); kit.position.set(CRATE[0], 0, CRATE[1]); kit.rotation.y = -.2; kitG.add(kit);
   box(.9, .5, .55, mat(0x1c2230), 0, .25, 0, kit); box(.94, .06, .59, mat(0x2a3246), 0, .52, 0, kit);
   const kitTag = new THREE.Mesh(new THREE.PlaneGeometry(.5, .12), new THREE.MeshLambertMaterial({ map: lettering('POLICE', { w: 256, h: 64, size: 44, color: '#f4f4f2', bg: '#1c2230', font: 'Arial, sans-serif', spacing: 4 }) }));
   kitTag.position.set(0, .3, .28); kit.add(kitTag);
@@ -237,14 +243,12 @@ export function createLycee({ parent, colliders }) {
   const barrelS = new THREE.Mesh(new THREE.CylinderGeometry(.042, .042, .34, 12), lb); barrelS.position.y = .2; spare.add(barrelS);
   const tipS = new THREE.Mesh(new THREE.CylinderGeometry(.048, .048, .04, 12), mat(0xf2c21e)); tipS.position.y = .37; spare.add(tipS);
   const bodyS = new THREE.Mesh(new THREE.BoxGeometry(.07, .22, .09), lb); spare.add(bodyS);
-  solid(CRATE[0] - .5, 0, CRATE[1] - .35, CRATE[0] + .5, .55, CRATE[1] + .35).blocus = true;
-  const propCols = colliders.filter(c => c.blocus);
-  propCols.push(barricadeCol);
+  kitCols.push(solid(CRATE[0] - .5, 0, CRATE[1] - .35, CRATE[0] + .5, .55, CRATE[1] + .35));
 
   // everything that never moves: merged
   root.updateMatrixWorld(true);
   mergeStatic(root, (o) => o.userData.keep || o === arch);
-  mergeStatic(props);
+  for (const g of [barG, fireG, tubeG, kitG, kerbG]) mergeStatic(g);
 
   let t = 0, open = 0, want = 0;
   return {
@@ -252,11 +256,13 @@ export function createLycee({ parent, colliders }) {
     gate: { x: LYCEE.x, z: LYCEE.z + GATE_Z },
     bag: { x: LYCEE.x + BAG[0], z: LYCEE.z + BAG[1] },
     crate: { x: LYCEE.x + CRATE[0], z: LYCEE.z + CRATE[1] },
-    // the blockade on (props out, gate shut and blocked) or off (gate open, the yard's free)
-    setBlocked(on) {
-      props.visible = on; sheet.visible = on;
-      for (const c of propCols) c.off = !on;
-      want = on ? 0 : 1;
+    // what stands in front of the school now (blocus-sim.js propsAt): each part and its colliders,
+    // the bins back by the railing once the barricade's gone, the gate open only once it's all clear
+    setProps(p) {
+      const show = (g, on, cols) => { g.visible = on; for (const c of cols) c.off = !on; };
+      show(barG, p.barricade, [barricadeCol]); show(fireG, p.fireBins, fireCols); show(tubeG, p.tubes, tubeCols); show(kitG, p.kit, kitCols);
+      kerbG.visible = !p.barricade; sheet.visible = p.barricade;
+      want = p.gateOpen ? 1 : 0;
     },
     setNight(n) { glass.emissiveIntensity = n * .9; arch.material.emissiveIntensity = .12 + n * .6; },
     update(dt, near) {

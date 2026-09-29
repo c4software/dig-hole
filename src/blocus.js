@@ -121,7 +121,7 @@ export function createBlocus({ parent, colliders, interactables, ui, shake = () 
           const p = new THREE.Mesh(new THREE.BoxGeometry(.58, 1.05, .025), clearM); p.renderOrder = 4; s.add(p);
           const band = new THREE.Mesh(new THREE.PlaneGeometry(.5, .12), bandM); band.position.set(0, .28, .016); s.add(band);
         }
-        a.shield = onBone(rig, 'chest', s, .08, c % 3 === 0 ? -.05 : -.25, .42);
+        a.shield = onBone(rig, 'chest', s, .08, c % 3 === 0 ? -.05 : -.25, .42); a.shieldY = a.shield.position.y;
       }
       agents.push(a);
     }
@@ -137,6 +137,16 @@ export function createBlocus({ parent, colliders, interactables, ui, shake = () 
       const poles = [-1, 1].map(s => { const p = new THREE.Mesh(new THREE.CylinderGeometry(.02, .02, 2.1, 5), stickM); p.position.y = 1.05; g.add(p); return p; });
       banners.push({ a: agents[ia], b: agents[ib], g, cloth, geo, poles, base: geo.attributes.position.array.slice() });
     });
+    // the police van: white, a blue band, « POLICE », a light bar that flashes
+    van = new THREE.Group(); van.position.set(OX + SIM.VAN[0], 0, OZ + SIM.VAN[1]); root.add(van);
+    const vb = (w, h, d, m, x, y, z) => { const o = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); o.position.set(x, y, z); o.castShadow = true; van.add(o); return o; };
+    const vanW = sm(0xf2f2ee), vanB = sm(0x1d3a8a), tyre = sm(0x1a1a1c), glassV = sm(0x3a4a5a);
+    vb(4.6, 1.9, 1.9, vanW, 0, 1.3, 0); vb(4.62, .28, 1.92, vanB, 0, 1.05, 0); vb(1, 1.1, 1.8, glassV, 1.9, 1.75, 0);
+    const vtag = new THREE.MeshLambertMaterial({ map: canvasTex(256, 64, (c) => { c.fillStyle = '#1d3a8a'; c.fillRect(0, 0, 256, 64); c.fillStyle = '#f4f4f2'; c.font = '700 44px Arial, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText('POLICE', 128, 34); }) });
+    for (const sz of [-1, 1]) { const tg = new THREE.Mesh(new THREE.PlaneGeometry(2.2, .5), vtag); tg.position.set(-.4, 1.55, sz * .96); tg.rotation.y = sz > 0 ? 0 : Math.PI; van.add(tg); }
+    for (const x of [-1.5, 1.4]) for (const sz of [-1, 1]) { const w = new THREE.Mesh(new THREE.CylinderGeometry(.36, .36, .25, 14), tyre); w.rotation.x = Math.PI / 2; w.position.set(x, .36, sz * .88); van.add(w); }
+    const lights = new THREE.Mesh(new THREE.BoxGeometry(.9, .14, .5), new THREE.MeshBasicMaterial({ color: 0x2a5aff })); lights.position.set(1.2, 2.32, 0); van.add(lights);
+    van.userData.lights = lights;
     // their shadows: soft blobs, one draw
     blobs = new THREE.InstancedMesh(new THREE.PlaneGeometry(.9, .9).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: blobTex(), color: 0x1e1a30, transparent: true, opacity: .45, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3 }), agents.length);
     blobs.frustumCulled = false; blobs.renderOrder = 1; blobs.userData.keep = true; root.add(blobs);
@@ -232,10 +242,12 @@ export function createBlocus({ parent, colliders, interactables, ui, shake = () 
     for (const [a] of near) say(a, 'hé ! nos mortiers !', 3.5);
   }
 
+  const WK = {};
   let indoorNow = false;
   const ear = {};
   const stats = { mortar: 0, burst: 0, shot: 0, impact: 0, smoke: 0, cloud: 0, shove: 0 };
-  let active = null, t = 0, frame = 0, lastBeat = -1, crackleT = 0, sawFirst = false;
+  let active = false, present = false, lastOn = null, flipAt = null, curPh = { k: 'off', s: 1e9 }, curP = SIM.propsAt(curPh), propKey = '', van = null;
+  let t = 0, frame = 0, lastBeat = -1, crackleT = 0, sawFirst = false;
   const mood = (m, tau) => tau < 4 || tau >= SIM.E - SIM.SETTLE ? 'chant' : !m ? 'chant' : m.kind === 'surge' ? 'hoot' : m.kind === 'mill' ? 'chant' : 'murmur';
   const crowdAt = { x: OX, z: OZ + 1.5 }, policeAt = { x: OX, z: OZ + SIM.LINE_Z };
   // indoors (the village's rooms, the neighbours'): the street is muffled
@@ -244,22 +256,23 @@ export function createBlocus({ parent, colliders, interactables, ui, shake = () 
 
   return {
     lycee, sim, sfx, stats, bagIt,
-    get active() { return !!active; },
+    get active() { return active; },
+    get phase() { return curPh; },
     get agents() { return agents; },
     get built() { return built; },
     center: new THREE.Vector3(OX, 0, OZ + 1),
     prompt(near) {
-      if (near === gateIt) return active ? 'le lycée est bloqué · blocus en cours, personne n\'entre' : 'le portail du lycée · ouvert, la cour est libre';
+      if (near === gateIt) return curP.barricade ? 'le lycée est bloqué · blocus en cours, personne n\'entre' : 'le portail du lycée · ouvert, la cour est libre';
       if (near === doorIt) return '<b>e</b> la porte du lycée';
       if (near === crateIt) return crateCool > 0 ? `la caisse de la police · ils se méfient (${Math.ceil(crateCool)} s)` : '<b>e</b> piquer le flashball';
       if (near === bagIt) return bagCool > 0 ? `un sac de mortiers d'artifice · surveillé de près (${Math.ceil(bagCool)} s)` : '<b>e</b> piquer des mortiers';
       return undefined;
     },
     act(near) {
-      if (near === gateIt) { ui?.toast(active ? 'pas moyen de passer : le portail est bloqué par les poubelles et les palettes' : 'la cour est ouverte · entre donc', active, 2400); return true; }
+      if (near === gateIt) { ui?.toast(curP.barricade ? 'pas moyen de passer : le portail est bloqué par les poubelles et les palettes' : curP.gateOpen ? 'la cour est ouverte · entre donc' : 'le portail est encore fermé', curP.barricade, 2400); return true; }
       if (near === doorIt) { ui?.toast('fermé · les cours ont lieu… ailleurs, aujourd\'hui', false, 2400); return true; }
       if (near === crateIt) {
-        if (!active) return true;
+        if (!curP.kit) return true;
         if (crateCool > 0) { ui?.toast(`ils surveillent leur caisse · reviens dans ${Math.ceil(crateCool)} s`, true, 2000); return true; }
         const got = takeFlashball();
         crateCool = 45;
@@ -275,7 +288,7 @@ export function createBlocus({ parent, colliders, interactables, ui, shake = () 
         return true;
       }
       if (near === bagIt) {
-        if (!active) return true;
+        if (!curP.kit) return true;
         if (bagCool > 0) { ui?.toast(`ils ont l'œil sur leur sac · reviens dans ${Math.ceil(bagCool)} s`, true, 2000); return true; }
         const got = steal();
         if (!got) { ui?.toast('tes poches sont déjà pleines de mortiers', true, 2000); return true; }
@@ -287,31 +300,44 @@ export function createBlocus({ parent, colliders, interactables, ui, shake = () 
       return false;
     },
     // the whole scene, once a frame. now: the shared clock (s); mode: the tunable; hour, day: game time
-    update(dt, camera, { here = 'home', view = here, can = true, player = null, now, mode = -1, hour = 12, day = 0, night = 0 }) {
+    //   clock: the shared game clock (s), dayLen its day; forcedHour, speed: the host's settings
+    update(dt, camera, { here = 'home', view = here, can = true, player = null, now, mode = -1, clock = 0, dayLen = 360, forcedHour = -1, speed = 1, night = 0 }) {
       t += dt; frame++;
       hitCool = Math.max(0, hitCool - dt); bagCool = Math.max(0, bagCool - dt);
-      bagIt.off = crateIt.off = !active;
       crateCool = Math.max(0, crateCool - dt); aimAtMe = Math.max(0, aimAtMe - dt);
-      const on = SIM.blocusOn(mode, hour, day);
-      if (on !== active) {
-        active = on; lycee.setBlocked(on); root.visible = on;
-        if (!on) { balls.clear(); fx.clear(); puffs.clear(); solid.clear(); rockets.length = 0; cans.length = 0; clouds.length = 0; }
-      }
+      // where we are in the day's blockade: by the shared clock, or since a change was seen here
+      const sch = SIM.scheduleAt(mode, clock, dayLen, { hour: forcedHour, speed });
+      // (in real seconds: the frame's dt is capped when the page stutters)
+      const wall = performance.now() / 1000;
+      if (sch.on !== lastOn) { if (lastOn !== null) flipAt = wall; lastOn = sch.on; }
+      let since = sch.since;
+      if (flipAt !== null && wall - flipAt < SIM.LEAVE) since = Math.min(since, wall - flipAt);
+      curPh = SIM.phaseOf(sch.on, since); curP = SIM.propsAt(curPh);
+      active = curPh.k === 'on';
+      const wasPresent = present;
+      present = curPh.k !== 'off';
+      if (!present && wasPresent) { balls.clear(); fx.clear(); puffs.clear(); solid.clear(); rockets.length = 0; cans.length = 0; clouds.length = 0; }
+      root.visible = present;
+      const key = `${+curP.barricade}${+curP.fireBins}${+curP.tubes}${+curP.kit}${+curP.gateOpen}`;
+      if (key !== propKey) { propKey = key; lycee.setProps(curP); }
+      bagIt.off = crateIt.off = !curP.kit;
       lycee.setNight(night);
       camera.getWorldPosition(_c);
       const home = here === 'home' && view === 'home';
       const dx = _c.x - OX, dz = _c.z - (OZ + 1), dist = Math.hypot(dx, dz);
       lycee.update(dt, home && dist < 90);
       // the sound: only at home, fading with distance, muffled indoors and underground
-      if (home && active && dist < 130 && (navigator.userActivation?.hasBeenActive ?? true)) sfx.ensure();
+      if (home && present && dist < 130 && (navigator.userActivation?.hasBeenActive ?? true)) sfx.ensure();
       const m = active ? SIM.moveAt(sim.plan || SIM.makePlan(SEED, 0), sim.tau) : null;
       if ((frame & 7) === 0) indoorNow = home && dist < 130 && inside(_c);
-      sfx.update(dt, camera, { active: home && active, crowdAt, policeAt, mood: mood(m, sim.tau), hear: hearing({ home: view === here && (here === 'home' || here === 'china'), y: _c.y, indoor: indoorNow }, ear) });
-      if (!home || !active) { setVeil(blur = 0); return; }
+      sfx.update(dt, camera, { active: home && present && curP.sound > 0, level: curP.sound, crowdAt, policeAt, mood: active ? mood(m, sim.tau) : 'murmur', hear: hearing({ home: view === here && (here === 'home' || here === 'china'), y: _c.y, indoor: indoorNow }, ear) });
+      if (!home || !present) { setVeil(blur = 0); return; }
       if (dist > 200) { root.visible = false; return; }
       root.visible = true;
       if (!built) build();
       // the passers-by of the back lane turn round before the police line
+      // the van: in and out down the lane
+      if (van) { const vx = SIM.vanAt(curPh); van.position.x = OX + vx; van.visible = vx < 70; van.userData.lights.material.color.setHSL((t * 2) % 1 < .5 ? .6 : .0, 1, .5); }
       if (walkers) for (const w of walkers.people) {
         if (w.mode !== 'walk' || w.pts.length !== 2 || Math.abs(w.pts[0].z - OZ + 2.6) > 1) continue;
         const x = w.g.position.x - OX;
@@ -320,13 +346,13 @@ export function createBlocus({ parent, colliders, interactables, ui, shake = () 
       // the script up to now
       events.length = 0;
       const frac = Math.min(1, Math.max(0, sim.advanceTo(now, events)));
-      for (const e of events) play(e, _c);
-      if (!sawFirst && dist < 45) { sawFirst = true; ui?.hint('un blocus devant le lycée · attention aux balles en mousse et aux fumées', 5000); }
+      if (curP.events) for (const e of events) play(e, _c);
+      if (!sawFirst && active && dist < 45) { sawFirst = true; ui?.hint('un blocus devant le lycée · attention aux balles en mousse et aux fumées', 5000); }
       const px = player?.pos.x ?? 1e9, pz = player?.pos.z ?? 1e9, py = player?.pos.y ?? 0;
       const lx = px - OX, lz = pz - OZ;
       // ---------- the bodies ----------
       const plan = sim.plan, tau = sim.tau, adv = sim.advance;
-      const beat = SIM.banging(plan, tau) ? Math.floor(t * 2.2) : -1;
+      const beat = active && SIM.banging(plan, tau) ? Math.floor(t * 2.2) : -1;
       if (beat >= 0 && beat !== lastBeat) { sfx.bang(OX, OZ + SIM.LINE_Z + adv); for (const a of agents) if (a.shield) a.bang = .18; }
       lastBeat = beat;
       const k = 1 - Math.exp(-dt * 10);
@@ -340,6 +366,14 @@ export function createBlocus({ parent, colliders, interactables, ui, shake = () 
         const ox = a.x, oz = a.z;
         // towards the script at a runner's pace (a chaser: towards me, stopping short)
         let tx = sx, tz = sz;
+        // arriving or going home: on their own way (blocus-sim.js), hidden until there or once gone
+        const moving = curPh.k === 'leave' || curPh.k === 'arrive';
+        if (moving) {
+          const w = a.police ? SIM.policeWalk(i - SIM.NP, curPh.s, curPh.k === 'leave', WK) : SIM.crowdWalk(i, curPh.s, sim.hx[i], sim.hz[i], curPh.k === 'leave', WK);
+          a.away = w.gone; a.running = !!w.run && w.moving;
+          if (w.gone) { a.x = w.x; a.z = w.z; a.g.visible = false; if (a.sat) { a.sat = false; a.rig.stop(); } continue; }
+          tx = w.x; tz = w.z;
+        } else a.away = false;
         const chasing = chase.t > 0 && chase.ids.includes(i);
         if (chasing) { const cx = lx - a.x, cz = lz - a.z, cd = Math.hypot(cx, cz); if (cd > 1.1) { tx = a.x + cx / cd * Math.min(cd - 1.1, 1); tz = a.z + cz / cd * Math.min(cd - 1.1, 1); } else { tx = a.x; tz = a.z; } }
         const mx = tx - a.x, mz = tz - a.z, md = Math.hypot(mx, mz), lim = (chasing ? 3.8 : 6.5) * dt;
@@ -365,7 +399,7 @@ export function createBlocus({ parent, colliders, interactables, ui, shake = () 
         a.sp += (Math.min(sp, 6) - a.sp) * Math.min(1, dt * 8);
         const d2 = (wx - _c.x) * (wx - _c.x) + (wz - _c.z) * (wz - _c.z);
         // facing: where they go, else the other side
-        const want = a.sp > .5 ? Math.atan2(vx, vz) : a.police ? 0 : Math.PI + Math.sin(a.ph + t * .3) * .3;
+        const want = a.sp > .5 ? Math.atan2(vx, vz) : a.police ? 0 : moving ? a.yaw : Math.PI + Math.sin(a.ph + t * .3) * .3;
         let dy = want - a.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy));
         a.yaw += dy * Math.min(1, dt * 6);
         a.g.rotation.y = a.yaw;
@@ -377,17 +411,18 @@ export function createBlocus({ parent, colliders, interactables, ui, shake = () 
         const st = a.rig.st;
         if (!a.police) {
           if (a.localSit > 0) a.localSit -= dt;
-          const down = sim.down[i] > 0 || a.localSit > 0, fleeing = sim.flee[i] > 0;
+          const down = !moving && (sim.down[i] > 0 || a.localSit > 0), fleeing = !moving && sim.flee[i] > 0;
           if (down && !a.sat) { a.sat = true; a.rig.play('assis'); }
           else if (!down && a.sat) { a.sat = false; a.rig.stop(); }
           st.speed = a.sat ? 0 : a.sp;
           const pump = chant ? Math.max(0, Math.sin(t * Math.PI / .9 + a.ph)) : hoot ? Math.max(0, Math.sin(t * 7 + a.ph)) : 0;
-          st.hands = fleeing && a.role !== 'sign' ? [2, 2] : a.role === 'sign' ? [0, 2] : a.role === 'banner' ? [1.3, 1.3] : a.role === 'drum' ? [.9, .9] : [0, pump > .5 ? 1.6 + pump * .4 : 0];
+          st.hands = moving ? (a.role === 'drum' ? [.9, .9] : a.role === 'sign' ? [0, 1] : -1) : fleeing && a.role !== 'sign' ? [2, 2] : a.role === 'sign' ? [0, 2] : a.role === 'banner' ? [1.3, 1.3] : a.role === 'drum' ? [.9, .9] : [0, pump > .5 ? 1.6 + pump * .4 : 0];
         } else {
           st.speed = a.sp;
           a.flinch = Math.max(0, (a.flinch || 0) - dt); a.bang = Math.max(0, (a.bang || 0) - dt); a.recoil = Math.max(0, (a.recoil || 0) - dt);
-          st.hands = a.role === 'launcher' ? [.55, .7] : [1, 0];
-          if (a.shield) a.shield.position.z = .42 + a.bang * 1.1 - a.flinch * .1;
+          // at ease once it's over (shields down), on guard otherwise
+          st.hands = moving ? -1 : a.role === 'launcher' ? [.55, .7] : [1, 0];
+          if (a.shield) { a.shield.position.z = moving ? .2 : .42 + a.bang * 1.1 - a.flinch * .1; a.shield.position.y = a.shieldY + (moving ? -.5 : 0); a.shield.rotation.x = moving ? .5 : 0; }
           if (a.gun) a.gun.rotation.x = -a.recoil * 1.6;
           a.g.rotation.x = -a.flinch * .12;
         }
@@ -404,7 +439,7 @@ export function createBlocus({ parent, colliders, interactables, ui, shake = () 
       // the banners, stretched between their holders (dropped if they're parted)
       for (const b of banners) {
         const A = b.a.g.position, B = b.b.g.position, bx = B.x - A.x, bz = B.z - A.z, d = Math.hypot(bx, bz);
-        const ok = d > .8 && d < 3.6 && !b.a.sat && !b.b.sat && sim.flee[b.a.i] <= 0 && sim.flee[b.b.i] <= 0;
+        const ok = curP.banners && !b.a.away && !b.b.away && d > .8 && d < 3.6 && !b.a.sat && !b.b.sat && sim.flee[b.a.i] <= 0 && sim.flee[b.b.i] <= 0;
         b.g.visible = ok;
         if (!ok) continue;
         b.g.position.set((A.x + B.x) / 2, 0, (A.z + B.z) / 2);
@@ -418,16 +453,20 @@ export function createBlocus({ parent, colliders, interactables, ui, shake = () 
       }
       // ---------- fires ----------
       const flick = .75 + Math.sin(t * 17) * .12 + Math.sin(t * 29 + 1) * .08;
-      glowMat.opacity = (.35 + night * .35) * flick;
+      // (they're lit as it starts, die down as it ends; the smoke lingers a little)
+      const fire = curP.fireBins ? curP.fire : 0, smoke = curP.fireBins ? Math.max(fire, curPh.k === 'leave' ? SIM.propsAt({ k: 'leave', s: curPh.s - 15 }).fire * .8 : 0) : 0;
+      glowMat.opacity = (.35 + night * .35) * flick * fire;
+      for (const g of glows) g.visible = fire > .01;
       for (const f of lycee.fires) {
         const x = OX + f.x, z = OZ + f.z;
+        if (rnd() < dt * 4 * smoke) puffs.spawn(x, f.y + .8, z, (rnd() - .5) * .3 + .15, .8 + rnd() * .4, (rnd() - .5) * .3, 4 + rnd() * 2, .5, 2.6, .22, .2, .2, .5, .1, -.05);
+        if (rnd() > fire) continue;
         for (let q = 0; q < 2; q++) fx.spawn(x + (rnd() - .5) * .35, f.y, z + (rnd() - .5) * .35, (rnd() - .5) * .3, 1.2 + rnd() * .9, (rnd() - .5) * .3, .45 + rnd() * .35, .7, .15, 1, .45 + rnd() * .35, .12, .9, .5, -1);
         if (rnd() < dt * 3) fx.spawn(x, f.y + .2, z, (rnd() - .5) * .8, 2.5 + rnd() * 2, (rnd() - .5) * .8, 1 + rnd(), .08, .04, 1, .7, .3, 1, .3, 1.5);
-        fx.spawn(x, f.y + .3, z, 0, 0, 0, dt * 1.5, 2.4 * flick, 2.4, 1, .55, .2, .22 + night * .15);
-        if (rnd() < dt * 4) puffs.spawn(x, f.y + .8, z, (rnd() - .5) * .3 + .15, .8 + rnd() * .4, (rnd() - .5) * .3, 4 + rnd() * 2, .5, 2.6, .22, .2, .2, .5, .1, -.05);
+        fx.spawn(x, f.y + .3, z, 0, 0, 0, dt * 1.5, 2.4 * flick * fire, 2.4 * fire, 1, .55, .2, .22 + night * .15);
       }
       crackleT -= dt;
-      if (crackleT <= 0) { crackleT = .25 + rnd() * .5; const f = lycee.fires[Math.floor(rnd() * lycee.fires.length)]; if (dist < 40) sfx.crackle(OX + f.x, f.y, OZ + f.z); }
+      if (crackleT <= 0 && fire > .3) { crackleT = .25 + rnd() * .5; const f = lycee.fires[Math.floor(rnd() * lycee.fires.length)]; if (dist < 40) sfx.crackle(OX + f.x, f.y, OZ + f.z); }
       // ---------- rockets on their way up ----------
       for (let q = rockets.length - 1; q >= 0; q--) {
         const r = rockets[q]; r.t += dt;
@@ -462,7 +501,7 @@ export function createBlocus({ parent, colliders, interactables, ui, shake = () 
         if (smokeToast <= 0) { smokeToast = 20; ui?.toast('kof kof… une fumée blanche : ça ne fait rien, mais on n\'y voit plus', false, 2600); }
       }
       smokeToast = Math.max(0, smokeToast - dt); pushToast = Math.max(0, pushToast - dt);
-      const inZone = can && lx > -12.5 && lx < 12.5 && lz > SIM.LINE_Z + adv + .6 && lz < 5 && py < 2;
+      const inZone = can && active && lx > -12.5 && lx < 12.5 && lz > SIM.LINE_Z + adv + .6 && lz < 5 && py < 2;
       if (inZone || aimAtMe > 0) {
         localShotT -= dt;
         if (localShotT <= 0) {
@@ -499,7 +538,7 @@ export function createBlocus({ parent, colliders, interactables, ui, shake = () 
     crateIt,
     // a foam ball of mine at (x, y, z) going (vx, vz): a protester sits down, an officer flinches
     knock(x, y, z, vx, vz) {
-      if (!active || !built) return false;
+      if (!present || !built) return false;
       for (const a of agents) {
         if (!a.g.visible) continue;
         const dx = x - a.g.position.x, dz = z - a.g.position.z;

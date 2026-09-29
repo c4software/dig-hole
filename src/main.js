@@ -3559,7 +3559,7 @@ function loop(ts) {
   updateFreeze(dt);
   reliquary.update(dt); organ.update(dt, camera.position, camera, organHearing(camera.position, { here, crypt: here === 'home' && crypt.inside(camera.position), cave: inCave }, organEar));
   matsuri.update(dt, camera, { here, view: viewNow(), can: state === 'play' && here === 'china', night: world.env.night });
-  blocus.update(dt, camera, { here, view: viewNow(), can: state === 'play' && here === 'home', player, now: Date.now() / 1000, mode: tun.get('blocus'), hour: hourNow, day: Math.floor(clockNow() / DAY), night: world.env.night });
+  blocus.update(dt, camera, { here, view: viewNow(), can: state === 'play' && here === 'home', player, now: Date.now() / 1000, mode: tun.get('blocus'), clock: clockNow(), dayLen: DAY, forcedHour: tun.get('hour'), speed: tun.get('timeSpeed'), night: world.env.night });
   mortiers.update(dt, camera, world.renderer);
   if (here === 'home') bats.update(dt, t, world.env.night);
   shovel.root.visible = holding && !drilling && !mg.armed && !portals.held && !launcher.held && !fb.held && !looks.handsOut;

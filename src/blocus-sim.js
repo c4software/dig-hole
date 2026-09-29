@@ -269,3 +269,83 @@ export function createCrowd({ seed = 1 } = {}) {
     get plan() { return plan; }, get advance() { return adv; },
   };
 }
+
+// ---------- its start and its end ----------
+// The blockade arrives (ARRIVE s: students in groups, the van, the barricade built, the fires lit)
+// and breaks up (LEAVE s: the chants stop, banners down, groups walk off both ways down the lane,
+// the police board their van and it drives off, the fires die, the barricade is cleared, then the
+// gate opens). With the automatic schedule the time since it changed comes from the shared clock,
+// so everyone sees the same moment; a setting changed by hand starts it where it's seen (locally).
+export const ARRIVE = 50, LEAVE = 80;
+export const VAN = [21, -3.3];                 // where the police van parks, down the lane
+const OPEN_AT = 7.5 / 24, CLOSE_AT = 17.5 / 24;
+const weekday = (d) => ((d % 7) + 7) % 7 < 5;
+
+// on/off by the clock c (s), and how long ago that last changed, in real seconds (Infinity if the
+// clock can't say: a forced setting, a forced hour)
+export function scheduleAt(mode, c, day = 360, { hour = -1, speed = 1 } = {}) {
+  if (mode === 1 || mode === 0) return { on: mode === 1, since: Infinity };
+  const d = Math.floor(c / day), h = hour >= 0 ? hour : (c - d * day) / day * 24;
+  const on = blocusOn(-1, h, d);
+  if (hour >= 0 || !(speed > 0)) return { on, since: Infinity };
+  const t0 = d * day;
+  let flip;
+  if (on) flip = t0 + OPEN_AT * day;
+  else if (weekday(d) && c >= t0 + CLOSE_AT * day) flip = t0 + CLOSE_AT * day;
+  else { let k = d - 1; while (!weekday(k)) k--; flip = k * day + CLOSE_AT * day; }
+  return { on, since: (c - flip) / speed };
+}
+// the phase from on/off and the time since: arrive / on / leave / off, and s into it
+export function phaseOf(on, since) {
+  if (on) return since < ARRIVE ? { k: 'arrive', s: since } : { k: 'on', s: since };
+  return since < LEAVE ? { k: 'leave', s: since } : { k: 'off', s: since };
+}
+const clamp01 = (v) => v < 0 ? 0 : v > 1 ? 1 : v;
+// what stands and burns in each phase
+export function propsAt(ph) {
+  const s = ph.s;
+  if (ph.k === 'on') return { barricade: true, fireBins: true, tubes: true, kit: true, fire: 1, gateOpen: false, banners: true, sound: 1, events: true };
+  if (ph.k === 'off') return { barricade: false, fireBins: false, tubes: false, kit: false, fire: 0, gateOpen: true, banners: false, sound: 0, events: false };
+  if (ph.k === 'leave') return { barricade: s < 66, fireBins: s < 60, tubes: s < 25, kit: false, fire: clamp01(1 - s / 35), gateOpen: s >= 70, banners: s < 3, sound: clamp01(1 - s / 25), events: false };
+  return { barricade: s >= 12, fireBins: s >= 16, tubes: s >= 24, kit: s >= 30, fire: clamp01((s - 20) / 10), gateOpen: false, banners: s >= 36, sound: clamp01((s - 8) / 20), events: false };
+}
+
+// a walk along a polyline pts [[x, z]…] at speed sp from t0; back: the other way, arriving at the end
+function walk(pts, t, t0, sp, back, out) {
+  let L = 0; for (let k = 1; k < pts.length; k++) L += Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]);
+  let d = Math.max(0, t - t0) * sp;
+  out.gone = back ? t < t0 : d >= L;
+  out.moving = t >= t0 && d < L;
+  if (d > L) d = L;
+  if (back) d = L - d;
+  for (let k = 1; k < pts.length; k++) {
+    const ax = pts[k - 1][0], az = pts[k - 1][1], l = Math.hypot(pts[k][0] - ax, pts[k][1] - az);
+    if (d <= l || k === pts.length - 1) { const u = l ? Math.min(1, d / l) : 0; out.x = ax + (pts[k][0] - ax) * u; out.z = az + (pts[k][1] - az) * u; break; }
+    d -= l;
+  }
+  out.sp = out.moving ? sp : 0;
+  return out;
+}
+// a protester going home (leaving) or coming (arriving), from their spot hx, hz: by groups of
+// friends, half each way down the lane; one group runs, the others stroll and chat
+export function crowdWalk(i, s, hx, hz, leaving, out = {}) {
+  const g = i % 5, east = g === 1 || g === 3 || (g === 4 && i % 2 === 0), run = g === 3 && leaving;
+  // (they hurry to get there, dawdle on the way home)
+  const sp = run ? 3.4 : leaving ? 1.25 + hash(i, 5) * .45 : 2 + hash(i, 5) * .6, side = east ? 1 : -1, lane = -2.2 + (hash(i, 9) - .5) * 1.3;
+  const pts = [[hx, hz], [hx + side * 1.2, lane], [side * 48, lane + (hash(i, 11) - .5)]];
+  const t0 = leaving ? 4 + g * 5.5 + hash(i, 3) * 2.5 : 1 + g * 3 + hash(i, 3) * 2;
+  out.run = run;
+  return walk(pts, s, t0, sp, !leaving, out);
+}
+// an officer to the van and in (leaving), or out of it to the line (arriving); gone: inside it
+export function policeWalk(c, s, leaving, out = {}) {
+  const x = LINE_X(c), z = LINE_Z - (LAUNCHERS.includes(c) ? .7 : 0);
+  const pts = [[x, z], [x, -4.7], [VAN[0] - 1.8, -4.7]];
+  return walk(pts, s, leaving ? 14 + c * .9 : 9 + c * .7, 1.5, !leaving, out);
+}
+// the van's x: in from the east when arriving, off to the east when leaving
+export function vanAt(ph) {
+  if (ph.k === 'arrive') return ph.s < 8 ? VAN[0] + (8 - ph.s) * (8 - ph.s) * .75 : VAN[0];
+  if (ph.k === 'leave') { const u = ph.s - 40; return u > 0 ? VAN[0] + u * u * 1.2 : VAN[0]; }
+  return VAN[0];
+}

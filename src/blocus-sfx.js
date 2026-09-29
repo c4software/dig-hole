@@ -65,8 +65,8 @@ export function createBlocusSfx() {
   // how far from the ears
   const far = (x, y, z) => Math.hypot(x - ear.x, y - ear.y, z - ear.z);
   // set a place for a sound of `kind` at d metres
-  function tune(s, d, kind, now = false) {
-    const g = ears ? gainAt(d, kind) : 0, f = lowpassAt(d, kind), t = ctx.currentTime;
+  function tune(s, d, kind, now = false, mult = 1) {
+    const g = ears ? gainAt(d, kind) * mult : 0, f = lowpassAt(d, kind), t = ctx.currentTime;
     if (now) { s.dist.gain.cancelScheduledValues(t); s.dist.gain.setValueAtTime(g, t); s.air.frequency.setValueAtTime(f, t); }
     else { s.dist.gain.setTargetAtTime(g, t, .15); s.air.frequency.setTargetAtTime(f, t, .15); }
     return g;
@@ -120,7 +120,7 @@ export function createBlocusSfx() {
     get ready() { return !!ctx; },
     // each frame: where the ears are, the crowd and the police, what the crowd is up to
     //   mood: 'chant' | 'hoot' | 'murmur'; hear: blocus-hear.js hearing() { on, lp }
-    update(dt, camera, { active, crowdAt, policeAt, mood = 'chant', hear = { on: true, lp: 16000 } }) {
+    update(dt, camera, { active, level = 1, crowdAt, policeAt, mood = 'chant', hear = { on: true, lp: 16000 } }) {
       if (!ctx) return;
       const t = ctx.currentTime;
       on = active; ears = hear.on;
@@ -130,7 +130,7 @@ export function createBlocusSfx() {
       listen(ctx, camera);
       place(ctx, crowd.p, crowdAt.x, 1.6, crowdAt.z);
       place(ctx, police.p, policeAt.x, 1.2, policeAt.z);
-      const gc = active ? tune(crowd, far(crowdAt.x, 1.6, crowdAt.z), 'crowd') : tune(crowd, 1e9, 'crowd');
+      const gc = active ? tune(crowd, far(crowdAt.x, 1.6, crowdAt.z), 'crowd', false, level) : tune(crowd, 1e9, 'crowd');
       tune(police, active ? far(policeAt.x, 1.2, policeAt.z) : 1e9, 'police');
       if (!active || gc <= 0) { murmur.gain.setTargetAtTime(0, t, .3); nextLine = t + .5; return; }
       murmur.gain.setTargetAtTime(mood === 'murmur' ? .16 : .07, t, .5);
